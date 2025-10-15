@@ -50,11 +50,13 @@ class ImageViewer(QMainWindow):
         self.status_pixel = QLabel()
         self.status_selection = QLabel()
         self.status_shift = QLabel()
+        self.status_scale = QLabel()
         self.status.addWidget(self.status_filename, 2)
         self.status.addWidget(self.status_index, 1)
         self.status.addPermanentWidget(self.status_pixel, 3)
         self.status.addPermanentWidget(self.status_selection, 2)
         self.status.addPermanentWidget(self.status_shift, 1)
+        self.status.addPermanentWidget(self.status_scale, 1)
 
         self.help_dialog = HelpDialog(self)
 
@@ -274,10 +276,17 @@ class ImageViewer(QMainWindow):
         if self.current_index is None:
             self.status_filename.setText("No image")
             self.status_index.setText("")
+            # still update scale display
+            self.status_scale.setText(f"Scale: {self.scale:.2f}x")
             return
         p = self.images[self.current_index]["path"]
         self.status_filename.setText(p)
         self.status_index.setText(f"{self.current_index+1}/{len(self.images)}")
+        # display current scale
+        try:
+            self.status_scale.setText(f"Scale: {self.scale:.2f}x")
+        except Exception:
+            self.status_scale.setText("")
 
     def update_selection_status(self, rect=None):
         if rect is None or rect.isNull():

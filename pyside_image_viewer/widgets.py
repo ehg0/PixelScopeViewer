@@ -14,6 +14,9 @@ class ImageLabel(QLabel):
         self.scale = 1.0
         self.selection_rect: Optional[QRect] = None
         self.dragging = False
+        self._moving = False
+        self._move_start_img = None
+        self._move_orig_img_rect = None
         self.showing = False
         self.start_point = QPoint()
 
@@ -43,33 +46,86 @@ class ImageLabel(QLabel):
         self.update()
 
     def mousePressEvent(self, ev):
-        if ev.button() == Qt.LeftButton and self.showing:
-            self.start_point = ev.position().toPoint()
-            # store start in image pixel coords for pixel-step snapping
+        # Left button: create new selection (pixel-snapped)
+        # Right button: move existing selection (if clicked inside it)
+        if not self.showing:
+            return
+        self.start_point = ev.position().toPoint()
+        if ev.button() == Qt.LeftButton:
+            # create selection mode: store start in image pixel coords for pixel-step snapping
+            self._moving = False
             self._start_img = self._widget_to_image_point(self.start_point)
             self.dragging = True
+        elif ev.button() == Qt.RightButton:
+            # only start move if click is inside existing selection
+            if self.selection_rect and self.selection_rect.contains(self.start_point):
+                self._moving = True
+                self._move_start_img = self._widget_to_image_point(self.start_point)
+                # store original selection in image coords
+                self._move_orig_img_rect = self.get_selection_in_image_coords()
+                self.dragging = True
 
     def mouseMoveEvent(self, ev):
         if self.showing and self.dragging:
             cur_pt = ev.position().toPoint()
-            cur_img = self._widget_to_image_point(cur_pt)
-            start_img = getattr(self, "_start_img", None)
-            if start_img is None or cur_img is None:
-                return
-            # integer image pixel coords
-            x0 = min(start_img[0], cur_img[0])
-            x1 = max(start_img[0], cur_img[0])
-            y0 = min(start_img[1], cur_img[1])
-            y1 = max(start_img[1], cur_img[1])
-            # map back to widget/display coords to draw a rectangle that aligns with pixels
-            left = self._image_to_widget_x(x0)
-            top = self._image_to_widget_y(y0)
-            right_ex = self._image_to_widget_x(x1 + 1)
-            bottom_ex = self._image_to_widget_y(y1 + 1)
-            w = max(1, right_ex - left)
-            h = max(1, bottom_ex - top)
-            self.selection_rect = QRect(left, top, w, h)
-            self.update()
+            # move existing selection
+            if (
+                getattr(self, "_moving", False)
+                and self._move_start_img is not None
+                and self._move_orig_img_rect is not None
+            ):
+                cur_img = self._widget_to_image_point(cur_pt)
+                if cur_img is None:
+                    return
+                dx = cur_img[0] - self._move_start_img[0]
+                dy = cur_img[1] - self._move_start_img[1]
+                # compute new image rect
+                orig = self._move_orig_img_rect
+                if orig is None:
+                    return
+                new_x = max(0, min(orig.x() + dx, self._qimage.width() - orig.width()))
+                new_y = max(0, min(orig.y() + dy, self._qimage.height() - orig.height()))
+                # convert back to widget coords
+                left = self._image_to_widget_x(new_x)
+                top = self._image_to_widget_y(new_y)
+                right_ex = self._image_to_widget_x(new_x + orig.width())
+                bottom_ex = self._image_to_widget_y(new_y + orig.height())
+                w = max(1, right_ex - left)
+                h = max(1, bottom_ex - top)
+                self.selection_rect = QRect(left, top, w, h)
+                self.update()
+                # live-update viewer about selection change while dragging
+                if self.viewer and self.selection_rect and not self.selection_rect.isNull():
+                    try:
+                        self.viewer.on_selection_changed(self.selection_rect)
+                    except Exception:
+                        pass
+            else:
+                # creating new selection
+                cur_img = self._widget_to_image_point(cur_pt)
+                start_img = getattr(self, "_start_img", None)
+                if start_img is None or cur_img is None:
+                    return
+                # integer image pixel coords
+                x0 = min(start_img[0], cur_img[0])
+                x1 = max(start_img[0], cur_img[0])
+                y0 = min(start_img[1], cur_img[1])
+                y1 = max(start_img[1], cur_img[1])
+                # map back to widget/display coords to draw a rectangle that aligns with pixels
+                left = self._image_to_widget_x(x0)
+                top = self._image_to_widget_y(y0)
+                right_ex = self._image_to_widget_x(x1 + 1)
+                bottom_ex = self._image_to_widget_y(y1 + 1)
+                w = max(1, right_ex - left)
+                h = max(1, bottom_ex - top)
+                self.selection_rect = QRect(left, top, w, h)
+                self.update()
+                # live-update viewer about selection change while dragging
+                if self.viewer and self.selection_rect and not self.selection_rect.isNull():
+                    try:
+                        self.viewer.on_selection_changed(self.selection_rect)
+                    except Exception:
+                        pass
 
         if hasattr(self.parent(), "on_mouse_move"):
             if self.showing:
@@ -82,9 +138,11 @@ class ImageLabel(QLabel):
                 self.parent().on_mouse_move(ev.position().toPoint())
 
     def mouseReleaseEvent(self, ev):
-        if ev.button() == Qt.LeftButton and self.showing:
+        if not self.showing:
+            return
+        # Left button release: finalize creation
+        if ev.button() == Qt.LeftButton:
             self.dragging = False
-            # finalize selection snapped to image pixels
             end_img = self._widget_to_image_point(ev.position().toPoint())
             start_img = getattr(self, "_start_img", None)
             if start_img is not None and end_img is not None:
@@ -99,6 +157,17 @@ class ImageLabel(QLabel):
                 w = max(1, right_ex - left)
                 h = max(1, bottom_ex - top)
                 self.selection_rect = QRect(left, top, w, h)
+            self.update()
+            if self.viewer and self.selection_rect and not self.selection_rect.isNull():
+                self.viewer.on_selection_changed(self.selection_rect)
+        # Right button release: finish moving
+        elif ev.button() == Qt.RightButton:
+            self.dragging = False
+            if getattr(self, "_moving", False):
+                # moving finished
+                self._moving = False
+                self._move_start_img = None
+                self._move_orig_img_rect = None
             self.update()
             if self.viewer and self.selection_rect and not self.selection_rect.isNull():
                 self.viewer.on_selection_changed(self.selection_rect)

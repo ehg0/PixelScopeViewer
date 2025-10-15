@@ -278,6 +278,8 @@ class ImageViewer(QMainWindow):
             self.status_index.setText("")
             # still update scale display
             self.status_scale.setText(f"Scale: {self.scale:.2f}x")
+            # clear shift when no image
+            self.status_shift.setText("")
             return
         p = self.images[self.current_index]["path"]
         self.status_filename.setText(p)
@@ -287,6 +289,13 @@ class ImageViewer(QMainWindow):
             self.status_scale.setText(f"Scale: {self.scale:.2f}x")
         except Exception:
             self.status_scale.setText("")
+        # display current bit shift for the current image
+        try:
+            img_info = self.images[self.current_index]
+            shift = img_info.get("bit_shift", 0)
+            self.status_shift.setText(f"Shift: {shift:+d}")
+        except Exception:
+            self.status_shift.setText("")
 
     def update_selection_status(self, rect=None):
         if rect is None or rect.isNull():

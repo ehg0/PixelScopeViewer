@@ -10,7 +10,8 @@ class ImageLabel(QLabel):
         self.viewer = viewer
         self.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         self.setMouseTracking(True)
-        self._pixmap = QPixmap()
+        # keep original pixmap (unscaled) and apply scale in paintEvent
+        self._orig_pixmap = QPixmap()
         self.scale = 1.0
         self.selection_rect: Optional[QRect] = None
         self.dragging = False
@@ -21,26 +22,27 @@ class ImageLabel(QLabel):
         self.start_point = QPoint()
 
     def set_qimage(self, qimg, scale: float = 1.0):
-        self.scale = scale
+        # store original pixmap and set widget size according to scale
         self._qimage = qimg
+        self.scale = scale
         if qimg.isNull():
-            self._pixmap = QPixmap()
-            self.setPixmap(self._pixmap)
+            self._orig_pixmap = QPixmap()
+            self.setFixedSize(0, 0)
             self.showing = False
             return
-        pix = QPixmap.fromImage(qimg)
-        if scale != 1.0:
-            pix = pix.scaled(int(pix.width() * scale), int(pix.height() * scale), Qt.KeepAspectRatio)
-        self._pixmap = pix
-        self.setPixmap(self._pixmap)
-        self.adjustSize()
+        self._orig_pixmap = QPixmap.fromImage(qimg)
+        # compute displayed size using scale (KeepAspectRatio handled by caller)
+        disp_w = int(self._orig_pixmap.width() * self.scale)
+        disp_h = int(self._orig_pixmap.height() * self.scale)
+        # set widget size so QScrollArea can provide scrollbars
+        self.setFixedSize(max(1, disp_w), max(1, disp_h))
         self.showing = True
         self.selection_rect = None
         self.update()
 
     def clear(self):
-        self._pixmap = QPixmap()
-        self.setPixmap(self._pixmap)
+        self._orig_pixmap = QPixmap()
+        self.setFixedSize(0, 0)
         self.showing = False
         self.selection_rect = None
         self.update()
@@ -128,11 +130,12 @@ class ImageLabel(QLabel):
                         pass
 
         if hasattr(self.parent(), "on_mouse_move"):
-            if self.showing:
+            if self.showing and not self._orig_pixmap.isNull():
                 # send clamped point in displayed-image pixel coords
-                w, h = self._pixmap.width(), self._pixmap.height()
+                disp_w = int(self._orig_pixmap.width() * self.scale)
+                disp_h = int(self._orig_pixmap.height() * self.scale)
                 p = ev.position().toPoint()
-                p = QPoint(max(0, min(p.x(), max(0, w - 1))), max(0, min(p.y(), max(0, h - 1))))
+                p = QPoint(max(0, min(p.x(), max(0, disp_w - 1))), max(0, min(p.y(), max(0, disp_h - 1))))
                 self.parent().on_mouse_move(p)
             else:
                 self.parent().on_mouse_move(ev.position().toPoint())
@@ -173,9 +176,17 @@ class ImageLabel(QLabel):
                 self.viewer.on_selection_changed(self.selection_rect)
 
     def paintEvent(self, event):
-        super().paintEvent(event)
+        # draw image scaled using painter.scale to avoid creating large scaled pixmaps
+        painter = QPainter(self)
+        if not self._orig_pixmap.isNull():
+            painter.save()
+            # scale the painter so original pixmap is drawn at desired zoom
+            painter.scale(self.scale, self.scale)
+            painter.drawPixmap(0, 0, self._orig_pixmap)
+            painter.restore()
+
+        # draw selection rectangle on top (in widget coordinates)
         if self.selection_rect and not self.selection_rect.isNull():
-            painter = QPainter(self)
             pen = QPen(QColor(0, 0, 255), 1, Qt.DashLine)
             painter.setPen(pen)
             painter.drawRect(self.selection_rect)
@@ -191,8 +202,9 @@ class ImageLabel(QLabel):
         if not hasattr(self, "_qimage") or self._qimage is None or self._qimage.isNull():
             return None
 
-        disp_w = self._pixmap.width()
-        disp_h = self._pixmap.height()
+        # displayed dimensions are original pixmap dimensions multiplied by scale
+        disp_w = int(self._orig_pixmap.width() * self.scale)
+        disp_h = int(self._orig_pixmap.height() * self.scale)
         src_w = self._qimage.width()
         src_h = self._qimage.height()
         if disp_w == 0 or disp_h == 0 or src_w == 0 or src_h == 0:
@@ -223,11 +235,8 @@ class ImageLabel(QLabel):
         """Return displayed pixels per source image pixel (fx, fy assumed equal since KeepAspectRatio used)."""
         if not hasattr(self, "_qimage") or self._qimage is None or self._qimage.isNull():
             return None
-        src_w = self._qimage.width()
-        disp_w = self._pixmap.width()
-        if src_w <= 0:
-            return None
-        return float(disp_w) / float(src_w)
+        # we maintain scale directly
+        return float(self.scale) if self.scale and self.scale > 0 else None
 
     def _widget_to_image_point(self, pt: QPoint):
         """Map a QPoint in widget/display coords to integer image pixel coords (x,y).
@@ -255,6 +264,7 @@ class ImageLabel(QLabel):
     def set_selection_full(self):
         if not self.showing:
             return
-        w, h = self._pixmap.width(), self._pixmap.height()
-        self.selection_rect = QRect(0, 0, w, h)
+        disp_w = int(self._orig_pixmap.width() * self.scale) if not self._orig_pixmap.isNull() else 0
+        disp_h = int(self._orig_pixmap.height() * self.scale) if not self._orig_pixmap.isNull() else 0
+        self.selection_rect = QRect(0, 0, max(1, disp_w), max(1, disp_h))
         self.update()

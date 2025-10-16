@@ -104,7 +104,9 @@ class ImageViewer(QMainWindow):
         if self.current_index is None:
             QMessageBox.information(self, "解析", "画像が選択されていません。")
             return
-        arr = self.images[self.current_index]["array"]
+        # Analysis should operate on the base (unshifted) array when available
+        img = self.images[self.current_index]
+        arr = img.get("base_array", img.get("array"))
         sel = self.current_selection_rect
         # pass image array and selection (in image coords)
         dlg = AnalysisDialog(self, image_array=arr, image_rect=sel)
@@ -287,6 +289,19 @@ class ImageViewer(QMainWindow):
             int(rect.height() / s),
         )
         self.update_selection_status(rect)
+        # notify any open modeless AnalysisDialogs so they can refresh for new selection
+        if self._analysis_dialogs:
+            # prefer base_array for analysis updates when available
+            img = None
+            if self.current_index is not None and 0 <= self.current_index < len(self.images):
+                img = self.images[self.current_index]
+            arr = img.get("base_array", img.get("array")) if img is not None else None
+            for dlg in list(self._analysis_dialogs):
+                try:
+                    dlg.set_image_and_rect(arr, self.current_selection_rect)
+                except Exception:
+                    # ignore dialog-specific errors and continue notifying others
+                    pass
 
     def copy_selection_to_clipboard(self):
         sel = self.current_selection_rect
@@ -309,7 +324,9 @@ class ImageViewer(QMainWindow):
         if self.current_index is None or not self.images:
             self.status_pixel.setText("")
             return
-        arr = self.images[self.current_index]["array"]
+        img = self.images[self.current_index]
+        # prefer base_array (unshifted) for status display when available
+        arr = img.get("base_array", img.get("array"))
         s = self.scale if self.scale > 0 else 1.0
         ix = int(pos.x() / s)
         iy = int(pos.y() / s)

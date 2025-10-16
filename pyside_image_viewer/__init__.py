@@ -1,16 +1,54 @@
-"""PySide6 Image Viewer - A simple image viewer with analysis tools.
+"""PySide6 Image Viewer - A scientific image viewer with analysis tools.
 
-Main components:
-- ui.viewer: Main window with image display and navigation
-- ui.dialogs: Help, Diff, and Analysis dialogs
-- ui.widgets: Custom Qt widgets (ImageLabel)
-- core.image_io: Image loading and conversion utilities
+This package provides a Qt-based image viewer optimized for scientific
+and technical images with the following features:
+
+Core Features:
+    - Multi-image loading and navigation
+    - Pixel-aligned selection with keyboard editing
+    - Zoom in/out with smooth scaling
+    - Bit-shift operations for raw/scientific data visualization
+
+Analysis Tools:
+    - Histogram with linear/logarithmic scales
+    - Line profiles (horizontal/vertical, absolute/relative)
+    - Channel selection for multi-channel images
+    - Difference image creation
+    - CSV export of analysis data
+
+UI Components:
+    - Main viewer window (ImageViewer)
+    - Analysis dialog with tabbed interface (AnalysisDialog)
+    - Help dialog with keyboard shortcuts (HelpDialog)
+    - Difference dialog (DiffDialog)
+
+Image I/O:
+    - PIL-based image loading
+    - NumPy array to QImage conversion
+    - Support for common formats: PNG, JPEG, TIFF, BMP
+
+Package Structure:
+    - core/: UI-independent utilities (image I/O)
+    - ui/: UI components (viewer, widgets, dialogs)
+    - ui/dialogs/: Dialog windows
+    - ui/dialogs/analysis/: Analysis dialog and controls
+
+Quick Start:
+    from pyside_image_viewer import main
+    main()
+
+Dependencies:
+    - PySide6: Qt for Python
+    - numpy: Array operations
+    - Pillow: Image loading
+    - matplotlib (optional): For histogram and profile plots
 """
 
 from .main import main
 from .ui import ImageViewer, HelpDialog, DiffDialog, AnalysisDialog
 from .core import numpy_to_qimage, pil_to_numpy, is_image_file
 
+__version__ = "2.0.0"
 __all__ = [
     "main",
     "ImageViewer",

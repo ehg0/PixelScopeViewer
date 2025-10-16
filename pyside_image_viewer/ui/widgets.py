@@ -1,16 +1,29 @@
+"""Custom Qt widgets for image display and interaction.
+
+This module provides:
+- ImageLabel: QLabel subclass with pixel-aligned selection and drag support
+"""
+
 from typing import Optional
 from PySide6.QtWidgets import QLabel
-from PySide6.QtGui import QPixmap, QPainter, QPen, QColor
+from PySide6.QtGui import QPixmap, QPainter, QPen, QColor, QImage
 from PySide6.QtCore import Qt, QRect, QPoint
 
 
 class ImageLabel(QLabel):
-    """Simple image display widget with selection support.
+    """Image display widget with pixel-aligned selection and drag support.
 
-    Behavior restored to stable version:
-    - Left-drag: create selection (live feedback while dragging).
-    - Right-drag: move existing selection (press inside selection to start).
-    - No resize handles.
+    Features:
+    - Left-drag: Create new selection rectangle (pixel-aligned)
+    - Right-drag: Move existing selection (press inside selection to start)
+
+    The selection is always snapped to pixel boundaries based on the current
+    zoom level. Visual feedback is provided during dragging.
+
+    Attributes:
+        viewer: Parent ImageViewer instance
+        selection_rect: Current selection rectangle in image coordinates (QRect)
+        scale: Current zoom scale factor
     """
 
     def __init__(self, viewer, parent=None):
@@ -30,7 +43,16 @@ class ImageLabel(QLabel):
         self.start_point = QPoint()
         self._start_img = None
 
-    def set_qimage(self, qimg, scale: float = 1.0):
+    def set_image(self, qimg: QImage, scale: float = 1.0):
+        """Set the image to display with optional scaling.
+
+        Args:
+            qimg: QImage to display
+            scale: Zoom scale factor (1.0 = original size)
+
+        The selection rectangle is preserved across image/scale changes
+        when possible, maintaining its position in image coordinates.
+        """
         # preserve previous selection in image coords (if any)
         prev_sel_img = None
         if (
@@ -70,6 +92,7 @@ class ImageLabel(QLabel):
         self.update()
 
     def clear(self):
+        """Clear the displayed image and selection."""
         self._orig_pixmap = QPixmap()
         self.setFixedSize(0, 0)
         self.showing = False
@@ -209,6 +232,11 @@ class ImageLabel(QLabel):
             painter.drawRect(self.selection_rect)
 
     def get_selection_in_image_coords(self):
+        """Get the current selection rectangle in image coordinates.
+
+        Returns:
+            QRect in image pixel coordinates, or None if no selection.
+        """
         if not self.selection_rect or self.selection_rect.isNull():
             return None
         if not hasattr(self, "_qimage") or self._qimage is None or self._qimage.isNull():

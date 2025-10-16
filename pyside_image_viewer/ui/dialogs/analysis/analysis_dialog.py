@@ -1,4 +1,18 @@
-"""Analysis dialog with tabbed interface for image analysis."""
+"""Analysis dialog with tabbed interface for image analysis.
+
+This module provides the main AnalysisDialog which displays:
+- Info tab: Selection size and position
+- Histogram tab: Intensity histogram with logarithmic scale toggle
+- Profile tab: Line profile (horizontal/vertical) with absolute/relative modes
+
+The dialog supports matplotlib-based interactive plots with double-click
+gestures for toggling plot modes. If matplotlib is not available, the
+histogram and profile tabs will show empty placeholders.
+
+Dependencies:
+    - matplotlib (optional): For histogram and profile plotting
+    - numpy: For data processing
+"""
 
 from typing import Optional
 import numpy as np
@@ -32,14 +46,42 @@ from .controls import ChannelsDialog, RangesDialog
 class AnalysisDialog(QDialog):
     """Main analysis dialog with tabbed interface for Info, Histogram, and Profile.
 
+    This dialog provides three tabs for analyzing image selections:
+
+    1. Info Tab:
+       - Displays selection dimensions and position
+
+    2. Histogram Tab:
+       - Shows intensity distribution across all channels
+       - Left double-click: Toggle linear/logarithmic Y scale
+       - Customizable via "Channels..." and "Axis ranges..." buttons
+       - "Copy data" exports histogram as CSV to clipboard
+
+    3. Profile Tab:
+       - Shows averaged intensity profile along a direction
+       - Left double-click: Toggle horizontal/vertical orientation
+       - Right double-click: Toggle relative/absolute X axis
+       - Customizable via "Channels..." and "Axis ranges..." buttons
+       - "Copy data" exports profile as CSV to clipboard
+
+    The dialog is modeless and updates automatically when the parent
+    viewer's selection changes (via set_image_and_rect).
+
+    Args:
+        parent: Parent widget (typically ImageViewer)
+        image_array: NumPy array of the image or selection
+        image_rect: QRect defining the selection in image coordinates
+
     Usage:
         dlg = AnalysisDialog(parent, image_array=arr, image_rect=rect)
-        dlg.show()  # or dlg.exec() for modal
+        dlg.show()  # Modeless
 
-    Double-click interactions on plots:
-        - Histogram: Left double-click toggles linear/log Y scale
-        - Profile: Left double-click toggles horizontal/vertical orientation
-        - Profile: Right double-click toggles relative/absolute X axis
+        # Update when selection changes:
+        dlg.set_image_and_rect(new_array, new_rect)
+
+    Note:
+        Requires matplotlib for histogram and profile plots. If matplotlib
+        is not available, those tabs will be empty.
     """
 
     def __init__(self, parent=None, image_array: Optional[np.ndarray] = None, image_rect: Optional[QRect] = None):

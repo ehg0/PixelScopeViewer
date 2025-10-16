@@ -1,3 +1,18 @@
+"""Main image viewer application window.
+
+This module provides the ImageViewer class, which is the main window
+for displaying and navigating images with analysis tools.
+
+Features:
+- Multi-image loading and navigation
+- Zoom in/out with keyboard shortcuts
+- Pixel-aligned selection with keyboard editing
+- Bit-shift operations for raw/scientific images
+- Analysis dialogs (histogram, profile, info)
+- Difference image creation
+- Status bar showing pixel values and coordinates
+"""
+
 import os
 from typing import Optional
 import numpy as np
@@ -21,6 +36,35 @@ from .dialogs import HelpDialog, DiffDialog, AnalysisDialog
 
 
 class ImageViewer(QMainWindow):
+    """Main application window for image viewing and analysis.
+
+    The ImageViewer provides a complete interface for:
+    - Loading and displaying images (single or multiple files)
+    - Navigating between images with keyboard shortcuts (n/b)
+    - Zooming with +/- keys
+    - Creating and editing pixel-aligned selections
+    - Bit-shifting for viewing raw/scientific data (</> keys)
+    - Analysis tools (histogram, profile plots)
+    - Creating difference images
+
+    Keyboard Shortcuts:
+        - Ctrl+A: Select entire image
+        - Ctrl+C: Copy selection to clipboard
+        - n: Next image
+        - b: Previous image
+        - +: Zoom in
+        - -: Zoom out
+        - <: Left bit shift (darker)
+        - >: Right bit shift (brighter)
+        - ESC: Clear selection
+
+    Attributes:
+        images: List of loaded image dictionaries with keys:
+                'path', 'array', 'base_array', 'bit_shift'
+        current_index: Index of currently displayed image
+        scale: Current zoom scale factor
+    """
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle("PySide6 Image Viewer")
@@ -220,8 +264,13 @@ class ImageViewer(QMainWindow):
             self.update_selection_status(rect)
 
     def display_image(self, arr):
+        """Display an image array in the viewer.
+
+        Args:
+            arr: NumPy array of the image to display
+        """
         qimg = numpy_to_qimage(arr)
-        self.image_label.set_qimage(qimg, self.scale)
+        self.image_label.set_image(qimg, self.scale)
         self.update_status()
 
     def next_image(self):

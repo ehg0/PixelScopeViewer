@@ -4,7 +4,23 @@ from PySide6.QtWidgets import QDialog, QTextEdit, QVBoxLayout
 
 
 class HelpDialog(QDialog):
-    """Dialog showing keyboard shortcuts and usage help."""
+    """Help dialog showing keyboard shortcuts.
+
+    This module provides a simple dialog displaying all available
+    keyboard shortcuts for the image viewer.
+    """
+
+
+from PySide6.QtWidgets import QDialog, QTextEdit, QVBoxLayout
+
+
+class HelpDialog(QDialog):
+    """Dialog showing keyboard shortcuts and usage help.
+
+    Displays a read-only text widget with all available keyboard
+    shortcuts in Japanese. Modal dialog that closes when user
+    clicks outside or presses ESC.
+    """
 
     def __init__(self, parent=None):
         super().__init__(parent)

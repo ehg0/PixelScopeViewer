@@ -1,4 +1,9 @@
-"""Helper dialogs for analysis (channel selection and axis ranges)."""
+"""Helper dialogs for analysis customization.
+
+This module provides utility dialogs for:
+- ChannelsDialog: Select which color channels to display in plots
+- RangesDialog: Set manual axis ranges for plots
+"""
 
 from typing import Optional, Tuple
 from PySide6.QtWidgets import (
@@ -12,7 +17,18 @@ from PySide6.QtWidgets import (
 
 
 class ChannelsDialog(QDialog):
-    """Dialog for selecting which channels to display in plots."""
+    """Dialog for selecting which channels to display in plots.
+
+    Args:
+        parent: Parent widget
+        nch: Number of channels in the image
+        checks: Initial checkbox states (list of bool)
+
+    Usage:
+        dlg = ChannelsDialog(parent, nch=3, checks=[True, True, False])
+        if dlg.exec() == QDialog.Accepted:
+            selected = dlg.results()  # Returns list of bool
+    """
 
     def __init__(self, parent, nch: int, checks: Optional[list] = None):
         super().__init__(parent)
@@ -35,7 +51,20 @@ class ChannelsDialog(QDialog):
 
 
 class RangesDialog(QDialog):
-    """Dialog for manually setting axis ranges in plots."""
+    """Dialog for manually setting axis ranges in plots.
+
+    Allows user to specify custom min/max values for X and Y axes.
+    Empty fields are treated as None (auto range).
+
+    Args:
+        parent: Parent widget
+        xmin, xmax, ymin, ymax: Initial range values (None for auto)
+
+    Usage:
+        dlg = RangesDialog(parent, xmin=0, xmax=100, ymin=None, ymax=255)
+        if dlg.exec() == QDialog.Accepted:
+            xmin, xmax, ymin, ymax = dlg.results()
+    """
 
     def __init__(self, parent, xmin, xmax, ymin, ymax):
         super().__init__(parent)

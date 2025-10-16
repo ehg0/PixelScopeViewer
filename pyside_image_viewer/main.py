@@ -1,9 +1,30 @@
+"""Application entry point.
+
+This module provides the main() function that initializes the Qt application
+and displays the ImageViewer window.
+
+Usage:
+    python -m pyside_image_viewer.main
+
+    # Or from Python:
+    from pyside_image_viewer.main import main
+    main()
+"""
+
 import sys
 from PySide6.QtWidgets import QApplication
 from .ui.viewer import ImageViewer
 
 
 def main(argv=None):
+    """Run the image viewer application.
+
+    Args:
+        argv: Command-line arguments (defaults to sys.argv)
+
+    Returns:
+        Exit code from QApplication.exec()
+    """
     if argv is None:
         argv = sys.argv
     app = QApplication(argv)

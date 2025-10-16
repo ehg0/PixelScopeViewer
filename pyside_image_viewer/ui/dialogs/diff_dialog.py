@@ -1,4 +1,8 @@
-"""Diff dialog for creating difference images."""
+"""Diff dialog for creating difference images.
+
+This module provides a dialog for selecting two images from the
+loaded image list and creating a difference image with configurable offset.
+"""
 
 from typing import Optional
 import numpy as np
@@ -12,6 +16,28 @@ from PySide6.QtWidgets import (
     QPushButton,
     QMessageBox,
 )
+
+
+class DiffDialog(QDialog):
+    """Dialog for creating difference images between two images.
+
+    Allows user to select two images from the loaded list and specify
+    an offset value for the difference calculation. The result is:
+    diff = (imageA - imageB) + offset
+
+    This is useful for comparing similar images or detecting changes.
+
+    Args:
+        parent: Parent widget
+        image_list: List of image info dictionaries (with 'path' key)
+        default_offset: Default offset value (default: 256 for mid-gray)
+
+    Usage:
+        dlg = DiffDialog(parent, image_list)
+        if dlg.exec() == QDialog.Accepted:
+            a_idx, b_idx, offset = dlg.get_result()
+            # Create difference image...
+    """
 
 
 class DiffDialog(QDialog):

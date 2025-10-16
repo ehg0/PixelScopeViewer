@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QFileDialog,
     QMessageBox,
+    QDialog,
 )
 from PySide6.QtGui import QPixmap, QPainter, QIcon, QGuiApplication, QAction, QActionGroup
 from PySide6.QtCore import Qt, QRect, QEvent
@@ -18,6 +19,7 @@ from ..io.image_io import numpy_to_qimage, pil_to_numpy, is_image_file
 from .widgets import ImageLabel
 from .dialogs import HelpDialog
 from .analysis import AnalysisDialog
+from .diff_dialog import DiffDialog
 
 
 class ImageViewer(QMainWindow):
@@ -63,6 +65,8 @@ class ImageViewer(QMainWindow):
 
         self.create_menus()
         self.setAcceptDrops(True)
+        # keep references to modeless dialogs so they don't get GC'd
+        self._analysis_dialogs = []
 
     def create_menus(self):
         menubar = self.menuBar()
@@ -104,7 +108,11 @@ class ImageViewer(QMainWindow):
         sel = self.current_selection_rect
         # pass image array and selection (in image coords)
         dlg = AnalysisDialog(self, image_array=arr, image_rect=sel)
-        dlg.exec()
+        # show modeless so main window remains usable while analysis is open
+        dlg.show()
+        # keep a reference until the dialog is closed
+        self._analysis_dialogs.append(dlg)
+        dlg.finished.connect(lambda _: self._analysis_dialogs.remove(dlg))
 
     def open_files(self):
         files, _ = QFileDialog.getOpenFileNames(self, "画像を開く", "", "Images (*.png *.jpg *.tif *.bmp *.jpeg)")
@@ -221,22 +229,27 @@ class ImageViewer(QMainWindow):
         self.show_current_image()
 
     def show_diff_dialog(self):
-        # Simple placeholder: open a dialog to pick two images and compute diff.
-        # Full dialog UI will be implemented later; for now, if there are >=2 images,
-        # compute a simple diff with default offset and add it to images list.
         if len(self.images) < 2:
             QMessageBox.information(self, "差分", "比較する画像が2枚必要です。")
             return
-        # pick first two images for now
-        a = self.images[0]["array"].astype(int)
-        b = self.images[1]["array"].astype(int)
-        # default offset 256: subtract and add offset to center
-        offset = 256
-        diff = (a - b + offset).clip(0, 255).astype("uint8")
-        img_data = {"path": "diff:0-1", "array": diff, "base_array": diff.copy(), "bit_shift": 0}
+        dlg = DiffDialog(self, image_list=self.images, default_offset=256)
+        if dlg.exec() != QDialog.Accepted:
+            return
+        a_idx, b_idx, offset = dlg.get_result()
+        if a_idx is None or b_idx is None:
+            return
+        a = self.images[a_idx]["array"].astype(int)
+        b = self.images[b_idx]["array"].astype(int)
+        # compute diff with offset and clip
+        try:
+            diff = (a - b + int(offset)).clip(0, 255).astype("uint8")
+        except Exception:
+            QMessageBox.information(self, "差分", "差分の作成に失敗しました。画像サイズや型を確認してください。")
+            return
+        img_data = {"path": f"diff:{a_idx}-{b_idx}", "array": diff, "base_array": diff.copy(), "bit_shift": 0}
         self.images.append(img_data)
-        if self.current_index is None:
-            self.current_index = len(self.images) - 1
+        # switch to the new image
+        self.current_index = len(self.images) - 1
         self.show_current_image()
 
     def set_zoom(self, scale: float):

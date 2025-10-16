@@ -94,27 +94,30 @@ class ImageViewer(QMainWindow):
         view_menu.addAction(QAction("差分画像表示", self, triggered=lambda: self.show_diff_dialog()))
 
         analysis = menubar.addMenu("解析")
-        analysis.addAction(QAction("プロファイル", self, triggered=lambda: self.show_analysis_dialog()))
-        analysis.addAction(QAction("ヒストグラム", self, triggered=lambda: self.show_analysis_dialog()))
+        analysis.addAction(QAction("プロファイル", self, triggered=lambda: self.show_analysis_dialog(tab='Profile')))
+        analysis.addAction(QAction("ヒストグラム", self, triggered=lambda: self.show_analysis_dialog(tab='Histogram')))
         help_menu = menubar.addMenu("ヘルプ")
         help_menu.addAction(QAction("キーボードショートカット", self, triggered=self.help_dialog.show))
 
-    def show_analysis_dialog(self):
+    def show_analysis_dialog(self, tab: Optional[str] = None):
         # open analysis dialog for current image and current selection
         if self.current_index is None:
             QMessageBox.information(self, "解析", "画像が選択されていません。")
             return
-        # Analysis should operate on the base (unshifted) array when available
         img = self.images[self.current_index]
         arr = img.get("base_array", img.get("array"))
         sel = self.current_selection_rect
-        # pass image array and selection (in image coords)
         dlg = AnalysisDialog(self, image_array=arr, image_rect=sel)
-        # show modeless so main window remains usable while analysis is open
         dlg.show()
         # keep a reference until the dialog is closed
         self._analysis_dialogs.append(dlg)
-        dlg.finished.connect(lambda _: self._analysis_dialogs.remove(dlg))
+        dlg.finished.connect(lambda _: self._analysis_dialogs.remove(dlg) if dlg in self._analysis_dialogs else None)
+        # if a tab was requested, set it
+        if tab is not None:
+            try:
+                dlg.set_current_tab(tab)
+            except Exception:
+                pass
 
     def open_files(self):
         files, _ = QFileDialog.getOpenFileNames(self, "画像を開く", "", "Images (*.png *.jpg *.tif *.bmp *.jpeg)")
@@ -157,7 +160,7 @@ class ImageViewer(QMainWindow):
         for i, info in enumerate(self.images):
             act = QAction(info["path"], self)
             act.setCheckable(True)
-            act.triggered.connect(self.make_show_callback(i))
+            # set checked state/icons first to avoid emitting triggered during setup
             if i == self.current_index:
                 act.setChecked(True)
                 pix = QPixmap(12, 12)
@@ -167,13 +170,21 @@ class ImageViewer(QMainWindow):
                 p.drawEllipse(2, 2, 8, 8)
                 p.end()
                 act.setIcon(QIcon(pix))
+            # connect after initial state is configured
+            act.triggered.connect(self.make_show_callback(i))
             group.addAction(act)
             self.img_menu.addAction(act)
 
     def make_show_callback(self, idx):
-        def fn():
+        def fn(checked=None):
+            # QAction.triggered may send a checked argument; accept it but ignore
             self.current_index = idx
-            self.show_current_image()
+            # guard: ensure index still valid
+            if 0 <= idx < len(self.images):
+                self.show_current_image()
+            else:
+                # if images changed, refresh menu
+                self.update_image_list_menu()
 
         return fn
 
@@ -185,6 +196,18 @@ class ImageViewer(QMainWindow):
         arr = self.images[self.current_index]["array"]
         self.display_image(arr)
         self.update_image_list_menu()
+
+        # notify open analysis dialogs about new image
+        try:
+            img = self.images[self.current_index]
+            arr_for_analysis = img.get("base_array", img.get("array"))
+            for dlg in list(self._analysis_dialogs):
+                try:
+                    dlg.set_image_and_rect(arr_for_analysis, self.current_selection_rect)
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
         if self.current_selection_rect:
             s = self.scale
@@ -228,7 +251,22 @@ class ImageViewer(QMainWindow):
     def close_all_images(self):
         self.images.clear()
         self.current_index = None
-        self.show_current_image()
+        # update UI and image menu
+        try:
+            self.show_current_image()
+        except Exception:
+            pass
+        # ensure image menu is cleared
+        try:
+            self.update_image_list_menu()
+        except Exception:
+            pass
+        # notify analysis dialogs that there's no image now
+        for dlg in list(self._analysis_dialogs):
+            try:
+                dlg.set_image_and_rect(None, None)
+            except Exception:
+                pass
 
     def show_diff_dialog(self):
         if len(self.images) < 2:

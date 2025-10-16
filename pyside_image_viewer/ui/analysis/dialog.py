@@ -51,6 +51,10 @@ class AnalysisDialog(QDialog):
         self.last_hist_data = {}
         self.last_profile_data = {}
 
+        # For time-based double-click detection (fallback when event.dblclick not available)
+        self._last_click_time = {}
+        self._double_click_interval = 0.4  # seconds
+
         self._build_ui()
 
         try:
@@ -119,14 +123,6 @@ class AnalysisDialog(QDialog):
         self.prof_ranges_btn = QPushButton("Axis ranges...")
         self.prof_ranges_btn.clicked.connect(self._on_ranges)
         pv.addWidget(self.prof_ranges_btn)
-        # Toggle orientation button (H/V)
-        self.prof_orientation_btn = QPushButton("Toggle H/V")
-        self.prof_orientation_btn.clicked.connect(self._toggle_profile_orientation)
-        pv.addWidget(self.prof_orientation_btn)
-        # Toggle x-mode button (Rel/Abs)
-        self.prof_xmode_btn = QPushButton("Toggle Rel/Abs")
-        self.prof_xmode_btn.clicked.connect(self._toggle_x_mode)
-        pv.addWidget(self.prof_xmode_btn)
         self.prof_copy_btn = QPushButton("Copy data")
         self.prof_copy_btn.clicked.connect(self.copy_profile_to_clipboard)
         pv.addWidget(self.prof_copy_btn)
@@ -177,16 +173,6 @@ class AnalysisDialog(QDialog):
         if dlg.exec() == QDialog.Accepted:
             self.manual_ranges = dlg.results()
             self.update_contents()
-
-    def _toggle_profile_orientation(self):
-        """Toggle profile orientation between horizontal and vertical."""
-        self.profile_orientation = "v" if self.profile_orientation == "h" else "h"
-        self.update_contents()
-
-    def _toggle_x_mode(self):
-        """Toggle x-axis mode between relative and absolute."""
-        self.x_mode = "absolute" if self.x_mode == "relative" else "relative"
-        self.update_contents()
 
     def update_contents(self):
         arr = self.image_array
@@ -366,10 +352,33 @@ class AnalysisDialog(QDialog):
             self.update_contents()
 
     def _on_profile_click(self, event):
-        if not getattr(event, "dblclick", False):
-            return
-        if getattr(event, "button", None) == 1:
-            self.profile_orientation = "v" if self.profile_orientation == "h" else "h"
-        elif getattr(event, "button", None) == 3:
-            self.x_mode = "absolute" if self.x_mode == "relative" else "relative"
-        self.update_contents()
+        import time
+
+        # Try to get button from event
+        btn = getattr(event, "button", None)
+
+        # Check if matplotlib provides dblclick flag
+        is_dblclick = getattr(event, "dblclick", False)
+
+        # If no dblclick flag, use time-based detection
+        if not is_dblclick and btn is not None:
+            now = time.time()
+            last_time = self._last_click_time.get(btn, 0)
+
+            if now - last_time <= self._double_click_interval:
+                # This is a double-click
+                is_dblclick = True
+                self._last_click_time[btn] = 0  # Reset
+            else:
+                # First click, record time
+                self._last_click_time[btn] = now
+                return
+
+        # Handle double-click actions
+        if is_dblclick:
+            if btn == 1:  # Left double-click: toggle orientation
+                self.profile_orientation = "v" if self.profile_orientation == "h" else "h"
+                self.update_contents()
+            elif btn == 3:  # Right double-click: toggle x-mode
+                self.x_mode = "absolute" if self.x_mode == "relative" else "relative"
+                self.update_contents()

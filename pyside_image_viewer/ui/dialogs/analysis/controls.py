@@ -1,4 +1,4 @@
-"""Small control dialogs used by Analysis (channels, ranges)."""
+"""Helper dialogs for analysis (channel selection and axis ranges)."""
 
 from typing import Optional, Tuple
 from PySide6.QtWidgets import (
@@ -12,6 +12,8 @@ from PySide6.QtWidgets import (
 
 
 class ChannelsDialog(QDialog):
+    """Dialog for selecting which channels to display in plots."""
+
     def __init__(self, parent, nch: int, checks: Optional[list] = None):
         super().__init__(parent)
         self.setWindowTitle("Channels")
@@ -33,6 +35,8 @@ class ChannelsDialog(QDialog):
 
 
 class RangesDialog(QDialog):
+    """Dialog for manually setting axis ranges in plots."""
+
     def __init__(self, parent, xmin, xmax, ymin, ymax):
         super().__init__(parent)
         self.setWindowTitle("Axis ranges")

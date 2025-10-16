@@ -1,100 +1,47 @@
-"""Analysis dialog module (single clean implementation).
+"""Analysis dialog with tabbed interface for image analysis."""
 
-This file provides a compact, stable AnalysisDialog plus small helper
-dialogs (ChannelsDialog, RangesDialog). It is safe to import even when
-matplotlib is not available; plotting functionality is disabled then.
-"""
-
-from typing import Optional, Tuple
+from typing import Optional
 import numpy as np
 
+from PySide6.QtCore import QRect
 from PySide6.QtWidgets import (
     QDialog,
     QVBoxLayout,
     QHBoxLayout,
     QTabWidget,
-    QWidget,
-    QPushButton,
     QTextBrowser,
+    QPushButton,
     QDialogButtonBox,
+    QWidget,
     QMessageBox,
-    QCheckBox,
-    QFormLayout,
-    QLineEdit,
 )
 from PySide6.QtGui import QGuiApplication
-from PySide6.QtCore import QRect
 
 try:
-    from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
     from matplotlib.figure import Figure
+    from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
     from matplotlib.ticker import AutoMinorLocator
-except Exception:
-    FigureCanvas = None
+except ImportError:
     Figure = None
+    FigureCanvas = None
     AutoMinorLocator = None
 
-
-class ChannelsDialog(QDialog):
-    def __init__(self, parent, nch: int, checks: Optional[list] = None):
-        super().__init__(parent)
-        self.setWindowTitle("Channels")
-        self.setModal(True)
-        layout = QVBoxLayout(self)
-        self.checks: list[QCheckBox] = []
-        for i in range(nch):
-            cb = QCheckBox(f"C{i}")
-            cb.setChecked(checks[i] if checks and i < len(checks) else True)
-            layout.addWidget(cb)
-            self.checks.append(cb)
-        btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        btns.accepted.connect(self.accept)
-        btns.rejected.connect(self.reject)
-        layout.addWidget(btns)
-
-    def results(self) -> list[bool]:
-        return [cb.isChecked() for cb in self.checks]
-
-
-class RangesDialog(QDialog):
-    def __init__(self, parent, xmin, xmax, ymin, ymax):
-        super().__init__(parent)
-        self.setWindowTitle("Axis ranges")
-        self.setModal(True)
-        layout = QFormLayout(self)
-        self.xmin = QLineEdit()
-        self.xmin.setText("" if xmin is None else str(xmin))
-        self.xmax = QLineEdit()
-        self.xmax.setText("" if xmax is None else str(xmax))
-        self.ymin = QLineEdit()
-        self.ymin.setText("" if ymin is None else str(ymin))
-        self.ymax = QLineEdit()
-        self.ymax.setText("" if ymax is None else str(ymax))
-        layout.addRow("x min:", self.xmin)
-        layout.addRow("x max:", self.xmax)
-        layout.addRow("y min:", self.ymin)
-        layout.addRow("y max:", self.ymax)
-        btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        btns.accepted.connect(self.accept)
-        btns.rejected.connect(self.reject)
-        layout.addWidget(btns)
-
-    def _parse(self, txt: str) -> Optional[float]:
-        try:
-            return float(txt) if txt is not None and txt != "" else None
-        except Exception:
-            return None
-
-    def results(self) -> Tuple[Optional[float], Optional[float], Optional[float], Optional[float]]:
-        return (
-            self._parse(self.xmin.text()),
-            self._parse(self.xmax.text()),
-            self._parse(self.ymin.text()),
-            self._parse(self.ymax.text()),
-        )
+from .controls import ChannelsDialog, RangesDialog
 
 
 class AnalysisDialog(QDialog):
+    """Main analysis dialog with tabbed interface for Info, Histogram, and Profile.
+
+    Usage:
+        dlg = AnalysisDialog(parent, image_array=arr, image_rect=rect)
+        dlg.show()  # or dlg.exec() for modal
+
+    Double-click interactions on plots:
+        - Histogram: Left double-click toggles linear/log Y scale
+        - Profile: Left double-click toggles horizontal/vertical orientation
+        - Profile: Right double-click toggles relative/absolute X axis
+    """
+
     def __init__(self, parent=None, image_array: Optional[np.ndarray] = None, image_rect: Optional[QRect] = None):
         super().__init__(parent)
         self.setWindowTitle("Analysis")
@@ -110,6 +57,10 @@ class AnalysisDialog(QDialog):
         self.manual_ranges = (None, None, None, None)
         self.last_hist_data = {}
         self.last_profile_data = {}
+
+        # For time-based double-click detection (fallback when event.dblclick not available)
+        self._last_click_time = {}
+        self._double_click_interval = 0.4  # seconds
 
         self._build_ui()
 
@@ -192,9 +143,24 @@ class AnalysisDialog(QDialog):
         main.addWidget(box)
 
     def set_image_and_rect(self, image_array: Optional[np.ndarray], image_rect: Optional[QRect]):
+        """Update the dialog with new image data and/or selection rectangle."""
         self.image_array = image_array
         self.image_rect = image_rect
         self.update_contents()
+
+    def set_current_tab(self, tab):
+        """Set current tab by name ('Histogram','Profile','Info') or index."""
+        if tab is None:
+            return
+        if isinstance(tab, int):
+            if 0 <= tab < self.tabs.count():
+                self.tabs.setCurrentIndex(tab)
+            return
+        t = str(tab).lower()
+        for i in range(self.tabs.count()):
+            if self.tabs.tabText(i).lower().startswith(t):
+                self.tabs.setCurrentIndex(i)
+                return
 
     def _on_hist_channels(self):
         if self.image_array is None:
@@ -206,6 +172,7 @@ class AnalysisDialog(QDialog):
             self.update_contents()
 
     def _on_prof_channels(self):
+        # reuse histogram channels handler for profile
         self._on_hist_channels()
 
     def _on_ranges(self):
@@ -216,6 +183,7 @@ class AnalysisDialog(QDialog):
             self.update_contents()
 
     def update_contents(self):
+        """Refresh all tabs with current image data and settings."""
         arr = self.image_array
         if arr is None:
             self.info_browser.setPlainText("No data")
@@ -303,17 +271,30 @@ class AnalysisDialog(QDialog):
                 self.channel_checks = [True] * nch
             for c in range(nch):
                 prof = arr[:, :, c].mean(axis=0) if self.profile_orientation == "h" else arr[:, :, c].mean(axis=1)
-                xs2 = np.arange(prof.size)
+                if self.x_mode == "absolute" and self.image_rect is not None:
+                    offset = self.image_rect.x() if self.profile_orientation == "h" else self.image_rect.y()
+                    xs2 = np.arange(prof.size) + offset
+                else:
+                    xs2 = np.arange(prof.size)
                 self.last_profile_data[f"C{c}"] = (xs2, prof)
                 if self.channel_checks[c]:
                     ax2.plot(xs2, prof, color=colors[c] if c < len(colors) else None, label=f"C{c}")
         else:
-            prof = gray.mean(axis=0) if "gray" in locals() else arr.mean(axis=0)
-            xs2 = np.arange(prof.size)
+            gray_data = arr if arr.ndim == 2 else arr[:, :, 0]
+            prof = gray_data.mean(axis=0) if self.profile_orientation == "h" else gray_data.mean(axis=1)
+            if self.x_mode == "absolute" and self.image_rect is not None:
+                offset = self.image_rect.x() if self.profile_orientation == "h" else self.image_rect.y()
+                xs2 = np.arange(prof.size) + offset
+            else:
+                xs2 = np.arange(prof.size)
             self.last_profile_data["I"] = (xs2, prof)
             ax2.plot(xs2, prof, color="k", label="Intensity")
 
-        ax2.set_title("Profile")
+        orientation_label = "Horizontal" if self.profile_orientation == "h" else "Vertical"
+        mode_label = "Absolute" if self.x_mode == "absolute" else "Relative"
+        ax2.set_title(f"Profile ({orientation_label}, {mode_label})")
+        ax2.set_xlabel("Position" if self.x_mode == "relative" else "Absolute Position")
+        ax2.set_ylabel("Intensity")
         try:
             if AutoMinorLocator is not None:
                 ax2.xaxis.set_minor_locator(AutoMinorLocator())
@@ -341,6 +322,7 @@ class AnalysisDialog(QDialog):
             pass
 
     def copy_histogram_to_clipboard(self):
+        """Copy histogram data as CSV to clipboard."""
         if not getattr(self, "last_hist_data", None):
             QMessageBox.information(self, "Copy", "No data.")
             return
@@ -356,6 +338,7 @@ class AnalysisDialog(QDialog):
         QMessageBox.information(self, "Copy", "Histogram copied to clipboard.")
 
     def copy_profile_to_clipboard(self):
+        """Copy profile data as CSV to clipboard."""
         if not getattr(self, "last_profile_data", None):
             QMessageBox.information(self, "Copy", "No data.")
             return
@@ -371,15 +354,34 @@ class AnalysisDialog(QDialog):
         QMessageBox.information(self, "Copy", "Profile copied to clipboard.")
 
     def _on_hist_click(self, event):
+        """Handle histogram plot click events."""
         if getattr(event, "dblclick", False) and getattr(event, "button", None) == 1:
             self.hist_yscale = "log" if self.hist_yscale == "linear" else "linear"
             self.update_contents()
 
     def _on_profile_click(self, event):
-        if not getattr(event, "dblclick", False):
-            return
-        if getattr(event, "button", None) == 1:
-            self.profile_orientation = "v" if self.profile_orientation == "h" else "h"
-        elif getattr(event, "button", None) == 3:
-            self.x_mode = "absolute" if self.x_mode == "relative" else "relative"
-        self.update_contents()
+        """Handle profile plot click events with time-based double-click fallback."""
+        import time
+
+        btn = getattr(event, "button", None)
+        is_dblclick = getattr(event, "dblclick", False)
+
+        # Fallback: time-based double-click detection
+        if not is_dblclick and btn is not None:
+            now = time.time()
+            last_time = self._last_click_time.get(btn, 0)
+
+            if now - last_time <= self._double_click_interval:
+                is_dblclick = True
+                self._last_click_time[btn] = 0
+            else:
+                self._last_click_time[btn] = now
+                return
+
+        if is_dblclick:
+            if btn == 1:  # Left: toggle orientation
+                self.profile_orientation = "v" if self.profile_orientation == "h" else "h"
+                self.update_contents()
+            elif btn == 3:  # Right: toggle x-mode
+                self.x_mode = "absolute" if self.x_mode == "relative" else "relative"
+                self.update_contents()

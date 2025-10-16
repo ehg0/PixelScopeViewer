@@ -1,3 +1,5 @@
+"""Diff dialog for creating difference images."""
+
 from typing import Optional
 import numpy as np
 from PySide6.QtWidgets import (
@@ -13,6 +15,12 @@ from PySide6.QtWidgets import (
 
 
 class DiffDialog(QDialog):
+    """Dialog for creating difference images between two images.
+
+    Allows user to select two images from the loaded list and specify
+    an offset value for the difference calculation.
+    """
+
     def __init__(self, parent=None, image_list=None, default_offset: int = 256):
         super().__init__(parent)
         self.setWindowTitle("差分画像作成")
@@ -67,4 +75,5 @@ class DiffDialog(QDialog):
         self.accept()
 
     def get_result(self):
-        return getattr(self, 'selected_a', None), getattr(self, 'selected_b', None), getattr(self, 'offset', None)
+        """Returns (image_a_index, image_b_index, offset) or (None, None, None)."""
+        return (getattr(self, "selected_a", None), getattr(self, "selected_b", None), getattr(self, "offset", None))

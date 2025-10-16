@@ -1,3 +1,5 @@
+"""Image I/O utilities for loading and converting images."""
+
 import os
 from typing import Optional
 import numpy as np

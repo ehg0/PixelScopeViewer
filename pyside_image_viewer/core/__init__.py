@@ -1,4 +1,4 @@
-"""I/O utilities for pyside_image_viewer."""
+"""Core utilities (UI-independent functionality)."""
 
 from .image_io import numpy_to_qimage, pil_to_numpy, is_image_file
 

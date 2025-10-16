@@ -1,7 +1,11 @@
+"""Help dialog showing keyboard shortcuts."""
+
 from PySide6.QtWidgets import QDialog, QTextEdit, QVBoxLayout
 
 
 class HelpDialog(QDialog):
+    """Dialog showing keyboard shortcuts and usage help."""
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Keyboard Shortcuts")

@@ -15,11 +15,9 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QPixmap, QPainter, QIcon, QGuiApplication, QAction, QActionGroup
 from PySide6.QtCore import Qt, QRect, QEvent
 
-from ..io.image_io import numpy_to_qimage, pil_to_numpy, is_image_file
+from ..core.image_io import numpy_to_qimage, pil_to_numpy, is_image_file
 from .widgets import ImageLabel
-from .dialogs import HelpDialog
-from .analysis import AnalysisDialog
-from .diff_dialog import DiffDialog
+from .dialogs import HelpDialog, DiffDialog, AnalysisDialog
 
 
 class ImageViewer(QMainWindow):

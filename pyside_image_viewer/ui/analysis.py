@@ -62,14 +62,18 @@ class RangesDialog(QDialog):
         self.setWindowTitle("Axis ranges")
         self.setModal(True)
         layout = QFormLayout(self)
-        self.xmin = QLineEdit(); self.xmin.setText('' if xmin is None else str(xmin))
-        self.xmax = QLineEdit(); self.xmax.setText('' if xmax is None else str(xmax))
-        self.ymin = QLineEdit(); self.ymin.setText('' if ymin is None else str(ymin))
-        self.ymax = QLineEdit(); self.ymax.setText('' if ymax is None else str(ymax))
-        layout.addRow('x min:', self.xmin)
-        layout.addRow('x max:', self.xmax)
-        layout.addRow('y min:', self.ymin)
-        layout.addRow('y max:', self.ymax)
+        self.xmin = QLineEdit()
+        self.xmin.setText("" if xmin is None else str(xmin))
+        self.xmax = QLineEdit()
+        self.xmax.setText("" if xmax is None else str(xmax))
+        self.ymin = QLineEdit()
+        self.ymin.setText("" if ymin is None else str(ymin))
+        self.ymax = QLineEdit()
+        self.ymax.setText("" if ymax is None else str(ymax))
+        layout.addRow("x min:", self.xmin)
+        layout.addRow("x max:", self.xmax)
+        layout.addRow("y min:", self.ymin)
+        layout.addRow("y max:", self.ymax)
         btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         btns.accepted.connect(self.accept)
         btns.rejected.connect(self.reject)
@@ -77,7 +81,7 @@ class RangesDialog(QDialog):
 
     def _parse(self, txt: str) -> Optional[float]:
         try:
-            return float(txt) if txt is not None and txt != '' else None
+            return float(txt) if txt is not None and txt != "" else None
         except Exception:
             return None
 
@@ -99,9 +103,9 @@ class AnalysisDialog(QDialog):
         self.image_rect = image_rect
 
         # state
-        self.profile_orientation = 'h'
-        self.x_mode = 'relative'
-        self.hist_yscale = 'linear'
+        self.profile_orientation = "h"
+        self.x_mode = "relative"
+        self.hist_yscale = "linear"
         self.channel_checks: list[bool] = []
         self.manual_ranges = (None, None, None, None)
         self.last_hist_data = {}
@@ -110,10 +114,10 @@ class AnalysisDialog(QDialog):
         self._build_ui()
 
         try:
-            if hasattr(self, 'hist_canvas') and self.hist_canvas is not None:
-                self.hist_canvas.mpl_connect('button_press_event', self._on_hist_click)
-            if hasattr(self, 'prof_canvas') and self.prof_canvas is not None:
-                self.prof_canvas.mpl_connect('button_press_event', self._on_profile_click)
+            if hasattr(self, "hist_canvas") and self.hist_canvas is not None:
+                self.hist_canvas.mpl_connect("button_press_event", self._on_hist_click)
+            if hasattr(self, "prof_canvas") and self.prof_canvas is not None:
+                self.prof_canvas.mpl_connect("button_press_event", self._on_profile_click)
         except Exception:
             pass
 
@@ -131,7 +135,7 @@ class AnalysisDialog(QDialog):
         self.info_browser = QTextBrowser()
         self.info_browser.setReadOnly(True)
         il.addWidget(self.info_browser)
-        self.tabs.addTab(info_tab, 'Info')
+        self.tabs.addTab(info_tab, "Info")
 
         # Histogram tab
         hist_tab = QWidget()
@@ -145,18 +149,18 @@ class AnalysisDialog(QDialog):
             self.hist_canvas = None
 
         vcol = QVBoxLayout()
-        self.hist_channels_btn = QPushButton('Channels...')
+        self.hist_channels_btn = QPushButton("Channels...")
         self.hist_channels_btn.clicked.connect(self._on_hist_channels)
         vcol.addWidget(self.hist_channels_btn)
-        self.hist_ranges_btn = QPushButton('Axis ranges...')
+        self.hist_ranges_btn = QPushButton("Axis ranges...")
         self.hist_ranges_btn.clicked.connect(self._on_ranges)
         vcol.addWidget(self.hist_ranges_btn)
-        self.hist_copy_btn = QPushButton('Copy data')
+        self.hist_copy_btn = QPushButton("Copy data")
         self.hist_copy_btn.clicked.connect(self.copy_histogram_to_clipboard)
         vcol.addWidget(self.hist_copy_btn)
         vcol.addStretch(1)
         hl.addLayout(vcol)
-        self.tabs.addTab(hist_tab, 'Histogram')
+        self.tabs.addTab(hist_tab, "Histogram")
 
         # Profile tab
         prof_tab = QWidget()
@@ -169,18 +173,18 @@ class AnalysisDialog(QDialog):
             self.prof_fig = None
             self.prof_canvas = None
         pv = QVBoxLayout()
-        self.prof_channels_btn = QPushButton('Channels...')
+        self.prof_channels_btn = QPushButton("Channels...")
         self.prof_channels_btn.clicked.connect(self._on_prof_channels)
         pv.addWidget(self.prof_channels_btn)
-        self.prof_ranges_btn = QPushButton('Axis ranges...')
+        self.prof_ranges_btn = QPushButton("Axis ranges...")
         self.prof_ranges_btn.clicked.connect(self._on_ranges)
         pv.addWidget(self.prof_ranges_btn)
-        self.prof_copy_btn = QPushButton('Copy data')
+        self.prof_copy_btn = QPushButton("Copy data")
         self.prof_copy_btn.clicked.connect(self.copy_profile_to_clipboard)
         pv.addWidget(self.prof_copy_btn)
         pv.addStretch(1)
         pl.addLayout(pv)
-        self.tabs.addTab(prof_tab, 'Profile')
+        self.tabs.addTab(prof_tab, "Profile")
 
         box = QDialogButtonBox(QDialogButtonBox.Close)
         box.rejected.connect(self.reject)
@@ -214,17 +218,22 @@ class AnalysisDialog(QDialog):
     def update_contents(self):
         arr = self.image_array
         if arr is None:
-            self.info_browser.setPlainText('No data')
+            self.info_browser.setPlainText("No data")
             return
         if self.image_rect is not None:
-            x, y, w, h = int(self.image_rect.x()), int(self.image_rect.y()), int(self.image_rect.width()), int(self.image_rect.height())
+            x, y, w, h = (
+                int(self.image_rect.x()),
+                int(self.image_rect.y()),
+                int(self.image_rect.width()),
+                int(self.image_rect.height()),
+            )
             arr = arr[y : y + h, x : x + w]
 
         h, w = arr.shape[:2]
-        info_lines = [f'Selection size: {w} x {h}']
+        info_lines = [f"Selection size: {w} x {h}"]
         if self.image_rect is not None:
-            info_lines.append(f'Start: ({int(self.image_rect.x())}, {int(self.image_rect.y())})')
-        self.info_browser.setPlainText('\n'.join(info_lines))
+            info_lines.append(f"Start: ({int(self.image_rect.x())}, {int(self.image_rect.y())})")
+        self.info_browser.setPlainText("\n".join(info_lines))
 
         if self.hist_fig is None:
             return
@@ -233,7 +242,7 @@ class AnalysisDialog(QDialog):
         self.hist_fig.clear()
         ax = self.hist_fig.add_subplot(111)
         self.last_hist_data = {}
-        colors = ['r', 'g', 'b', 'k']
+        colors = ["r", "g", "b", "k"]
         if arr.ndim == 3 and arr.shape[2] > 1:
             nch = arr.shape[2]
             if not self.channel_checks:
@@ -242,23 +251,23 @@ class AnalysisDialog(QDialog):
                 data = arr[:, :, c].ravel()
                 hist, bins = np.histogram(data, bins=256, range=(0, 255))
                 xs = (bins[:-1] + bins[1:]) / 2.0
-                self.last_hist_data[f'C{c}'] = (xs, hist)
+                self.last_hist_data[f"C{c}"] = (xs, hist)
                 if self.channel_checks[c]:
-                    ax.plot(xs, hist, color=colors[c] if c < len(colors) else None, label=f'C{c}')
+                    ax.plot(xs, hist, color=colors[c] if c < len(colors) else None, label=f"C{c}")
         else:
             gray = arr if arr.ndim == 2 else arr[:, :, 0]
             hist, bins = np.histogram(gray.ravel(), bins=256, range=(0, 255))
             xs = (bins[:-1] + bins[1:]) / 2.0
-            self.last_hist_data['I'] = (xs, hist)
-            ax.plot(xs, hist, color='k', label='Intensity')
+            self.last_hist_data["I"] = (xs, hist)
+            ax.plot(xs, hist, color="k", label="Intensity")
 
-        ax.set_title('Intensity Histogram')
+        ax.set_title("Intensity Histogram")
         try:
             if AutoMinorLocator is not None:
                 ax.xaxis.set_minor_locator(AutoMinorLocator())
                 ax.yaxis.set_minor_locator(AutoMinorLocator())
-            ax.grid(which='major', linestyle='-', color='gray', linewidth=0.6)
-            ax.grid(which='minor', linestyle=':', color='lightgray', linewidth=0.4)
+            ax.grid(which="major", linestyle="-", color="gray", linewidth=0.6)
+            ax.grid(which="minor", linestyle=":", color="lightgray", linewidth=0.4)
         except Exception:
             pass
         try:
@@ -293,24 +302,24 @@ class AnalysisDialog(QDialog):
             if not self.channel_checks:
                 self.channel_checks = [True] * nch
             for c in range(nch):
-                prof = arr[:, :, c].mean(axis=0) if self.profile_orientation == 'h' else arr[:, :, c].mean(axis=1)
+                prof = arr[:, :, c].mean(axis=0) if self.profile_orientation == "h" else arr[:, :, c].mean(axis=1)
                 xs2 = np.arange(prof.size)
-                self.last_profile_data[f'C{c}'] = (xs2, prof)
+                self.last_profile_data[f"C{c}"] = (xs2, prof)
                 if self.channel_checks[c]:
-                    ax2.plot(xs2, prof, color=colors[c] if c < len(colors) else None, label=f'C{c}')
+                    ax2.plot(xs2, prof, color=colors[c] if c < len(colors) else None, label=f"C{c}")
         else:
-            prof = gray.mean(axis=0) if 'gray' in locals() else arr.mean(axis=0)
+            prof = gray.mean(axis=0) if "gray" in locals() else arr.mean(axis=0)
             xs2 = np.arange(prof.size)
-            self.last_profile_data['I'] = (xs2, prof)
-            ax2.plot(xs2, prof, color='k', label='Intensity')
+            self.last_profile_data["I"] = (xs2, prof)
+            ax2.plot(xs2, prof, color="k", label="Intensity")
 
-        ax2.set_title('Profile')
+        ax2.set_title("Profile")
         try:
             if AutoMinorLocator is not None:
                 ax2.xaxis.set_minor_locator(AutoMinorLocator())
                 ax2.yaxis.set_minor_locator(AutoMinorLocator())
-            ax2.grid(which='major', linestyle='-', color='gray', linewidth=0.6)
-            ax2.grid(which='minor', linestyle=':', color='lightgray', linewidth=0.4)
+            ax2.grid(which="major", linestyle="-", color="gray", linewidth=0.6)
+            ax2.grid(which="minor", linestyle=":", color="lightgray", linewidth=0.4)
         except Exception:
             pass
         try:
@@ -332,45 +341,45 @@ class AnalysisDialog(QDialog):
             pass
 
     def copy_histogram_to_clipboard(self):
-        if not getattr(self, 'last_hist_data', None):
-            QMessageBox.information(self, 'Copy', 'No data.')
+        if not getattr(self, "last_hist_data", None):
+            QMessageBox.information(self, "Copy", "No data.")
             return
         keys = list(self.last_hist_data.keys())
         xs = self.last_hist_data[keys[0]][0]
-        lines = [','.join(['x'] + keys)]
+        lines = [",".join(["x"] + keys)]
         for i in range(len(xs)):
             row = [str(xs[i])]
             for k in keys:
                 row.append(str(int(self.last_hist_data[k][1][i])))
-            lines.append(','.join(row))
-        QGuiApplication.clipboard().setText('\n'.join(lines))
-        QMessageBox.information(self, 'Copy', 'Histogram copied to clipboard.')
+            lines.append(",".join(row))
+        QGuiApplication.clipboard().setText("\n".join(lines))
+        QMessageBox.information(self, "Copy", "Histogram copied to clipboard.")
 
     def copy_profile_to_clipboard(self):
-        if not getattr(self, 'last_profile_data', None):
-            QMessageBox.information(self, 'Copy', 'No data.')
+        if not getattr(self, "last_profile_data", None):
+            QMessageBox.information(self, "Copy", "No data.")
             return
         keys = list(self.last_profile_data.keys())
         xs = self.last_profile_data[keys[0]][0]
-        lines = [','.join(['x'] + keys)]
+        lines = [",".join(["x"] + keys)]
         for i in range(len(xs)):
             row = [str(xs[i])]
             for k in keys:
                 row.append(str(float(self.last_profile_data[k][1][i])))
-            lines.append(','.join(row))
-        QGuiApplication.clipboard().setText('\n'.join(lines))
-        QMessageBox.information(self, 'Copy', 'Profile copied to clipboard.')
+            lines.append(",".join(row))
+        QGuiApplication.clipboard().setText("\n".join(lines))
+        QMessageBox.information(self, "Copy", "Profile copied to clipboard.")
 
     def _on_hist_click(self, event):
-        if getattr(event, 'dblclick', False) and getattr(event, 'button', None) == 1:
-            self.hist_yscale = 'log' if self.hist_yscale == 'linear' else 'linear'
+        if getattr(event, "dblclick", False) and getattr(event, "button", None) == 1:
+            self.hist_yscale = "log" if self.hist_yscale == "linear" else "linear"
             self.update_contents()
 
     def _on_profile_click(self, event):
-        if not getattr(event, 'dblclick', False):
+        if not getattr(event, "dblclick", False):
             return
-        if getattr(event, 'button', None) == 1:
-            self.profile_orientation = 'v' if self.profile_orientation == 'h' else 'h'
-        elif getattr(event, 'button', None) == 3:
-            self.x_mode = 'absolute' if self.x_mode == 'relative' else 'relative'
+        if getattr(event, "button", None) == 1:
+            self.profile_orientation = "v" if self.profile_orientation == "h" else "h"
+        elif getattr(event, "button", None) == 3:
+            self.x_mode = "absolute" if self.x_mode == "relative" else "relative"
         self.update_contents()

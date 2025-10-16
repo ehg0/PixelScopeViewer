@@ -94,8 +94,8 @@ class ImageViewer(QMainWindow):
         view_menu.addAction(QAction("差分画像表示", self, triggered=lambda: self.show_diff_dialog()))
 
         analysis = menubar.addMenu("解析")
-        analysis.addAction(QAction("プロファイル", self, triggered=lambda: self.show_analysis_dialog(tab='Profile')))
-        analysis.addAction(QAction("ヒストグラム", self, triggered=lambda: self.show_analysis_dialog(tab='Histogram')))
+        analysis.addAction(QAction("プロファイル", self, triggered=lambda: self.show_analysis_dialog(tab="Profile")))
+        analysis.addAction(QAction("ヒストグラム", self, triggered=lambda: self.show_analysis_dialog(tab="Histogram")))
         help_menu = menubar.addMenu("ヘルプ")
         help_menu.addAction(QAction("キーボードショートカット", self, triggered=self.help_dialog.show))
 

@@ -1,5 +1,5 @@
-"""Small control dialogs used by Analysis (channels, ranges).
-"""
+"""Small control dialogs used by Analysis (channels, ranges)."""
+
 from typing import Optional, Tuple
 from PySide6.QtWidgets import (
     QDialog,
@@ -38,14 +38,18 @@ class RangesDialog(QDialog):
         self.setWindowTitle("Axis ranges")
         self.setModal(True)
         layout = QFormLayout(self)
-        self.xmin = QLineEdit(); self.xmin.setText('' if xmin is None else str(xmin))
-        self.xmax = QLineEdit(); self.xmax.setText('' if xmax is None else str(xmax))
-        self.ymin = QLineEdit(); self.ymin.setText('' if ymin is None else str(ymin))
-        self.ymax = QLineEdit(); self.ymax.setText('' if ymax is None else str(ymax))
-        layout.addRow('x min:', self.xmin)
-        layout.addRow('x max:', self.xmax)
-        layout.addRow('y min:', self.ymin)
-        layout.addRow('y max:', self.ymax)
+        self.xmin = QLineEdit()
+        self.xmin.setText("" if xmin is None else str(xmin))
+        self.xmax = QLineEdit()
+        self.xmax.setText("" if xmax is None else str(xmax))
+        self.ymin = QLineEdit()
+        self.ymin.setText("" if ymin is None else str(ymin))
+        self.ymax = QLineEdit()
+        self.ymax.setText("" if ymax is None else str(ymax))
+        layout.addRow("x min:", self.xmin)
+        layout.addRow("x max:", self.xmax)
+        layout.addRow("y min:", self.ymin)
+        layout.addRow("y max:", self.ymax)
         btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         btns.accepted.connect(self.accept)
         btns.rejected.connect(self.reject)
@@ -53,7 +57,7 @@ class RangesDialog(QDialog):
 
     def _parse(self, txt: str) -> Optional[float]:
         try:
-            return float(txt) if txt is not None and txt != '' else None
+            return float(txt) if txt is not None and txt != "" else None
         except Exception:
             return None
 

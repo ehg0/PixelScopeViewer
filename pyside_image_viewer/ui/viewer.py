@@ -244,9 +244,10 @@ class ImageViewer(QMainWindow):
         try:
             img = self.images[self.current_index]
             arr_for_analysis = img.get("base_array", img.get("array"))
+            img_path = img.get("path", None)
             for dlg in list(self._analysis_dialogs):
                 try:
-                    dlg.set_image_and_rect(arr_for_analysis, self.current_selection_rect)
+                    dlg.set_image_and_rect(arr_for_analysis, self.current_selection_rect, img_path)
                 except Exception:
                     pass
         except Exception:

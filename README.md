@@ -89,7 +89,7 @@ python main.py
 - **Copy data**: CSV形式でクリップボードにコピー
 
 #### メタデータ
-- 画像ファイルの埋め込み情報を表示
+- 画像ファイルの埋め込み情報を**表形式**で表示
 - 基本情報: フォーマット、サイズ、カラーモード
 - **完全なEXIF情報**: exifreadライブラリで包括的に読み取り
   - カメラ設定 (ISO, 絞り, シャッター速度など)
@@ -97,7 +97,11 @@ python main.py
   - レンズ情報、ホワイトバランス
   - Makernote以外のすべてのタグ
 - その他のフォーマット固有情報
-- 文字化けを防ぐエンコーディング処理
+- 文字化けを防ぐエンコーディング処理 (UTF-8/Shift-JIS/CP932/Latin-1)
+- **データコピー機能**:
+  - **Ctrl+C**: 選択したセル/行/範囲をカンマ区切りでコピー
+  - **「クリップボードにコピー」ボタン**: 全データをコピー
+  - Excel/Google Spreadsheetsに貼り付け可能
 - テキストブラウザでコピー&ペースト可能
 
 #### 差分画像
@@ -224,15 +228,24 @@ pip install matplotlib
 
 #### 今後の拡張指針
 
-**analysis_dialog.py (435行)** は現時点で分割不要:
-- 400-500行は許容範囲内
+**analysis_dialog.py (605行)** は現時点で分割不要:
+- 600行前後は許容範囲内
 - 既に論理的にタブ単位で分離されている
+- CopyableTableWidgetを分離済み (widgets.py)
 - 複雑な状態管理 (matplotlib連携) を分割するとかえって複雑化
 
 **拡張が必要になった場合の分割案**:
 1. タブごとにクラス化 (InfoTab, HistogramTab, ProfileTab)
 2. matplotlib描画ロジックを別モジュール化
 3. データ処理 (_compute_profile等) をutilsに抽出
+
+#### カスタムウィジェット
+
+**analysis/widgets.py** (65行):
+- `CopyableTableWidget`: Ctrl+Cコピー対応のテーブルウィジェット
+  - カンマ区切り形式でクリップボードにコピー
+  - 複数セル/行の選択に対応
+  - メタデータ表示に使用
 
 #### ファイル行数の目安
 
@@ -247,6 +260,19 @@ pip install matplotlib
 MIT License
 
 ## バージョン履歴
+
+### 2.2.0 (2025年10月)
+- **プロジェクト構造リファクタリング**
+  - analysis_dialog.py (638行→605行): CopyableTableWidgetを分離
+  - 新規ファイル: `ui/dialogs/analysis/widgets.py` (カスタムウィジェット用)
+  - 不要なファイルを削除: `ui/widgets_old.py` (バックアップ), `test_exif.py` (重複)
+  - テストファイルを整理: `tests/test_exif_metadata.py` に移動
+- **メタデータタブ機能強化**
+  - 表形式表示に変更 (QTableWidget)
+  - Ctrl+Cで選択範囲をコピー
+  - 「クリップボードにコピー」ボタンで全データをコピー
+  - CSV互換のカンマ区切り形式
+  - セル/行/範囲の自由な選択が可能
 
 ### 2.1.0 (2025年10月)
 - widgets.pyをモジュール化 (保守性向上)

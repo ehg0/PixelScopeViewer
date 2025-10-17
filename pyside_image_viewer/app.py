@@ -4,10 +4,13 @@ This module provides the main() function that initializes the Qt application
 and displays the ImageViewer window.
 
 Usage:
-    python -m pyside_image_viewer.main
+    python main.py
+
+    # Or as a module:
+    python -m pyside_image_viewer.app
 
     # Or from Python:
-    from pyside_image_viewer.main import main
+    from pyside_image_viewer import main
     main()
 """
 

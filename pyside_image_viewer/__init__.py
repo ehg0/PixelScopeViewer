@@ -44,7 +44,7 @@ Dependencies:
     - matplotlib (optional): For histogram and profile plots
 """
 
-from .main import main
+from .app import main
 from .ui import ImageViewer, HelpDialog, DiffDialog, AnalysisDialog
 from .core import numpy_to_qimage, pil_to_numpy, is_image_file
 

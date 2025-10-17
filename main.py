@@ -2,7 +2,7 @@
 
 import sys
 
-from pyside_image_viewer.main import main
+from pyside_image_viewer.app import main
 
 
 if __name__ == "__main__":

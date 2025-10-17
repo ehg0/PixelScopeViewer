@@ -40,7 +40,7 @@ pip install -r requirements.txt
 ### 起動
 
 ```powershell
-python app_2.py
+python main.py
 ```
 
 ### 基本操作

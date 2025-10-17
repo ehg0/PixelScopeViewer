@@ -2,3 +2,4 @@ PySide6
 numpy
 Pillow
 matplotlib
+exifread

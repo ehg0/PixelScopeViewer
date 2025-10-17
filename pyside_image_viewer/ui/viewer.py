@@ -138,6 +138,7 @@ class ImageViewer(QMainWindow):
         analysis = menubar.addMenu("解析")
         analysis.addAction(QAction("プロファイル", self, triggered=lambda: self.show_analysis_dialog(tab="Profile")))
         analysis.addAction(QAction("ヒストグラム", self, triggered=lambda: self.show_analysis_dialog(tab="Histogram")))
+        analysis.addAction(QAction("メタデータ", self, triggered=lambda: self.show_analysis_dialog(tab="Metadata")))
         help_menu = menubar.addMenu("ヘルプ")
         help_menu.addAction(QAction("キーボードショートカット", self, triggered=self.help_dialog.show))
 
@@ -149,7 +150,8 @@ class ImageViewer(QMainWindow):
         img = self.images[self.current_index]
         arr = img.get("base_array", img.get("array"))
         sel = self.current_selection_rect
-        dlg = AnalysisDialog(self, image_array=arr, image_rect=sel)
+        img_path = img.get("path")
+        dlg = AnalysisDialog(self, image_array=arr, image_rect=sel, image_path=img_path)
         dlg.show()
         # keep a reference until the dialog is closed
         self._analysis_dialogs.append(dlg)
@@ -429,9 +431,10 @@ class ImageViewer(QMainWindow):
             if self.current_index is not None and 0 <= self.current_index < len(self.images):
                 img = self.images[self.current_index]
             arr = img.get("base_array", img.get("array")) if img is not None else None
+            img_path = img.get("path") if img is not None else None
             for dlg in list(self._analysis_dialogs):
                 try:
-                    dlg.set_image_and_rect(arr, self.current_selection_rect)
+                    dlg.set_image_and_rect(arr, self.current_selection_rect, img_path)
                 except Exception:
                     # ignore dialog-specific errors and continue notifying others
                     pass

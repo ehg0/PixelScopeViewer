@@ -85,3 +85,98 @@ def is_image_file(path: str) -> bool:
     """
     ext = os.path.splitext(path)[1].lower()
     return ext in (".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp")
+
+
+def get_image_metadata(path: str) -> dict:
+    """Extract metadata from an image file using exifread for comprehensive EXIF data.
+
+    Args:
+        path: File path to the image.
+
+    Returns:
+        Dictionary containing image metadata including:
+        - Basic info: format, size, mode (via PIL for image properties only)
+        - Complete EXIF data (via exifread library)
+
+    Notes:
+        Returns empty dict if file cannot be opened or has no metadata.
+        Uses exifread library for complete EXIF extraction.
+    """
+    metadata = {}
+
+    try:
+        # Basic image information via PIL (format, size, mode only - no EXIF)
+        with Image.open(path) as img:
+            metadata["Format"] = img.format or "Unknown"
+            metadata["Size"] = f"{img.size[0]} x {img.size[1]}"
+            metadata["Mode"] = img.mode
+            metadata["Filename"] = os.path.basename(path)
+    except Exception as e:
+        metadata["Error (PIL)"] = str(e)
+
+    # Extract EXIF data using exifread for comprehensive information
+    try:
+        import exifread
+
+        with open(path, "rb") as f:
+            # Read EXIF tags with details enabled
+            tags = exifread.process_file(f, details=True)
+
+            for tag, value in tags.items():
+                # Skip binary data fields that are not meant for text display
+                # Info.* fields contain raw binary data from PIL
+                if any(skip in tag.lower() for skip in ["thumbnail", "makernote", "printim"]) or tag.startswith(
+                    "Info."
+                ):
+                    continue
+
+                # Convert value to string
+                try:
+                    # exifread values have printable attribute
+                    value_str = str(value)
+
+                    # Handle byte data with multiple encoding attempts
+                    if isinstance(value.values, bytes):
+                        # Skip binary data that's too large or contains mostly non-printable chars
+                        if len(value.values) > 1000:
+                            continue
+
+                        # Try multiple encodings for text data
+                        decoded = None
+                        for encoding in ["utf-8", "shift-jis", "cp932", "latin-1"]:
+                            try:
+                                decoded = value.values.decode(encoding)
+                                # Check if decoded string is mostly printable
+                                printable_ratio = sum(c.isprintable() or c in "\r\n\t" for c in decoded) / max(
+                                    len(decoded), 1
+                                )
+                                if printable_ratio > 0.7:
+                                    value_str = decoded
+                                    break
+                            except (UnicodeDecodeError, LookupError):
+                                continue
+
+                        # If no encoding worked and result has too many control chars, skip
+                        if decoded is None or value_str.count("\x00") > len(value_str) * 0.3:
+                            continue
+
+                    # Skip fields with excessive control characters (likely binary data)
+                    control_char_count = sum(1 for c in value_str if ord(c) < 32 and c not in "\r\n\t")
+                    if control_char_count > len(value_str) * 0.2:
+                        continue
+
+                    # Clean up the tag name
+                    clean_tag = tag.replace(" ", "_")
+
+                    metadata[f"{clean_tag}"] = value_str
+
+                except Exception:
+                    # If conversion fails, skip this tag
+                    continue
+
+    except ImportError:
+        metadata["Warning"] = "exifread library not installed. Install with: pip install exifread"
+    except Exception as e:
+        metadata["Error (EXIF)"] = str(e)
+
+    return metadata

@@ -18,6 +18,7 @@ from typing import Optional
 import numpy as np
 
 from PySide6.QtCore import QRect
+from ....core.image_io import get_image_metadata
 from PySide6.QtWidgets import (
     QDialog,
     QVBoxLayout,
@@ -28,8 +29,11 @@ from PySide6.QtWidgets import (
     QDialogButtonBox,
     QWidget,
     QMessageBox,
+    QTableWidget,
+    QTableWidgetItem,
+    QHeaderView,
 )
-from PySide6.QtGui import QGuiApplication
+from PySide6.QtGui import QGuiApplication, QKeySequence
 
 try:
     from matplotlib.figure import Figure
@@ -41,6 +45,41 @@ except ImportError:
     AutoMinorLocator = None
 
 from .controls import ChannelsDialog, RangesDialog
+
+
+class CopyableTableWidget(QTableWidget):
+    """QTableWidget with Ctrl+C copy support for selected cells."""
+
+    def keyPressEvent(self, event):
+        """Handle key press events, specifically Ctrl+C for copying."""
+        if event.matches(QKeySequence.Copy):
+            self.copy_selection_to_clipboard()
+        else:
+            super().keyPressEvent(event)
+
+    def copy_selection_to_clipboard(self):
+        """Copy selected cells to clipboard in comma-separated format."""
+        selection = self.selectedRanges()
+        if not selection:
+            return
+
+        # Get the selected range (use first range if multiple)
+        selected_range = selection[0]
+
+        # Build comma-separated data
+        rows = []
+        for row in range(selected_range.topRow(), selected_range.bottomRow() + 1):
+            row_data = []
+            for col in range(selected_range.leftColumn(), selected_range.rightColumn() + 1):
+                item = self.item(row, col)
+                if item:
+                    row_data.append(item.text())
+                else:
+                    row_data.append("")
+            rows.append(",".join(row_data))
+
+        text = "\n".join(rows)
+        QGuiApplication.clipboard().setText(text)
 
 
 class AnalysisDialog(QDialog):
@@ -84,12 +123,19 @@ class AnalysisDialog(QDialog):
         is not available, those tabs will be empty.
     """
 
-    def __init__(self, parent=None, image_array: Optional[np.ndarray] = None, image_rect: Optional[QRect] = None):
+    def __init__(
+        self,
+        parent=None,
+        image_array: Optional[np.ndarray] = None,
+        image_rect: Optional[QRect] = None,
+        image_path: Optional[str] = None,
+    ):
         super().__init__(parent)
         self.setWindowTitle("Analysis")
         self.resize(900, 600)
         self.image_array = image_array
         self.image_rect = image_rect
+        self.image_path = image_path
 
         # state
         self.profile_orientation = "h"  # "h", "v", or "d" (diagonal)
@@ -129,6 +175,28 @@ class AnalysisDialog(QDialog):
         self.info_browser.setReadOnly(True)
         il.addWidget(self.info_browser)
         self.tabs.addTab(info_tab, "Info")
+
+        # Metadata tab
+        metadata_tab = QWidget()
+        ml = QVBoxLayout(metadata_tab)
+
+        # Create table for metadata display with Ctrl+C support
+        self.metadata_table = CopyableTableWidget()
+        self.metadata_table.setColumnCount(2)
+        self.metadata_table.setHorizontalHeaderLabels(["Key", "Value"])
+        self.metadata_table.horizontalHeader().setStretchLastSection(True)
+        self.metadata_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        self.metadata_table.setEditTriggers(QTableWidget.NoEditTriggers)  # 編集不可
+        self.metadata_table.setSelectionMode(QTableWidget.ExtendedSelection)  # 複数選択可能
+        self.metadata_table.setSelectionBehavior(QTableWidget.SelectItems)  # セル単位で選択
+        ml.addWidget(self.metadata_table)
+
+        # Add copy button
+        self.metadata_copy_btn = QPushButton("クリップボードにコピー")
+        self.metadata_copy_btn.clicked.connect(self.copy_metadata_to_clipboard)
+        ml.addWidget(self.metadata_copy_btn)
+
+        self.tabs.addTab(metadata_tab, "Metadata")
 
         # Profile tab
         prof_tab = QWidget()
@@ -184,10 +252,14 @@ class AnalysisDialog(QDialog):
         box.accepted.connect(self.accept)
         main.addWidget(box)
 
-    def set_image_and_rect(self, image_array: Optional[np.ndarray], image_rect: Optional[QRect]):
+    def set_image_and_rect(
+        self, image_array: Optional[np.ndarray], image_rect: Optional[QRect], image_path: Optional[str] = None
+    ):
         """Update the dialog with new image data and/or selection rectangle."""
         self.image_array = image_array
         self.image_rect = image_rect
+        if image_path is not None:
+            self.image_path = image_path
         self.update_contents()
 
     def set_current_tab(self, tab):
@@ -229,6 +301,7 @@ class AnalysisDialog(QDialog):
         arr = self.image_array
         if arr is None:
             self.info_browser.setPlainText("No data")
+            self._update_metadata()
             return
         if self.image_rect is not None:
             x, y, w, h = (
@@ -362,6 +435,75 @@ class AnalysisDialog(QDialog):
             self.prof_canvas.draw()
         except Exception:
             pass
+
+        # Update metadata tab
+        self._update_metadata()
+
+    def _update_metadata(self):
+        """Update the metadata tab with image file information in table format."""
+        if not hasattr(self, "metadata_table"):
+            return
+
+        if self.image_path is None or not self.image_path:
+            self.metadata_table.setRowCount(1)
+            self.metadata_table.setItem(0, 0, QTableWidgetItem("Error"))
+            self.metadata_table.setItem(0, 1, QTableWidgetItem("No file path available"))
+            return
+
+        try:
+            metadata = get_image_metadata(self.image_path)
+
+            if not metadata:
+                self.metadata_table.setRowCount(1)
+                self.metadata_table.setItem(0, 0, QTableWidgetItem("Info"))
+                self.metadata_table.setItem(0, 1, QTableWidgetItem("No metadata available"))
+                return
+
+            # Prepare data in order: Basic info first, then EXIF tags
+            rows = []
+
+            # 1. Basic information (from PIL)
+            basic_keys = ["Filename", "Format", "Size", "Mode"]
+            for key in basic_keys:
+                if key in metadata:
+                    value_str = str(metadata[key])
+                    rows.append((key, value_str))
+
+            # 2. EXIF tags (sorted alphabetically)
+            exif_items = [(k, v) for k, v in metadata.items() if k not in basic_keys]
+            for key, value in sorted(exif_items):
+                value_str = str(value)
+                rows.append((key, value_str))
+
+            # Populate table
+            self.metadata_table.setRowCount(len(rows))
+            for i, (key, value) in enumerate(rows):
+                self.metadata_table.setItem(i, 0, QTableWidgetItem(key))
+                self.metadata_table.setItem(i, 1, QTableWidgetItem(value))
+
+            # Store metadata for copying
+            self.last_metadata = rows
+
+        except Exception as e:
+            self.metadata_table.setRowCount(1)
+            self.metadata_table.setItem(0, 0, QTableWidgetItem("Error"))
+            self.metadata_table.setItem(0, 1, QTableWidgetItem(f"Error reading metadata: {str(e)}"))
+            self.last_metadata = []
+
+    def copy_metadata_to_clipboard(self):
+        """Copy metadata as comma-separated text to clipboard."""
+        if not hasattr(self, "last_metadata") or not self.last_metadata:
+            QMessageBox.information(self, "Copy", "No metadata to copy.")
+            return
+
+        # Create comma-separated format
+        lines = ["Key,Value"]  # Header
+        for key, value in self.last_metadata:
+            lines.append(f"{key},{value}")
+
+        text = "\n".join(lines)
+        QGuiApplication.clipboard().setText(text)
+        QMessageBox.information(self, "Copy", f"Copied {len(self.last_metadata)} metadata entries to clipboard.")
 
     def copy_histogram_to_clipboard(self):
         """Copy histogram data as CSV to clipboard."""

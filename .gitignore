@@ -3,6 +3,9 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Legacy/archived code
+legacy/
+
 # C extensions
 *.so
 

@@ -199,24 +199,63 @@ pip install matplotlib
 
 ### コード構造 (2025年10月リファクタリング)
 
-保守性向上のため、長大なファイルをモジュール化しました:
+保守性向上のため、長大なファイルをモジュール化しました。
+
+#### ディレクトリ構造
+
+```
+pyside6_imageViewer/
+├── main.py                        # エントリーポイント
+├── legacy/                        # 旧バージョン (gitignore対象)
+├── tests/                         # テストファイル
+│   └── test_exif_metadata.py
+└── pyside_image_viewer/           # メインパッケージ
+    ├── app.py                     # アプリケーション起動
+    ├── core/                      # UI非依存ユーティリティ
+    │   ├── __init__.py
+    │   └── image_io.py            # 画像I/O、EXIF読み取り (236行)
+    └── ui/                        # UIコンポーネント
+        ├── __init__.py
+        ├── viewer.py              # メインビューアウィンドウ (525行)
+        ├── widgets/               # カスタムウィジェット
+        │   ├── __init__.py
+        │   ├── base_image_label.py      # 基底クラス (165行)
+        │   ├── selection_manager.py     # 選択管理Mixin (327行)
+        │   ├── selection_editor.py      # キーボード編集Mixin (76行)
+        │   └── image_label.py           # 統合クラス (97行)
+        └── dialogs/               # ダイアログウィンドウ
+            ├── __init__.py
+            ├── help_dialog.py     # ヘルプ (169行)
+            ├── diff_dialog.py     # 差分表示 (109行)
+            └── analysis/          # 解析ダイアログ (サブパッケージ)
+                ├── __init__.py
+                ├── analysis_dialog.py  # メインダイアログ (575行)
+                ├── controls.py         # 設定ダイアログ (104行)
+                └── widgets.py          # カスタムウィジェット (63行)
+```
+
+**設計原則**:
+- **core/**: UI非依存の再利用可能なユーティリティ
+- **ui/widgets/**: 画像表示専用ウィジェット (Mixinパターン)
+- **ui/dialogs/**: 各種ダイアログウィンドウ
+- **ui/dialogs/analysis/**: 解析機能のサブパッケージ (密結合したコンポーネント群)
 
 #### pyside_image_viewer/ui/widgets/ (439行 → 4ファイルに分割)
 
 **分割前**: `widgets.py` (439行) - 画像表示と選択機能が混在
 
 **分割後**:
-- `base_image_label.py` (170行) - 基底クラス
+- `base_image_label.py` (165行) - 基底クラス
   - 画像表示とズーム
   - 座標変換ユーティリティ
-- `selection_manager.py` (350行) - 選択管理Mixin
+- `selection_manager.py` (327行) - 選択管理Mixin
   - マウスによる選択作成・移動・リサイズ
   - 8つのグラブポイント (4隅 + 4辺)
   - カーソル形状フィードバック
-- `selection_editor.py` (80行) - キーボード編集Mixin
+- `selection_editor.py` (76行) - キーボード編集Mixin
   - 矢印キーによる1ピクセル移動
   - Shift+矢印で10ピクセル移動
-- `image_label.py` (100行) - 統合クラス
+- `image_label.py` (97行) - 統合クラス
   - 全機能を継承して提供
 
 **設計パターン**: Mixin + 多重継承による機能分離
@@ -228,10 +267,10 @@ pip install matplotlib
 
 #### 今後の拡張指針
 
-**analysis_dialog.py (605行)** は現時点で分割不要:
+**analysis_dialog.py (575行)** は現時点で分割不要:
 - 600行前後は許容範囲内
 - 既に論理的にタブ単位で分離されている
-- CopyableTableWidgetを分離済み (widgets.py)
+- CopyableTableWidgetを分離済み (analysis/widgets.py)
 - 複雑な状態管理 (matplotlib連携) を分割するとかえって複雑化
 
 **拡張が必要になった場合の分割案**:
@@ -241,11 +280,15 @@ pip install matplotlib
 
 #### カスタムウィジェット
 
-**analysis/widgets.py** (65行):
+**ui/dialogs/analysis/widgets.py** (63行):
 - `CopyableTableWidget`: Ctrl+Cコピー対応のテーブルウィジェット
   - カンマ区切り形式でクリップボードにコピー
   - 複数セル/行の選択に対応
   - メタデータ表示に使用
+
+**ui/dialogs/analysis/controls.py** (104行):
+- `ChannelsDialog`: チャンネル選択ダイアログ
+- `RangesDialog`: 軸範囲設定ダイアログ
 
 #### ファイル行数の目安
 
@@ -261,9 +304,21 @@ MIT License
 
 ## バージョン履歴
 
+### 2.3.0 (2025年10月)
+- **コード最適化とディレクトリ構造整理**
+  - image_io.py: ヘルパー関数抽出 (_is_binary_tag, _is_printable_text, _decode_bytes)
+  - analysis_dialog.py: numpy操作による配列処理高速化
+  - viewer.py: 冗長な条件チェック削減
+  - selection_manager.py: 重複チェックを統合、不要なtry-except削除
+  - base_image_label.py: ゼロチェックの簡略化
+  - tests/test_exif_metadata.py: インポートパスとファイルパス修正
+  - ui/__init__.py: 重複したエクスポート定義を修正
+  - .gitignore: legacy/ディレクトリを追加
+  - README.md: ディレクトリ構造の詳細ドキュメント追加
+
 ### 2.2.0 (2025年10月)
 - **プロジェクト構造リファクタリング**
-  - analysis_dialog.py (638行→605行): CopyableTableWidgetを分離
+  - analysis_dialog.py (638行→575行): CopyableTableWidgetを分離
   - 新規ファイル: `ui/dialogs/analysis/widgets.py` (カスタムウィジェット用)
   - 不要なファイルを削除: `ui/widgets_old.py` (バックアップ), `test_exif.py` (重複)
   - テストファイルを整理: `tests/test_exif_metadata.py` に移動

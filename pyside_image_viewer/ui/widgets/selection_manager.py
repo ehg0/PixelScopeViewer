@@ -202,8 +202,7 @@ class SelectionManagerMixin:
                 self._resize_orig_img_rect = None
                 self.dragging = False
                 self.update()
-                if self.viewer and self.selection_rect and not self.selection_rect.isNull():
-                    self.viewer.on_selection_changed(self.selection_rect)
+                self._notify_selection_changed()
             else:
                 # Finish creating new selection
                 self.dragging = False
@@ -222,8 +221,7 @@ class SelectionManagerMixin:
                     h = max(1, bottom_ex - top)
                     self.selection_rect = QRect(left, top, w, h)
                 self.update()
-                if self.viewer and self.selection_rect and not self.selection_rect.isNull():
-                    self.viewer.on_selection_changed(self.selection_rect)
+                self._notify_selection_changed()
             return
         if ev.button() == Qt.RightButton:
             # finish moving
@@ -233,8 +231,7 @@ class SelectionManagerMixin:
                 self._move_orig_img_rect = None
                 self.dragging = False
                 self.update()
-                if self.viewer and self.selection_rect and not self.selection_rect.isNull():
-                    self.viewer.on_selection_changed(self.selection_rect)
+                self._notify_selection_changed()
             return
 
     def paint_selection(self, painter: QPainter):
@@ -324,7 +321,4 @@ class SelectionManagerMixin:
     def _notify_selection_changed(self):
         """Notify viewer of selection change during drag operations."""
         if self.viewer and self.selection_rect and not self.selection_rect.isNull():
-            try:
-                self.viewer.on_selection_changed(self.selection_rect)
-            except Exception:
-                pass
+            self.viewer.on_selection_changed(self.selection_rect)

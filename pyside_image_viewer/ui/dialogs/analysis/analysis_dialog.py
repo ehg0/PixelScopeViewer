@@ -557,8 +557,7 @@ class AnalysisDialog(QDialog):
         Orientation modes:
             "h": Horizontal - average along vertical axis (returns width-sized array)
             "v": Vertical - average along horizontal axis (returns height-sized array)
-            "d": Diagonal - extract pixels along main diagonal (top-left to bottom-right),
-                 average perpendicular pixels when array is not square
+            "d": Diagonal - extract pixels along main diagonal (top-left to bottom-right)
         """
         if self.profile_orientation == "h":
             return channel_data.mean(axis=0)
@@ -568,22 +567,17 @@ class AnalysisDialog(QDialog):
             h, w = channel_data.shape
             diag_len = min(h, w)
 
-            # Extract diagonal pixels (top-left to bottom-right)
-            # For non-square images, sample along the diagonal of the smaller dimension
             if h == w:
                 # Square: simple diagonal extraction
-                prof = np.array([channel_data[i, i] for i in range(diag_len)])
+                return np.diag(channel_data)
             else:
                 # Rectangular: sample diagonal proportionally
-                prof = []
-                for i in range(diag_len):
-                    # Calculate corresponding coordinates in larger dimension
-                    y = int(i * (h - 1) / (diag_len - 1)) if diag_len > 1 else 0
-                    x = int(i * (w - 1) / (diag_len - 1)) if diag_len > 1 else 0
-                    prof.append(channel_data[y, x])
-                prof = np.array(prof)
+                if diag_len <= 1:
+                    return np.array([channel_data[0, 0]])
 
-            return prof
+                y_coords = np.linspace(0, h - 1, diag_len).astype(int)
+                x_coords = np.linspace(0, w - 1, diag_len).astype(int)
+                return channel_data[y_coords, x_coords]
 
     def _get_profile_offset(self) -> int:
         """Get the offset for absolute x-axis mode.

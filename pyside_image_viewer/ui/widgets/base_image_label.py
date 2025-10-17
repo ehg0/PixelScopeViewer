@@ -139,11 +139,12 @@ class BaseImageLabel(QLabel):
         if self._qimage is None or self._qimage.isNull():
             return None
 
-        disp_w = int(self._orig_pixmap.width() * self.scale)
-        disp_h = int(self._orig_pixmap.height() * self.scale)
         src_w = self._qimage.width()
         src_h = self._qimage.height()
-        if disp_w == 0 or disp_h == 0 or src_w == 0 or src_h == 0:
+        disp_w = int(self._orig_pixmap.width() * self.scale)
+        disp_h = int(self._orig_pixmap.height() * self.scale)
+
+        if not (disp_w and disp_h and src_w and src_h):
             return None
 
         fx = disp_w / src_w

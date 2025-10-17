@@ -87,6 +87,54 @@ def is_image_file(path: str) -> bool:
     return ext in (".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp")
 
 
+def _is_binary_tag(tag: str) -> bool:
+    """Check if a tag contains binary data that should be skipped.
+
+    Args:
+        tag: EXIF tag name
+
+    Returns:
+        True if tag should be skipped (binary/thumbnail data)
+    """
+    skip_keywords = ["thumbnail", "makernote", "printim"]
+    return any(keyword in tag.lower() for keyword in skip_keywords) or tag.startswith("Info.")
+
+
+def _is_printable_text(text: str, min_ratio: float = 0.7) -> bool:
+    """Check if text is mostly printable characters.
+
+    Args:
+        text: Text to check
+        min_ratio: Minimum ratio of printable characters (0.0-1.0)
+
+    Returns:
+        True if text has enough printable characters
+    """
+    if not text:
+        return False
+    printable_count = sum(1 for c in text if c.isprintable() or c in "\r\n\t")
+    return printable_count / len(text) >= min_ratio
+
+
+def _decode_bytes(data: bytes) -> str:
+    """Attempt to decode bytes using multiple encodings.
+
+    Args:
+        data: Bytes to decode
+
+    Returns:
+        Decoded string, or empty string if all attempts fail
+    """
+    for encoding in ["utf-8", "shift-jis", "cp932", "latin-1"]:
+        try:
+            decoded = data.decode(encoding)
+            if _is_printable_text(decoded):
+                return decoded
+        except (UnicodeDecodeError, LookupError):
+            continue
+    return ""
+
+
 def get_image_metadata(path: str) -> dict:
     """Extract metadata from an image file using exifread for comprehensive EXIF data.
 
@@ -119,59 +167,37 @@ def get_image_metadata(path: str) -> dict:
         import exifread
 
         with open(path, "rb") as f:
-            # Read EXIF tags with details enabled
             tags = exifread.process_file(f, details=True)
 
             for tag, value in tags.items():
-                # Skip binary data fields that are not meant for text display
-                # Info.* fields contain raw binary data from PIL
-                if any(skip in tag.lower() for skip in ["thumbnail", "makernote", "printim"]) or tag.startswith(
-                    "Info."
-                ):
+                # Skip binary/thumbnail data
+                if _is_binary_tag(tag):
                     continue
 
-                # Convert value to string
                 try:
-                    # exifread values have printable attribute
                     value_str = str(value)
 
                     # Handle byte data with multiple encoding attempts
                     if isinstance(value.values, bytes):
-                        # Skip binary data that's too large or contains mostly non-printable chars
+                        # Skip large binary data
                         if len(value.values) > 1000:
                             continue
 
-                        # Try multiple encodings for text data
-                        decoded = None
-                        for encoding in ["utf-8", "shift-jis", "cp932", "latin-1"]:
-                            try:
-                                decoded = value.values.decode(encoding)
-                                # Check if decoded string is mostly printable
-                                printable_ratio = sum(c.isprintable() or c in "\r\n\t" for c in decoded) / max(
-                                    len(decoded), 1
-                                )
-                                if printable_ratio > 0.7:
-                                    value_str = decoded
-                                    break
-                            except (UnicodeDecodeError, LookupError):
-                                continue
-
-                        # If no encoding worked and result has too many control chars, skip
-                        if decoded is None or value_str.count("\x00") > len(value_str) * 0.3:
+                        # Try decoding with multiple encodings
+                        decoded = _decode_bytes(value.values)
+                        if not decoded:
                             continue
+                        value_str = decoded
 
-                    # Skip fields with excessive control characters (likely binary data)
-                    control_char_count = sum(1 for c in value_str if ord(c) < 32 and c not in "\r\n\t")
-                    if control_char_count > len(value_str) * 0.2:
+                    # Skip fields with excessive control characters
+                    if not _is_printable_text(value_str, min_ratio=0.8):
                         continue
 
-                    # Clean up the tag name
+                    # Store with cleaned tag name
                     clean_tag = tag.replace(" ", "_")
-
-                    metadata[f"{clean_tag}"] = value_str
+                    metadata[clean_tag] = value_str
 
                 except Exception:
-                    # If conversion fails, skip this tag
                     continue
 
     except ImportError:

@@ -426,18 +426,17 @@ class ImageViewer(QMainWindow):
         self.update_selection_status(rect)
         # notify any open modeless AnalysisDialogs so they can refresh for new selection
         if self._analysis_dialogs:
-            # prefer base_array for analysis updates when available
-            img = None
-            if self.current_index is not None and 0 <= self.current_index < len(self.images):
-                img = self.images[self.current_index]
-            arr = img.get("base_array", img.get("array")) if img is not None else None
-            img_path = img.get("path") if img is not None else None
-            for dlg in list(self._analysis_dialogs):
-                try:
-                    dlg.set_image_and_rect(arr, self.current_selection_rect, img_path)
-                except Exception:
-                    # ignore dialog-specific errors and continue notifying others
-                    pass
+            # Get current image data
+            img = self.images[self.current_index] if self.current_index is not None else None
+            if img:
+                arr = img.get("base_array", img.get("array"))
+                img_path = img.get("path")
+                for dlg in list(self._analysis_dialogs):
+                    try:
+                        dlg.set_image_and_rect(arr, self.current_selection_rect, img_path)
+                    except Exception:
+                        # ignore dialog-specific errors and continue notifying others
+                        pass
 
     def copy_selection_to_clipboard(self):
         sel = self.current_selection_rect

@@ -284,6 +284,9 @@ class AnalysisDialog(QDialog):
             info_lines.append(f"Start: ({int(self.image_rect.x())}, {int(self.image_rect.y())})")
         self.info_browser.setPlainText("\n".join(info_lines))
 
+        # Update metadata tab (always update when image changes)
+        self._update_metadata()
+
         if self.hist_fig is None:
             return
 
@@ -401,9 +404,6 @@ class AnalysisDialog(QDialog):
             self.prof_canvas.draw()
         except Exception:
             pass
-
-        # Update metadata tab
-        self._update_metadata()
 
     def _update_metadata(self):
         """Update the metadata tab with image file information in table format."""

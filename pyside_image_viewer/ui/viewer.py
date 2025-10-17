@@ -114,13 +114,15 @@ class ImageViewer(QMainWindow):
         menubar = self.menuBar()
 
         file_menu = menubar.addMenu("ファイル")
-        file_menu.addAction(QAction("読み込み...", self, triggered=self.open_files))
-        file_menu.addAction(QAction("全選択", self, shortcut="Ctrl+A", triggered=self.select_all))
+        file_menu.addAction(QAction("読み込み...", self, shortcut="Ctrl+O", triggered=self.open_files))
+        file_menu.addSeparator()
+        file_menu.addAction(QAction("画像全体を選択", self, shortcut="Ctrl+A", triggered=self.select_all))
         file_menu.addAction(
-            QAction("選択領域の画像をコピー", self, shortcut="Ctrl+C", triggered=self.copy_selection_to_clipboard)
+            QAction("選択範囲をコピー", self, shortcut="Ctrl+C", triggered=self.copy_selection_to_clipboard)
         )
-        file_menu.addAction(QAction("閉じる", self, triggered=self.close_current_image))
-        file_menu.addAction(QAction("すべて閉じる", self, triggered=self.close_all_images))
+        file_menu.addSeparator()
+        file_menu.addAction(QAction("閉じる", self, shortcut="Ctrl+W", triggered=self.close_current_image))
+        file_menu.addAction(QAction("すべて閉じる", self, shortcut="Ctrl+Shift+W", triggered=self.close_all_images))
 
         self.img_menu = menubar.addMenu("画像")
         self.update_image_list_menu()
@@ -130,15 +132,18 @@ class ImageViewer(QMainWindow):
         view_menu.addAction(
             QAction("縮小", self, shortcut="-", triggered=lambda: self.set_zoom(max(0.125, self.scale / 2)))
         )
+        view_menu.addSeparator()
         view_menu.addAction(QAction("左ビットシフト", self, shortcut="<", triggered=lambda: self.bit_shift(-1)))
         view_menu.addAction(QAction("右ビットシフト", self, shortcut=">", triggered=lambda: self.bit_shift(1)))
-        # move diff display into view menu
+        view_menu.addSeparator()
         view_menu.addAction(QAction("差分画像表示", self, triggered=lambda: self.show_diff_dialog()))
 
         analysis = menubar.addMenu("解析")
         analysis.addAction(QAction("プロファイル", self, triggered=lambda: self.show_analysis_dialog(tab="Profile")))
         analysis.addAction(QAction("ヒストグラム", self, triggered=lambda: self.show_analysis_dialog(tab="Histogram")))
+        analysis.addSeparator()
         analysis.addAction(QAction("メタデータ", self, triggered=lambda: self.show_analysis_dialog(tab="Metadata")))
+        
         help_menu = menubar.addMenu("ヘルプ")
         help_menu.addAction(QAction("キーボードショートカット", self, triggered=self.help_dialog.show))
 

@@ -115,12 +115,12 @@ class ImageViewer(QMainWindow):
 
         file_menu = menubar.addMenu("ファイル")
         file_menu.addAction(QAction("読み込み...", self, triggered=self.open_files))
-        file_menu.addAction(QAction("閉じる", self, triggered=self.close_current_image))
-        file_menu.addAction(QAction("すべて閉じる", self, triggered=self.close_all_images))
         file_menu.addAction(QAction("全選択", self, shortcut="Ctrl+A", triggered=self.select_all))
         file_menu.addAction(
-            QAction("選択領域をコピー", self, shortcut="Ctrl+C", triggered=self.copy_selection_to_clipboard)
+            QAction("選択領域の画像をコピー", self, shortcut="Ctrl+C", triggered=self.copy_selection_to_clipboard)
         )
+        file_menu.addAction(QAction("閉じる", self, triggered=self.close_current_image))
+        file_menu.addAction(QAction("すべて閉じる", self, triggered=self.close_all_images))
 
         self.img_menu = menubar.addMenu("画像")
         self.update_image_list_menu()
@@ -194,7 +194,6 @@ class ImageViewer(QMainWindow):
         self.img_menu.clear()
         self.img_menu.addAction(QAction("次の画像", self, shortcut="n", triggered=self.next_image))
         self.img_menu.addAction(QAction("前の画像", self, shortcut="b", triggered=self.prev_image))
-        self.img_menu.addAction(QAction("画像を閉じる", self, triggered=self.close_current_image))
         self.img_menu.addSeparator()
 
         group = QActionGroup(self)

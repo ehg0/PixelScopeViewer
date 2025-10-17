@@ -130,6 +130,30 @@ class AnalysisDialog(QDialog):
         il.addWidget(self.info_browser)
         self.tabs.addTab(info_tab, "Info")
 
+        # Profile tab
+        prof_tab = QWidget()
+        pl = QHBoxLayout(prof_tab)
+        if Figure is not None:
+            self.prof_fig = Figure(figsize=(5, 3))
+            self.prof_canvas = FigureCanvas(self.prof_fig)
+            pl.addWidget(self.prof_canvas, 1)
+        else:
+            self.prof_fig = None
+            self.prof_canvas = None
+        pv = QVBoxLayout()
+        self.prof_channels_btn = QPushButton("Channels...")
+        self.prof_channels_btn.clicked.connect(self._on_prof_channels)
+        pv.addWidget(self.prof_channels_btn)
+        self.prof_ranges_btn = QPushButton("Axis ranges...")
+        self.prof_ranges_btn.clicked.connect(self._on_ranges)
+        pv.addWidget(self.prof_ranges_btn)
+        self.prof_copy_btn = QPushButton("Copy data")
+        self.prof_copy_btn.clicked.connect(self.copy_profile_to_clipboard)
+        pv.addWidget(self.prof_copy_btn)
+        pv.addStretch(1)
+        pl.addLayout(pv)
+        self.tabs.addTab(prof_tab, "Profile")
+
         # Histogram tab
         hist_tab = QWidget()
         hl = QHBoxLayout(hist_tab)
@@ -154,30 +178,6 @@ class AnalysisDialog(QDialog):
         vcol.addStretch(1)
         hl.addLayout(vcol)
         self.tabs.addTab(hist_tab, "Histogram")
-
-        # Profile tab
-        prof_tab = QWidget()
-        pl = QHBoxLayout(prof_tab)
-        if Figure is not None:
-            self.prof_fig = Figure(figsize=(5, 3))
-            self.prof_canvas = FigureCanvas(self.prof_fig)
-            pl.addWidget(self.prof_canvas, 1)
-        else:
-            self.prof_fig = None
-            self.prof_canvas = None
-        pv = QVBoxLayout()
-        self.prof_channels_btn = QPushButton("Channels...")
-        self.prof_channels_btn.clicked.connect(self._on_prof_channels)
-        pv.addWidget(self.prof_channels_btn)
-        self.prof_ranges_btn = QPushButton("Axis ranges...")
-        self.prof_ranges_btn.clicked.connect(self._on_ranges)
-        pv.addWidget(self.prof_ranges_btn)
-        self.prof_copy_btn = QPushButton("Copy data")
-        self.prof_copy_btn.clicked.connect(self.copy_profile_to_clipboard)
-        pv.addWidget(self.prof_copy_btn)
-        pv.addStretch(1)
-        pl.addLayout(pv)
-        self.tabs.addTab(prof_tab, "Profile")
 
         box = QDialogButtonBox(QDialogButtonBox.Close)
         box.rejected.connect(self.reject)

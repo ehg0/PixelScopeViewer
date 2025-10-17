@@ -92,7 +92,7 @@ class AnalysisDialog(QDialog):
         self.image_rect = image_rect
 
         # state
-        self.profile_orientation = "h"
+        self.profile_orientation = "h"  # "h", "v", or "d" (diagonal)
         self.x_mode = "relative"
         self.hist_yscale = "linear"
         self.channel_checks: list[bool] = []
@@ -312,9 +312,9 @@ class AnalysisDialog(QDialog):
             if not self.channel_checks:
                 self.channel_checks = [True] * nch
             for c in range(nch):
-                prof = arr[:, :, c].mean(axis=0) if self.profile_orientation == "h" else arr[:, :, c].mean(axis=1)
+                prof = self._compute_profile(arr[:, :, c])
                 if self.x_mode == "absolute" and self.image_rect is not None:
-                    offset = self.image_rect.x() if self.profile_orientation == "h" else self.image_rect.y()
+                    offset = self._get_profile_offset()
                     xs2 = np.arange(prof.size) + offset
                 else:
                     xs2 = np.arange(prof.size)
@@ -323,16 +323,16 @@ class AnalysisDialog(QDialog):
                     ax2.plot(xs2, prof, color=colors[c] if c < len(colors) else None, label=f"C{c}")
         else:
             gray_data = arr if arr.ndim == 2 else arr[:, :, 0]
-            prof = gray_data.mean(axis=0) if self.profile_orientation == "h" else gray_data.mean(axis=1)
+            prof = self._compute_profile(gray_data)
             if self.x_mode == "absolute" and self.image_rect is not None:
-                offset = self.image_rect.x() if self.profile_orientation == "h" else self.image_rect.y()
+                offset = self._get_profile_offset()
                 xs2 = np.arange(prof.size) + offset
             else:
                 xs2 = np.arange(prof.size)
             self.last_profile_data["I"] = (xs2, prof)
             ax2.plot(xs2, prof, color="k", label="Intensity")
 
-        orientation_label = "Horizontal" if self.profile_orientation == "h" else "Vertical"
+        orientation_label = {"h": "Horizontal", "v": "Vertical", "d": "Diagonal"}[self.profile_orientation]
         mode_label = "Absolute" if self.x_mode == "absolute" else "Relative"
         ax2.set_title(f"Profile ({orientation_label}, {mode_label})")
         ax2.set_xlabel("Position" if self.x_mode == "relative" else "Absolute Position")
@@ -402,7 +402,11 @@ class AnalysisDialog(QDialog):
             self.update_contents()
 
     def _on_profile_click(self, event):
-        """Handle profile plot click events with time-based double-click fallback."""
+        """Handle profile plot click events with time-based double-click fallback.
+
+        Left double-click: cycle through orientation modes (h → v → d → h)
+        Right double-click: toggle x-axis mode (relative ↔ absolute)
+        """
         import time
 
         btn = getattr(event, "button", None)
@@ -421,9 +425,71 @@ class AnalysisDialog(QDialog):
                 return
 
         if is_dblclick:
-            if btn == 1:  # Left: toggle orientation
-                self.profile_orientation = "v" if self.profile_orientation == "h" else "h"
+            if btn == 1:  # Left: cycle orientation h → v → d → h
+                if self.profile_orientation == "h":
+                    self.profile_orientation = "v"
+                elif self.profile_orientation == "v":
+                    self.profile_orientation = "d"
+                else:
+                    self.profile_orientation = "h"
                 self.update_contents()
             elif btn == 3:  # Right: toggle x-mode
                 self.x_mode = "absolute" if self.x_mode == "relative" else "relative"
                 self.update_contents()
+
+    def _compute_profile(self, channel_data: np.ndarray) -> np.ndarray:
+        """Compute intensity profile for a single channel.
+
+        Args:
+            channel_data: 2D array (height x width) of pixel values
+
+        Returns:
+            1D array of averaged intensity values
+
+        Orientation modes:
+            "h": Horizontal - average along vertical axis (returns width-sized array)
+            "v": Vertical - average along horizontal axis (returns height-sized array)
+            "d": Diagonal - extract pixels along main diagonal (top-left to bottom-right),
+                 average perpendicular pixels when array is not square
+        """
+        if self.profile_orientation == "h":
+            return channel_data.mean(axis=0)
+        elif self.profile_orientation == "v":
+            return channel_data.mean(axis=1)
+        else:  # diagonal
+            h, w = channel_data.shape
+            diag_len = min(h, w)
+
+            # Extract diagonal pixels (top-left to bottom-right)
+            # For non-square images, sample along the diagonal of the smaller dimension
+            if h == w:
+                # Square: simple diagonal extraction
+                prof = np.array([channel_data[i, i] for i in range(diag_len)])
+            else:
+                # Rectangular: sample diagonal proportionally
+                prof = []
+                for i in range(diag_len):
+                    # Calculate corresponding coordinates in larger dimension
+                    y = int(i * (h - 1) / (diag_len - 1)) if diag_len > 1 else 0
+                    x = int(i * (w - 1) / (diag_len - 1)) if diag_len > 1 else 0
+                    prof.append(channel_data[y, x])
+                prof = np.array(prof)
+
+            return prof
+
+    def _get_profile_offset(self) -> int:
+        """Get the offset for absolute x-axis mode.
+
+        Returns:
+            Offset value based on current orientation and image_rect
+        """
+        if self.image_rect is None:
+            return 0
+
+        if self.profile_orientation == "h":
+            return self.image_rect.x()
+        elif self.profile_orientation == "v":
+            return self.image_rect.y()
+        else:  # diagonal
+            # For diagonal, use top-left corner as offset
+            return min(self.image_rect.x(), self.image_rect.y())

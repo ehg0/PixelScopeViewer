@@ -339,11 +339,54 @@ class ImageViewer(QMainWindow):
         self.show_current_image()
 
     def set_zoom(self, scale: float):
-        self.scale = scale
+        """Set the zoom scale, preserving the center of the visible viewport.
+
+        Args:
+            scale: New zoom scale factor (1.0 = original size)
+
+        The zoom operation calculates the current viewport center point in
+        image coordinates, applies the new scale, then adjusts scroll position
+        to keep the same center point visible.
+        """
         if self.current_index is None:
+            self.scale = scale
             return
+
+        # Get current viewport center in image coordinates before zoom
+        scroll_area = self.scroll_area
+        old_h_scroll = scroll_area.horizontalScrollBar().value()
+        old_v_scroll = scroll_area.verticalScrollBar().value()
+        viewport_width = scroll_area.viewport().width()
+        viewport_height = scroll_area.viewport().height()
+
+        # Calculate center point in widget coordinates
+        old_center_x = old_h_scroll + viewport_width / 2.0
+        old_center_y = old_v_scroll + viewport_height / 2.0
+
+        # Convert to image coordinates (independent of scale)
+        old_scale = self.scale
+        if old_scale > 0:
+            img_center_x = old_center_x / old_scale
+            img_center_y = old_center_y / old_scale
+        else:
+            img_center_x = old_center_x
+            img_center_y = old_center_y
+
+        # Apply new zoom
+        self.scale = scale
         arr = self.images[self.current_index]["array"]
         self.display_image(arr)
+
+        # Calculate new scroll position to keep same center
+        new_center_x = img_center_x * scale
+        new_center_y = img_center_y * scale
+
+        new_h_scroll = int(new_center_x - viewport_width / 2.0)
+        new_v_scroll = int(new_center_y - viewport_height / 2.0)
+
+        # Apply new scroll position
+        scroll_area.horizontalScrollBar().setValue(new_h_scroll)
+        scroll_area.verticalScrollBar().setValue(new_v_scroll)
 
     def bit_shift(self, amount):
         if self.current_index is None:
@@ -362,7 +405,13 @@ class ImageViewer(QMainWindow):
         self.status_shift.setText(f"Shift: {new_shift:+d}")
 
     def select_all(self):
+        """Select the entire image."""
+        if self.current_index is None or not self.images:
+            return
         self.image_label.set_selection_full()
+        # Notify that selection changed (same as manual selection)
+        if self.image_label.selection_rect:
+            self.on_selection_changed(self.image_label.selection_rect)
 
     def on_selection_changed(self, rect: QRect):
         s = self.scale

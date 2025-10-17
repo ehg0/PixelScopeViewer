@@ -9,6 +9,9 @@ All functions handle edge cases gracefully and are UI-independent.
 """
 
 import os
+import sys
+from io import StringIO
+from contextlib import redirect_stdout, redirect_stderr
 from typing import Optional
 import numpy as np
 from PIL import Image
@@ -166,8 +169,10 @@ def get_image_metadata(path: str) -> dict:
     try:
         import exifread
 
+        # Suppress exifread's debug messages (e.g., "PNG file does not have exif data.")
         with open(path, "rb") as f:
-            tags = exifread.process_file(f, details=True)
+            with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
+                tags = exifread.process_file(f, details=False)
 
             for tag, value in tags.items():
                 # Skip binary/thumbnail data

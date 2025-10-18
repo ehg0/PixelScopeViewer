@@ -33,6 +33,10 @@ class ChannelsDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Channels")
         self.setModal(False)  # Make it modeless since it's for immediate updates
+
+        # Set a more appropriate default size
+        self.resize(200, 150)
+
         self.callback = callback
         layout = QVBoxLayout(self)
         self.checks: list[QCheckBox] = []

@@ -2,12 +2,12 @@
 
 This module provides the main AnalysisDialog which displays:
 - Info tab: Selection size and position
-- Histogram tab: Intensity histogram with logarithmic scale toggle
+- Histogram tab: Intensity histogram with customizable channels
 - Profile tab: Line profile (horizontal/vertical/diagonal) with absolute/relative modes
 - Metadata tab: Image metadata in table format with EXIF information
 
-The dialog supports pyqtgraph-based interactive plots with double-click
-gestures for toggling plot modes. If pyqtgraph is not available, the
+The dialog supports pyqtgraph-based interactive plots with right-click
+context menus for plot configuration. If pyqtgraph is not available, the
 histogram and profile tabs will show empty placeholders.
 
 Dependencies:
@@ -34,6 +34,7 @@ from PySide6.QtWidgets import (
     QTableWidget,
     QTableWidgetItem,
     QHeaderView,
+    QGroupBox,
 )
 from PySide6.QtGui import QGuiApplication
 
@@ -42,6 +43,7 @@ try:
     from pyqtgraph import PlotWidget
 
     PYQTGRAPH_AVAILABLE = True
+
 except ImportError:
     pg = None
     PlotWidget = None
@@ -61,15 +63,12 @@ class AnalysisDialog(QDialog):
 
     2. Histogram Tab:
        - Shows intensity distribution across all channels
-       - Left double-click: Toggle linear/logarithmic Y scale
-       - Customizable via "Channels..." and "Axis ranges..." buttons
+       - Customizable via "Channels..." button
        - "Copy data" exports histogram as CSV to clipboard
 
     3. Profile Tab:
        - Shows averaged intensity profile along a direction
-       - Left double-click: Toggle horizontal/vertical orientation
-       - Right double-click: Toggle relative/absolute X axis
-       - Customizable via "Channels..." and "Axis ranges..." buttons
+       - Customizable via "Channels..." button
        - "Copy data" exports profile as CSV to clipboard
 
     The dialog is modeless and updates automatically when the parent
@@ -115,19 +114,7 @@ class AnalysisDialog(QDialog):
         self.last_hist_data = {}
         self.last_profile_data = {}
 
-        # For time-based double-click detection (fallback when event.dblclick not available)
-        self._last_click_time = {}
-        self._double_click_interval = 0.4  # seconds
-
         self._build_ui()
-
-        try:
-            if hasattr(self, "hist_widget") and self.hist_widget is not None:
-                self.hist_widget.scene().sigMouseClicked.connect(self._on_hist_click)
-            if hasattr(self, "prof_widget") and self.prof_widget is not None:
-                self.prof_widget.scene().sigMouseClicked.connect(self._on_profile_click)
-        except Exception:
-            pass
 
         if self.image_array is not None:
             self.update_contents()
@@ -175,34 +162,114 @@ class AnalysisDialog(QDialog):
             self.prof_widget.setLabel("left", "Intensity")
             self.prof_widget.setLabel("bottom", "Position")
 
-            # Style configuration for better UI integration
+            # Style configuration for better UI integration (no border)
             self.prof_widget.setBackground("white")
-            self.prof_widget.showGrid(x=True, y=True, alpha=0.2)
-            self.prof_widget.getAxis("left").setPen(pg.mkPen(color="#bdc3c7", width=1))
-            self.prof_widget.getAxis("bottom").setPen(pg.mkPen(color="#bdc3c7", width=1))
+            self.prof_widget.showGrid(x=True, y=True, alpha=0.4)  # More visible grid lines
+            self.prof_widget.getAxis("left").setPen(pg.mkPen(color="#7f8c8d", width=1))  # Darker axis lines
+            self.prof_widget.getAxis("bottom").setPen(pg.mkPen(color="#7f8c8d", width=1))  # Darker axis lines
             self.prof_widget.getAxis("left").setTextPen(pg.mkPen(color="#2c3e50"))
             self.prof_widget.getAxis("bottom").setTextPen(pg.mkPen(color="#2c3e50"))
-            # Add subtle border
-            self.prof_widget.setStyleSheet("QWidget { border: 1px solid #bdc3c7; }")
 
-            # Enable right-click menu but disable drag operations
+            # Enable right-click menu and disable drag operations
             self.prof_widget.setMenuEnabled(True)
             # Configure ViewBox for analysis use
             view_box = self.prof_widget.getViewBox()
-            view_box.setMouseEnabled(x=False, y=False)  # Disable mouse drag/zoom
-            # Ensure axes are in Auto state (must be called after mouse configuration)
+            view_box.setMouseEnabled(x=False, y=False)  # Disable drag/zoom
+            # Ensure axes are in Auto state
             view_box.enableAutoRange(axis=pg.ViewBox.XYAxes, enable=True)
 
             pl.addWidget(self.prof_widget, 1)
         else:
             self.prof_widget = None
         pv = QVBoxLayout()
-        self.prof_channels_btn = QPushButton("Channels...")
+        # Add left and right margins to the button area
+        pv.setContentsMargins(10, 10, 10, 10)
+        pv.setSpacing(8)  # Add spacing between groups
+
+        # Channel control group
+        channels_group = QGroupBox("Channels")
+        channels_group.setStyleSheet(
+            """
+            QGroupBox {
+                font-weight: bold;
+                border: 2px solid #cccccc;
+                border-radius: 5px;
+                margin: 3px 0px;
+                padding-top: 10px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 5px 0 5px;
+            }
+        """
+        )
+        channels_layout = QVBoxLayout(channels_group)
+        channels_layout.setContentsMargins(8, 5, 8, 8)  # Add padding inside group
+        self.prof_channels_btn = QPushButton("Configure...")
+        self.prof_channels_btn.setMinimumWidth(100)  # Set minimum width for better appearance
         self.prof_channels_btn.clicked.connect(self._on_prof_channels)
-        pv.addWidget(self.prof_channels_btn)
+        channels_layout.addWidget(self.prof_channels_btn)
+        pv.addWidget(channels_group)
+
+        # Profile display settings group
+        display_group = QGroupBox("Display Settings")
+        display_group.setStyleSheet(
+            """
+            QGroupBox {
+                font-weight: bold;
+                border: 2px solid #cccccc;
+                border-radius: 5px;
+                margin: 3px 0px;
+                padding-top: 10px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 5px 0 5px;
+            }
+        """
+        )
+        display_layout = QVBoxLayout(display_group)
+        display_layout.setContentsMargins(8, 5, 8, 8)  # Add padding inside group
+
+        self.prof_orientation_btn = QPushButton("Horizontal")
+        self.prof_orientation_btn.setMinimumWidth(100)  # Set minimum width for better appearance
+        self.prof_orientation_btn.clicked.connect(self._on_prof_orientation_toggle)
+        display_layout.addWidget(self.prof_orientation_btn)
+
+        self.prof_xmode_btn = QPushButton("Relative")
+        self.prof_xmode_btn.setMinimumWidth(100)  # Set minimum width for better appearance
+        self.prof_xmode_btn.clicked.connect(self._on_prof_xmode_toggle)
+        display_layout.addWidget(self.prof_xmode_btn)
+        pv.addWidget(display_group)
+
+        # Data export group
+        export_group = QGroupBox("Export")
+        export_group.setStyleSheet(
+            """
+            QGroupBox {
+                font-weight: bold;
+                border: 2px solid #cccccc;
+                border-radius: 5px;
+                margin: 3px 0px;
+                padding-top: 10px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 5px 0 5px;
+            }
+        """
+        )
+        export_layout = QVBoxLayout(export_group)
+        export_layout.setContentsMargins(8, 5, 8, 8)  # Add padding inside group
         self.prof_copy_btn = QPushButton("Copy data")
+        self.prof_copy_btn.setMinimumWidth(100)  # Set minimum width for better appearance
         self.prof_copy_btn.clicked.connect(self.copy_profile_to_clipboard)
-        pv.addWidget(self.prof_copy_btn)
+        export_layout.addWidget(self.prof_copy_btn)
+        pv.addWidget(export_group)
+
         pv.addStretch(1)
         pl.addLayout(pv)
         self.tabs.addTab(prof_tab, "Profile")
@@ -215,22 +282,20 @@ class AnalysisDialog(QDialog):
             self.hist_widget.setLabel("left", "Count")
             self.hist_widget.setLabel("bottom", "Intensity")
 
-            # Style configuration for better UI integration
+            # Style configuration for better UI integration (no border)
             self.hist_widget.setBackground("white")
-            self.hist_widget.showGrid(x=True, y=True, alpha=0.2)
-            self.hist_widget.getAxis("left").setPen(pg.mkPen(color="#bdc3c7", width=1))
-            self.hist_widget.getAxis("bottom").setPen(pg.mkPen(color="#bdc3c7", width=1))
+            self.hist_widget.showGrid(x=True, y=True, alpha=0.4)  # More visible grid lines
+            self.hist_widget.getAxis("left").setPen(pg.mkPen(color="#7f8c8d", width=1))  # Darker axis lines
+            self.hist_widget.getAxis("bottom").setPen(pg.mkPen(color="#7f8c8d", width=1))  # Darker axis lines
             self.hist_widget.getAxis("left").setTextPen(pg.mkPen(color="#2c3e50"))
             self.hist_widget.getAxis("bottom").setTextPen(pg.mkPen(color="#2c3e50"))
-            # Add subtle border
-            self.hist_widget.setStyleSheet("QWidget { border: 1px solid #bdc3c7; }")
 
-            # Enable right-click menu but disable drag operations
+            # Enable right-click menu and disable drag operations
             self.hist_widget.setMenuEnabled(True)
             # Configure ViewBox for analysis use
             view_box = self.hist_widget.getViewBox()
-            view_box.setMouseEnabled(x=False, y=False)  # Disable mouse drag/zoom
-            # Ensure axes are in Auto state (must be called after mouse configuration)
+            view_box.setMouseEnabled(x=False, y=False)  # Disable drag/zoom
+            # Ensure axes are in Auto state
             view_box.enableAutoRange(axis=pg.ViewBox.XYAxes, enable=True)
 
             hl.addWidget(self.hist_widget, 1)
@@ -238,12 +303,62 @@ class AnalysisDialog(QDialog):
             self.hist_widget = None
 
         vcol = QVBoxLayout()
-        self.hist_channels_btn = QPushButton("Channels...")
+        # Add left and right margins to the button area
+        vcol.setContentsMargins(10, 10, 10, 10)
+        vcol.setSpacing(8)  # Add spacing between groups
+
+        # Channel control group
+        channels_group = QGroupBox("Channels")
+        channels_group.setStyleSheet(
+            """
+            QGroupBox {
+                font-weight: bold;
+                border: 2px solid #cccccc;
+                border-radius: 5px;
+                margin: 3px 0px;
+                padding-top: 10px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 5px 0 5px;
+            }
+        """
+        )
+        channels_layout = QVBoxLayout(channels_group)
+        channels_layout.setContentsMargins(8, 5, 8, 8)  # Add padding inside group
+        self.hist_channels_btn = QPushButton("Configure...")
+        self.hist_channels_btn.setMinimumWidth(100)  # Set minimum width for better appearance
         self.hist_channels_btn.clicked.connect(self._on_hist_channels)
-        vcol.addWidget(self.hist_channels_btn)
+        channels_layout.addWidget(self.hist_channels_btn)
+        vcol.addWidget(channels_group)
+
+        # Data export group
+        export_group = QGroupBox("Export")
+        export_group.setStyleSheet(
+            """
+            QGroupBox {
+                font-weight: bold;
+                border: 2px solid #cccccc;
+                border-radius: 5px;
+                margin: 3px 0px;
+                padding-top: 10px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 5px 0 5px;
+            }
+        """
+        )
+        export_layout = QVBoxLayout(export_group)
+        export_layout.setContentsMargins(8, 5, 8, 8)  # Add padding inside group
         self.hist_copy_btn = QPushButton("Copy data")
+        self.hist_copy_btn.setMinimumWidth(100)  # Set minimum width for better appearance
         self.hist_copy_btn.clicked.connect(self.copy_histogram_to_clipboard)
-        vcol.addWidget(self.hist_copy_btn)
+        export_layout.addWidget(self.hist_copy_btn)
+        vcol.addWidget(export_group)
+
         vcol.addStretch(1)
         hl.addLayout(vcol)
         self.tabs.addTab(hist_tab, "Histogram")
@@ -289,11 +404,31 @@ class AnalysisDialog(QDialog):
 
         # Create and show modeless dialog with immediate updates
         dlg = ChannelsDialog(self, nch, self.channel_checks, callback=immediate_update)
+
+        # Position dialog near the histogram channels button
+        button_pos = self.hist_channels_btn.mapToGlobal(self.hist_channels_btn.rect().topRight())
+        dlg.move(button_pos.x() + 10, button_pos.y())
+
         dlg.show()  # Show modeless dialog without blocking
 
     def _on_prof_channels(self):
-        # reuse histogram channels handler for profile
-        self._on_hist_channels()
+        if self.image_array is None:
+            return
+        nch = self.image_array.shape[2] if self.image_array.ndim == 3 else 1
+
+        def immediate_update(new_checks):
+            """Callback for immediate graph update when checkboxes change."""
+            self.channel_checks = new_checks
+            self.update_contents()
+
+        # Create and show modeless dialog with immediate updates
+        dlg = ChannelsDialog(self, nch, self.channel_checks, callback=immediate_update)
+
+        # Position dialog near the profile channels button
+        button_pos = self.prof_channels_btn.mapToGlobal(self.prof_channels_btn.rect().topRight())
+        dlg.move(button_pos.x() + 10, button_pos.y())
+
+        dlg.show()  # Show modeless dialog without blocking
 
     def update_contents(self):
         """Refresh all tabs with current image data and settings."""
@@ -414,6 +549,19 @@ class AnalysisDialog(QDialog):
             prof_vb.autoRange()  # First fit to current data
             prof_vb.enableAutoRange(axis=pg.ViewBox.XYAxes)  # Then enable auto for future
 
+        # Update button texts to reflect current state
+        if hasattr(self, "prof_orientation_btn"):
+            if self.profile_orientation == "h":
+                self.prof_orientation_btn.setText("Horizontal")
+            else:
+                self.prof_orientation_btn.setText("Vertical")
+
+        if hasattr(self, "prof_xmode_btn"):
+            if self.x_mode == "relative":
+                self.prof_xmode_btn.setText("Relative")
+            else:
+                self.prof_xmode_btn.setText("Absolute")
+
     def _update_metadata(self):
         """Update the metadata tab with image file information in table format."""
         if not hasattr(self, "metadata_table"):
@@ -512,33 +660,6 @@ class AnalysisDialog(QDialog):
         QGuiApplication.clipboard().setText("\n".join(lines))
         QMessageBox.information(self, "Copy", "Profile copied to clipboard.")
 
-    def _on_hist_click(self, event):
-        """Handle histogram plot click events."""
-        if event.double() and event.button() == 1:  # Left double-click
-            if hasattr(self, "hist_yscale"):
-                self.hist_yscale = "log" if self.hist_yscale == "linear" else "linear"
-            else:
-                self.hist_yscale = "log"
-            self.update_contents()
-
-    def _on_profile_click(self, event):
-        """Handle profile plot click events.
-
-        Left double-click: cycle through orientation modes (h → v → d → h)
-        Right double-click: toggle x-axis mode (relative ↔ absolute)
-        """
-        if not event.double():
-            return
-
-        if event.button() == 1:  # Left double-click
-            orientations = ["h", "v", "d"]
-            current_idx = orientations.index(self.profile_orientation)
-            self.profile_orientation = orientations[(current_idx + 1) % len(orientations)]
-            self.update_contents()
-        elif event.button() == 2:  # Right double-click
-            self.x_mode = "absolute" if self.x_mode == "relative" else "relative"
-            self.update_contents()
-
     def _compute_profile(self, channel_data: np.ndarray) -> np.ndarray:
         """Compute intensity profile for a single channel.
 
@@ -589,3 +710,23 @@ class AnalysisDialog(QDialog):
         else:  # diagonal
             # For diagonal, use top-left corner as offset
             return min(self.image_rect.x(), self.image_rect.y())
+
+    def _on_prof_orientation_toggle(self):
+        """Toggle profile orientation between horizontal and vertical."""
+        if self.profile_orientation == "h":
+            self.profile_orientation = "v"
+            self.prof_orientation_btn.setText("Vertical")
+        else:
+            self.profile_orientation = "h"
+            self.prof_orientation_btn.setText("Horizontal")
+        self.update_contents()
+
+    def _on_prof_xmode_toggle(self):
+        """Toggle x-axis mode between relative and absolute."""
+        if self.x_mode == "relative":
+            self.x_mode = "absolute"
+            self.prof_xmode_btn.setText("Absolute")
+        else:
+            self.x_mode = "relative"
+            self.prof_xmode_btn.setText("Relative")
+        self.update_contents()

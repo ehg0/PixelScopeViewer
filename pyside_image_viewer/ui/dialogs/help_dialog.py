@@ -29,8 +29,11 @@ class HelpDialog(QDialog):
         text = QTextEdit(self)
         text.setReadOnly(True)
         content = """Keyboard shortcuts:
-- 全選択 : Ctrl + A
-- 選択領域をコピー : Ctrl + C
+- 読み込み : Ctrl + O
+- 画像全体を選択 : Ctrl + A
+- 選択範囲をコピー : Ctrl + C
+- 閉じる : Ctrl + W
+- すべて閉じる : Ctrl + Shift + W
 - 次の画像 : n
 - 前の画像 : b
 - 拡大 : +

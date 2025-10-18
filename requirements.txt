@@ -1,5 +1,5 @@
 PySide6
 numpy
 Pillow
-matplotlib
+pyqtgraph
 exifread

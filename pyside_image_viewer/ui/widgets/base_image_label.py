@@ -78,9 +78,9 @@ class BaseImageLabel(QLabel):
     # --- Coordinate conversion utilities ---
     def _display_scale_factor(self) -> Optional[float]:
         """Return displayed pixels per source image pixel."""
-        if self._qimage is None or self._qimage.isNull():
+        if self._qimage is None or self._qimage.isNull() or not self.scale or self.scale <= 0:
             return None
-        return float(self.scale) if self.scale and self.scale > 0 else None
+        return float(self.scale)
 
     def _widget_to_image_point(self, pt: QPoint) -> Optional[tuple[int, int]]:
         """Convert widget coordinates to image pixel coordinates.
@@ -92,12 +92,10 @@ class BaseImageLabel(QLabel):
             (x, y) in image coordinates, or None if no image
         """
         factor = self._display_scale_factor()
-        if factor is None or factor == 0 or self._qimage is None:
+        if factor is None or self._qimage is None:
             return None
-        ix = int(pt.x() / factor)
-        iy = int(pt.y() / factor)
-        ix = max(0, min(ix, self._qimage.width() - 1))
-        iy = max(0, min(iy, self._qimage.height() - 1))
+        ix = max(0, min(int(pt.x() / factor), self._qimage.width() - 1))
+        iy = max(0, min(int(pt.y() / factor), self._qimage.height() - 1))
         return (ix, iy)
 
     def _image_to_widget_x(self, ix: int) -> int:
@@ -144,21 +142,17 @@ class BaseImageLabel(QLabel):
         disp_w = int(self._orig_pixmap.width() * self.scale)
         disp_h = int(self._orig_pixmap.height() * self.scale)
 
-        if not (disp_w and disp_h and src_w and src_h):
+        # Check for zero dimensions - simplified
+        if not all([disp_w, disp_h, src_w, src_h]):
             return None
 
         fx = disp_w / src_w
         fy = disp_h / src_h
 
-        left = int(widget_rect.left() / fx)
-        top = int(widget_rect.top() / fy)
-        right_ex = int((widget_rect.left() + widget_rect.width()) / fx)
-        bottom_ex = int((widget_rect.top() + widget_rect.height()) / fy)
-
-        left = max(0, min(left, src_w))
-        top = max(0, min(top, src_h))
-        right_ex = max(0, min(right_ex, src_w))
-        bottom_ex = max(0, min(bottom_ex, src_h))
+        left = max(0, min(int(widget_rect.left() / fx), src_w))
+        top = max(0, min(int(widget_rect.top() / fy), src_h))
+        right_ex = max(0, min(int((widget_rect.left() + widget_rect.width()) / fx), src_w))
+        bottom_ex = max(0, min(int((widget_rect.top() + widget_rect.height()) / fy), src_h))
 
         w = max(0, right_ex - left)
         h = max(0, bottom_ex - top)

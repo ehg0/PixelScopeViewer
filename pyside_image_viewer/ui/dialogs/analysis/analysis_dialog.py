@@ -2,16 +2,18 @@
 
 This module provides the main AnalysisDialog which displays:
 - Info tab: Selection size and position
-- Histogram tab: Intensity histogram with logarithmic scale toggle
-- Profile tab: Line profile (horizontal/vertical) with absolute/relative modes
+- Histogram tab: Intensity histogram with customizable channels
+- Profile tab: Line profile (horizontal/vertical/diagonal) with absolute/relative modes
+- Metadata tab: Image metadata in table format with EXIF information
 
-The dialog supports matplotlib-based interactive plots with double-click
-gestures for toggling plot modes. If matplotlib is not available, the
+The dialog supports pyqtgraph-based interactive plots with right-click
+context menus for plot configuration. If pyqtgraph is not available, the
 histogram and profile tabs will show empty placeholders.
 
 Dependencies:
-    - matplotlib (optional): For histogram and profile plotting
+    - pyqtgraph (optional): For fast histogram and profile plotting
     - numpy: For data processing
+    - exifread: For comprehensive EXIF metadata reading
 """
 
 from typing import Optional
@@ -32,19 +34,22 @@ from PySide6.QtWidgets import (
     QTableWidget,
     QTableWidgetItem,
     QHeaderView,
+    QGroupBox,
 )
 from PySide6.QtGui import QGuiApplication
 
 try:
-    from matplotlib.figure import Figure
-    from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
-    from matplotlib.ticker import AutoMinorLocator
-except ImportError:
-    Figure = None
-    FigureCanvas = None
-    AutoMinorLocator = None
+    import pyqtgraph as pg
+    from pyqtgraph import PlotWidget
 
-from .controls import ChannelsDialog, RangesDialog
+    PYQTGRAPH_AVAILABLE = True
+
+except ImportError:
+    pg = None
+    PlotWidget = None
+    PYQTGRAPH_AVAILABLE = False
+
+from .controls import ChannelsDialog
 from .widgets import CopyableTableWidget
 
 
@@ -58,15 +63,12 @@ class AnalysisDialog(QDialog):
 
     2. Histogram Tab:
        - Shows intensity distribution across all channels
-       - Left double-click: Toggle linear/logarithmic Y scale
-       - Customizable via "Channels..." and "Axis ranges..." buttons
+       - Customizable via "Channels..." button
        - "Copy data" exports histogram as CSV to clipboard
 
     3. Profile Tab:
        - Shows averaged intensity profile along a direction
-       - Left double-click: Toggle horizontal/vertical orientation
-       - Right double-click: Toggle relative/absolute X axis
-       - Customizable via "Channels..." and "Axis ranges..." buttons
+       - Customizable via "Channels..." button
        - "Copy data" exports profile as CSV to clipboard
 
     The dialog is modeless and updates automatically when the parent
@@ -85,7 +87,7 @@ class AnalysisDialog(QDialog):
         dlg.set_image_and_rect(new_array, new_rect)
 
     Note:
-        Requires matplotlib for histogram and profile plots. If matplotlib
+        Requires pyqtgraph for histogram and profile plots. If pyqtgraph
         is not available, those tabs will be empty.
     """
 
@@ -108,23 +110,11 @@ class AnalysisDialog(QDialog):
         self.x_mode = "relative"
         self.hist_yscale = "linear"
         self.channel_checks: list[bool] = []
-        self.manual_ranges = (None, None, None, None)
+
         self.last_hist_data = {}
         self.last_profile_data = {}
 
-        # For time-based double-click detection (fallback when event.dblclick not available)
-        self._last_click_time = {}
-        self._double_click_interval = 0.4  # seconds
-
         self._build_ui()
-
-        try:
-            if hasattr(self, "hist_canvas") and self.hist_canvas is not None:
-                self.hist_canvas.mpl_connect("button_press_event", self._on_hist_click)
-            if hasattr(self, "prof_canvas") and self.prof_canvas is not None:
-                self.prof_canvas.mpl_connect("button_press_event", self._on_profile_click)
-        except Exception:
-            pass
 
         if self.image_array is not None:
             self.update_contents()
@@ -167,23 +157,119 @@ class AnalysisDialog(QDialog):
         # Profile tab
         prof_tab = QWidget()
         pl = QHBoxLayout(prof_tab)
-        if Figure is not None:
-            self.prof_fig = Figure(figsize=(5, 3))
-            self.prof_canvas = FigureCanvas(self.prof_fig)
-            pl.addWidget(self.prof_canvas, 1)
+        if PYQTGRAPH_AVAILABLE:
+            self.prof_widget = PlotWidget()
+            self.prof_widget.setLabel("left", "Intensity")
+            self.prof_widget.setLabel("bottom", "Position")
+
+            # Style configuration for better UI integration (no border)
+            self.prof_widget.setBackground("white")
+            self.prof_widget.showGrid(x=True, y=True, alpha=0.4)  # More visible grid lines
+            self.prof_widget.getAxis("left").setPen(pg.mkPen(color="#7f8c8d", width=1))  # Darker axis lines
+            self.prof_widget.getAxis("bottom").setPen(pg.mkPen(color="#7f8c8d", width=1))  # Darker axis lines
+            self.prof_widget.getAxis("left").setTextPen(pg.mkPen(color="#2c3e50"))
+            self.prof_widget.getAxis("bottom").setTextPen(pg.mkPen(color="#2c3e50"))
+
+            # Enable right-click menu and disable drag operations
+            self.prof_widget.setMenuEnabled(True)
+            # Configure ViewBox for analysis use
+            view_box = self.prof_widget.getViewBox()
+            view_box.setMouseEnabled(x=False, y=False)  # Disable drag/zoom
+            # Ensure axes are in Auto state
+            view_box.enableAutoRange(axis=pg.ViewBox.XYAxes, enable=True)
+
+            pl.addWidget(self.prof_widget, 1)
         else:
-            self.prof_fig = None
-            self.prof_canvas = None
+            self.prof_widget = None
         pv = QVBoxLayout()
-        self.prof_channels_btn = QPushButton("Channels...")
+        # Add left and right margins to the button area
+        pv.setContentsMargins(10, 10, 10, 10)
+        pv.setSpacing(8)  # Add spacing between groups
+
+        # Channel control group
+        channels_group = QGroupBox("Channels")
+        channels_group.setStyleSheet(
+            """
+            QGroupBox {
+                font-weight: bold;
+                border: 2px solid #cccccc;
+                border-radius: 5px;
+                margin: 3px 0px;
+                padding-top: 10px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 5px 0 5px;
+            }
+        """
+        )
+        channels_layout = QVBoxLayout(channels_group)
+        channels_layout.setContentsMargins(8, 5, 8, 8)  # Add padding inside group
+        self.prof_channels_btn = QPushButton("Configure...")
+        self.prof_channels_btn.setMinimumWidth(100)  # Set minimum width for better appearance
         self.prof_channels_btn.clicked.connect(self._on_prof_channels)
-        pv.addWidget(self.prof_channels_btn)
-        self.prof_ranges_btn = QPushButton("Axis ranges...")
-        self.prof_ranges_btn.clicked.connect(self._on_ranges)
-        pv.addWidget(self.prof_ranges_btn)
+        channels_layout.addWidget(self.prof_channels_btn)
+        pv.addWidget(channels_group)
+
+        # Profile display settings group
+        display_group = QGroupBox("Display Settings")
+        display_group.setStyleSheet(
+            """
+            QGroupBox {
+                font-weight: bold;
+                border: 2px solid #cccccc;
+                border-radius: 5px;
+                margin: 3px 0px;
+                padding-top: 10px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 5px 0 5px;
+            }
+        """
+        )
+        display_layout = QVBoxLayout(display_group)
+        display_layout.setContentsMargins(8, 5, 8, 8)  # Add padding inside group
+
+        self.prof_orientation_btn = QPushButton("Horizontal")
+        self.prof_orientation_btn.setMinimumWidth(100)  # Set minimum width for better appearance
+        self.prof_orientation_btn.clicked.connect(self._on_prof_orientation_toggle)
+        display_layout.addWidget(self.prof_orientation_btn)
+
+        self.prof_xmode_btn = QPushButton("Relative")
+        self.prof_xmode_btn.setMinimumWidth(100)  # Set minimum width for better appearance
+        self.prof_xmode_btn.clicked.connect(self._on_prof_xmode_toggle)
+        display_layout.addWidget(self.prof_xmode_btn)
+        pv.addWidget(display_group)
+
+        # Data export group
+        export_group = QGroupBox("Export")
+        export_group.setStyleSheet(
+            """
+            QGroupBox {
+                font-weight: bold;
+                border: 2px solid #cccccc;
+                border-radius: 5px;
+                margin: 3px 0px;
+                padding-top: 10px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 5px 0 5px;
+            }
+        """
+        )
+        export_layout = QVBoxLayout(export_group)
+        export_layout.setContentsMargins(8, 5, 8, 8)  # Add padding inside group
         self.prof_copy_btn = QPushButton("Copy data")
+        self.prof_copy_btn.setMinimumWidth(100)  # Set minimum width for better appearance
         self.prof_copy_btn.clicked.connect(self.copy_profile_to_clipboard)
-        pv.addWidget(self.prof_copy_btn)
+        export_layout.addWidget(self.prof_copy_btn)
+        pv.addWidget(export_group)
+
         pv.addStretch(1)
         pl.addLayout(pv)
         self.tabs.addTab(prof_tab, "Profile")
@@ -191,24 +277,88 @@ class AnalysisDialog(QDialog):
         # Histogram tab
         hist_tab = QWidget()
         hl = QHBoxLayout(hist_tab)
-        if Figure is not None:
-            self.hist_fig = Figure(figsize=(5, 3))
-            self.hist_canvas = FigureCanvas(self.hist_fig)
-            hl.addWidget(self.hist_canvas, 1)
+        if PYQTGRAPH_AVAILABLE:
+            self.hist_widget = PlotWidget()
+            self.hist_widget.setLabel("left", "Count")
+            self.hist_widget.setLabel("bottom", "Intensity")
+
+            # Style configuration for better UI integration (no border)
+            self.hist_widget.setBackground("white")
+            self.hist_widget.showGrid(x=True, y=True, alpha=0.4)  # More visible grid lines
+            self.hist_widget.getAxis("left").setPen(pg.mkPen(color="#7f8c8d", width=1))  # Darker axis lines
+            self.hist_widget.getAxis("bottom").setPen(pg.mkPen(color="#7f8c8d", width=1))  # Darker axis lines
+            self.hist_widget.getAxis("left").setTextPen(pg.mkPen(color="#2c3e50"))
+            self.hist_widget.getAxis("bottom").setTextPen(pg.mkPen(color="#2c3e50"))
+
+            # Enable right-click menu and disable drag operations
+            self.hist_widget.setMenuEnabled(True)
+            # Configure ViewBox for analysis use
+            view_box = self.hist_widget.getViewBox()
+            view_box.setMouseEnabled(x=False, y=False)  # Disable drag/zoom
+            # Ensure axes are in Auto state
+            view_box.enableAutoRange(axis=pg.ViewBox.XYAxes, enable=True)
+
+            hl.addWidget(self.hist_widget, 1)
         else:
-            self.hist_fig = None
-            self.hist_canvas = None
+            self.hist_widget = None
 
         vcol = QVBoxLayout()
-        self.hist_channels_btn = QPushButton("Channels...")
+        # Add left and right margins to the button area
+        vcol.setContentsMargins(10, 10, 10, 10)
+        vcol.setSpacing(8)  # Add spacing between groups
+
+        # Channel control group
+        channels_group = QGroupBox("Channels")
+        channels_group.setStyleSheet(
+            """
+            QGroupBox {
+                font-weight: bold;
+                border: 2px solid #cccccc;
+                border-radius: 5px;
+                margin: 3px 0px;
+                padding-top: 10px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 5px 0 5px;
+            }
+        """
+        )
+        channels_layout = QVBoxLayout(channels_group)
+        channels_layout.setContentsMargins(8, 5, 8, 8)  # Add padding inside group
+        self.hist_channels_btn = QPushButton("Configure...")
+        self.hist_channels_btn.setMinimumWidth(100)  # Set minimum width for better appearance
         self.hist_channels_btn.clicked.connect(self._on_hist_channels)
-        vcol.addWidget(self.hist_channels_btn)
-        self.hist_ranges_btn = QPushButton("Axis ranges...")
-        self.hist_ranges_btn.clicked.connect(self._on_ranges)
-        vcol.addWidget(self.hist_ranges_btn)
+        channels_layout.addWidget(self.hist_channels_btn)
+        vcol.addWidget(channels_group)
+
+        # Data export group
+        export_group = QGroupBox("Export")
+        export_group.setStyleSheet(
+            """
+            QGroupBox {
+                font-weight: bold;
+                border: 2px solid #cccccc;
+                border-radius: 5px;
+                margin: 3px 0px;
+                padding-top: 10px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 5px 0 5px;
+            }
+        """
+        )
+        export_layout = QVBoxLayout(export_group)
+        export_layout.setContentsMargins(8, 5, 8, 8)  # Add padding inside group
         self.hist_copy_btn = QPushButton("Copy data")
+        self.hist_copy_btn.setMinimumWidth(100)  # Set minimum width for better appearance
         self.hist_copy_btn.clicked.connect(self.copy_histogram_to_clipboard)
-        vcol.addWidget(self.hist_copy_btn)
+        export_layout.addWidget(self.hist_copy_btn)
+        vcol.addWidget(export_group)
+
         vcol.addStretch(1)
         hl.addLayout(vcol)
         self.tabs.addTab(hist_tab, "Histogram")
@@ -246,21 +396,39 @@ class AnalysisDialog(QDialog):
         if self.image_array is None:
             return
         nch = self.image_array.shape[2] if self.image_array.ndim == 3 else 1
-        dlg = ChannelsDialog(self, nch, self.channel_checks)
-        if dlg.exec() == QDialog.Accepted:
-            self.channel_checks = dlg.results()
+
+        def immediate_update(new_checks):
+            """Callback for immediate graph update when checkboxes change."""
+            self.channel_checks = new_checks
             self.update_contents()
+
+        # Create and show modeless dialog with immediate updates
+        dlg = ChannelsDialog(self, nch, self.channel_checks, callback=immediate_update)
+
+        # Position dialog near the histogram channels button
+        button_pos = self.hist_channels_btn.mapToGlobal(self.hist_channels_btn.rect().topRight())
+        dlg.move(button_pos.x() + 10, button_pos.y())
+
+        dlg.show()  # Show modeless dialog without blocking
 
     def _on_prof_channels(self):
-        # reuse histogram channels handler for profile
-        self._on_hist_channels()
+        if self.image_array is None:
+            return
+        nch = self.image_array.shape[2] if self.image_array.ndim == 3 else 1
 
-    def _on_ranges(self):
-        xmin, xmax, ymin, ymax = self.manual_ranges
-        dlg = RangesDialog(self, xmin, xmax, ymin, ymax)
-        if dlg.exec() == QDialog.Accepted:
-            self.manual_ranges = dlg.results()
+        def immediate_update(new_checks):
+            """Callback for immediate graph update when checkboxes change."""
+            self.channel_checks = new_checks
             self.update_contents()
+
+        # Create and show modeless dialog with immediate updates
+        dlg = ChannelsDialog(self, nch, self.channel_checks, callback=immediate_update)
+
+        # Position dialog near the profile channels button
+        button_pos = self.prof_channels_btn.mapToGlobal(self.prof_channels_btn.rect().topRight())
+        dlg.move(button_pos.x() + 10, button_pos.y())
+
+        dlg.show()  # Show modeless dialog without blocking
 
     def update_contents(self):
         """Refresh all tabs with current image data and settings."""
@@ -287,14 +455,15 @@ class AnalysisDialog(QDialog):
         # Update metadata tab (always update when image changes)
         self._update_metadata()
 
-        if self.hist_fig is None:
+        if not PYQTGRAPH_AVAILABLE:
             return
 
         # Histogram
-        self.hist_fig.clear()
-        ax = self.hist_fig.add_subplot(111)
+        self.hist_widget.clear()
         self.last_hist_data = {}
-        colors = ["r", "g", "b", "k"]
+        # Improved color palette for better visibility of 3 channels
+        colors = ["#ff0000", "#00cc00", "#0066ff", "#333333"]  # Bright Red, Green, Blue, Dark gray
+
         if arr.ndim == 3 and arr.shape[2] > 1:
             nch = arr.shape[2]
             if not self.channel_checks:
@@ -305,50 +474,33 @@ class AnalysisDialog(QDialog):
                 xs = (bins[:-1] + bins[1:]) / 2.0
                 self.last_hist_data[f"C{c}"] = (xs, hist)
                 if self.channel_checks[c]:
-                    ax.plot(xs, hist, color=colors[c] if c < len(colors) else None, label=f"C{c}")
+                    # Line only, no symbols
+                    pen = pg.mkPen(color=colors[c] if c < len(colors) else "#7f8c8d", width=2)
+                    self.hist_widget.plot(xs, hist, pen=pen, name=f"C{c}")
         else:
             gray = arr if arr.ndim == 2 else arr[:, :, 0]
             hist, bins = np.histogram(gray.ravel(), bins=256, range=(0, 255))
             xs = (bins[:-1] + bins[1:]) / 2.0
             self.last_hist_data["I"] = (xs, hist)
-            ax.plot(xs, hist, color="k", label="Intensity")
+            # Line only, no symbols
+            pen = pg.mkPen(color="#333333", width=2)
+            self.hist_widget.plot(xs, hist, pen=pen, name="Intensity")
 
-        ax.set_title("Intensity Histogram")
-        try:
-            if AutoMinorLocator is not None:
-                ax.xaxis.set_minor_locator(AutoMinorLocator())
-                ax.yaxis.set_minor_locator(AutoMinorLocator())
-            ax.grid(which="major", linestyle="-", color="gray", linewidth=0.6)
-            ax.grid(which="minor", linestyle=":", color="lightgray", linewidth=0.4)
-        except Exception:
-            pass
-        try:
-            ax.set_yscale(self.hist_yscale)
-        except Exception:
-            pass
-        if ax.get_legend():
-            ax.legend()
-        xmin, xmax, ymin, ymax = self.manual_ranges
-        try:
-            if xmin is not None:
-                ax.set_xlim(left=float(xmin))
-            if xmax is not None:
-                ax.set_xlim(right=float(xmax))
-            if ymin is not None:
-                ax.set_ylim(bottom=float(ymin))
-            if ymax is not None:
-                ax.set_ylim(top=float(ymax))
-        except Exception:
-            pass
-        try:
-            self.hist_canvas.draw()
-        except Exception:
-            pass
+        # Set title with improved styling
+        self.hist_widget.setTitle("Intensity Histogram", color="#2c3e50", size="12pt")
+
+        # Apply log scale if needed
+        if hasattr(self, "hist_yscale") and self.hist_yscale == "log":
+            self.hist_widget.setLogMode(y=True)
+        else:
+            self.hist_widget.setLogMode(y=False)
 
         # Profile
-        self.prof_fig.clear()
-        ax2 = self.prof_fig.add_subplot(111)
+        self.prof_widget.clear()
         self.last_profile_data = {}
+        # Use same improved color palette as histogram
+        colors = ["#ff0000", "#00cc00", "#0066ff", "#333333"]  # Bright Red, Green, Blue, Dark gray
+
         if arr.ndim == 3 and arr.shape[2] > 1:
             nch = arr.shape[2]
             if not self.channel_checks:
@@ -362,7 +514,9 @@ class AnalysisDialog(QDialog):
                     xs2 = np.arange(prof.size)
                 self.last_profile_data[f"C{c}"] = (xs2, prof)
                 if self.channel_checks[c]:
-                    ax2.plot(xs2, prof, color=colors[c] if c < len(colors) else None, label=f"C{c}")
+                    # Line only, no symbols
+                    pen = pg.mkPen(color=colors[c] if c < len(colors) else "#7f8c8d", width=2)
+                    self.prof_widget.plot(xs2, prof, pen=pen, name=f"C{c}")
         else:
             gray_data = arr if arr.ndim == 2 else arr[:, :, 0]
             prof = self._compute_profile(gray_data)
@@ -372,38 +526,41 @@ class AnalysisDialog(QDialog):
             else:
                 xs2 = np.arange(prof.size)
             self.last_profile_data["I"] = (xs2, prof)
-            ax2.plot(xs2, prof, color="k", label="Intensity")
+            # Line only, no symbols
+            pen = pg.mkPen(color="#333333", width=2)
+            self.prof_widget.plot(xs2, prof, pen=pen, name="Intensity")
 
         orientation_label = {"h": "Horizontal", "v": "Vertical", "d": "Diagonal"}[self.profile_orientation]
         mode_label = "Absolute" if self.x_mode == "absolute" else "Relative"
-        ax2.set_title(f"Profile ({orientation_label}, {mode_label})")
-        ax2.set_xlabel("Position" if self.x_mode == "relative" else "Absolute Position")
-        ax2.set_ylabel("Intensity")
-        try:
-            if AutoMinorLocator is not None:
-                ax2.xaxis.set_minor_locator(AutoMinorLocator())
-                ax2.yaxis.set_minor_locator(AutoMinorLocator())
-            ax2.grid(which="major", linestyle="-", color="gray", linewidth=0.6)
-            ax2.grid(which="minor", linestyle=":", color="lightgray", linewidth=0.4)
-        except Exception:
-            pass
-        try:
-            if xmin is not None:
-                ax2.set_xlim(left=float(xmin))
-            if xmax is not None:
-                ax2.set_xlim(right=float(xmax))
-            if ymin is not None:
-                ax2.set_ylim(bottom=float(ymin))
-            if ymax is not None:
-                ax2.set_ylim(top=float(ymax))
-        except Exception:
-            pass
-        if ax2.get_legend():
-            ax2.legend()
-        try:
-            self.prof_canvas.draw()
-        except Exception:
-            pass
+        # Set title with improved styling
+        self.prof_widget.setTitle(f"Profile ({orientation_label}, {mode_label})", color="#2c3e50", size="12pt")
+        self.prof_widget.setLabel("bottom", "Position" if self.x_mode == "relative" else "Absolute Position")
+        self.prof_widget.setLabel("left", "Intensity")
+
+        # Ensure both widgets are in true "Auto" state for axes
+        if PYQTGRAPH_AVAILABLE:
+            # Set histogram to auto range state (order is important)
+            hist_vb = self.hist_widget.getViewBox()
+            hist_vb.autoRange()  # First fit to current data
+            hist_vb.enableAutoRange(axis=pg.ViewBox.XYAxes)  # Then enable auto for future
+
+            # Set profile to auto range state (order is important)
+            prof_vb = self.prof_widget.getViewBox()
+            prof_vb.autoRange()  # First fit to current data
+            prof_vb.enableAutoRange(axis=pg.ViewBox.XYAxes)  # Then enable auto for future
+
+        # Update button texts to reflect current state
+        if hasattr(self, "prof_orientation_btn"):
+            if self.profile_orientation == "h":
+                self.prof_orientation_btn.setText("Horizontal")
+            else:
+                self.prof_orientation_btn.setText("Vertical")
+
+        if hasattr(self, "prof_xmode_btn"):
+            if self.x_mode == "relative":
+                self.prof_xmode_btn.setText("Relative")
+            else:
+                self.prof_xmode_btn.setText("Absolute")
 
     def _update_metadata(self):
         """Update the metadata tab with image file information in table format."""
@@ -476,15 +633,20 @@ class AnalysisDialog(QDialog):
         if not getattr(self, "last_hist_data", None):
             QMessageBox.information(self, "Copy", "No data.")
             return
+
+        # Use numpy array operations for efficient data processing
         keys = list(self.last_hist_data.keys())
         xs = self.last_hist_data[keys[0]][0]
-        lines = [",".join(["x"] + keys)]
-        for i in range(len(xs)):
-            row = [str(xs[i])]
-            for k in keys:
-                row.append(str(int(self.last_hist_data[k][1][i])))
-            lines.append(",".join(row))
-        QGuiApplication.clipboard().setText("\n".join(lines))
+
+        # Build data matrix efficiently
+        data_matrix = np.column_stack([xs] + [self.last_hist_data[k][1] for k in keys])
+
+        # Create header and format data
+        header = ",".join(["x"] + keys)
+        data_lines = [",".join(map(str, row.astype(int))) for row in data_matrix]
+
+        text = "\n".join([header] + data_lines)
+        QGuiApplication.clipboard().setText(text)
         QMessageBox.information(self, "Copy", "Histogram copied to clipboard.")
 
     def copy_profile_to_clipboard(self):
@@ -492,61 +654,24 @@ class AnalysisDialog(QDialog):
         if not getattr(self, "last_profile_data", None):
             QMessageBox.information(self, "Copy", "No data.")
             return
+
+        # Use numpy array operations for efficient data processing
         keys = list(self.last_profile_data.keys())
         xs = self.last_profile_data[keys[0]][0]
-        lines = [",".join(["x"] + keys)]
-        for i in range(len(xs)):
-            row = [str(xs[i])]
-            for k in keys:
-                row.append(str(float(self.last_profile_data[k][1][i])))
-            lines.append(",".join(row))
-        QGuiApplication.clipboard().setText("\n".join(lines))
+
+        # Build data matrix efficiently
+        data_matrix = np.column_stack([xs] + [self.last_profile_data[k][1] for k in keys])
+
+        # Create header and format data
+        header = ",".join(["x"] + keys)
+        data_lines = [",".join(map(str, row)) for row in data_matrix]
+
+        text = "\n".join([header] + data_lines)
+        QGuiApplication.clipboard().setText(text)
         QMessageBox.information(self, "Copy", "Profile copied to clipboard.")
 
-    def _on_hist_click(self, event):
-        """Handle histogram plot click events."""
-        if getattr(event, "dblclick", False) and getattr(event, "button", None) == 1:
-            self.hist_yscale = "log" if self.hist_yscale == "linear" else "linear"
-            self.update_contents()
-
-    def _on_profile_click(self, event):
-        """Handle profile plot click events with time-based double-click fallback.
-
-        Left double-click: cycle through orientation modes (h → v → d → h)
-        Right double-click: toggle x-axis mode (relative ↔ absolute)
-        """
-        import time
-
-        btn = getattr(event, "button", None)
-        is_dblclick = getattr(event, "dblclick", False)
-
-        # Fallback: time-based double-click detection
-        if not is_dblclick and btn is not None:
-            now = time.time()
-            last_time = self._last_click_time.get(btn, 0)
-
-            if now - last_time <= self._double_click_interval:
-                is_dblclick = True
-                self._last_click_time[btn] = 0
-            else:
-                self._last_click_time[btn] = now
-                return
-
-        if is_dblclick:
-            if btn == 1:  # Left: cycle orientation h → v → d → h
-                if self.profile_orientation == "h":
-                    self.profile_orientation = "v"
-                elif self.profile_orientation == "v":
-                    self.profile_orientation = "d"
-                else:
-                    self.profile_orientation = "h"
-                self.update_contents()
-            elif btn == 3:  # Right: toggle x-mode
-                self.x_mode = "absolute" if self.x_mode == "relative" else "relative"
-                self.update_contents()
-
     def _compute_profile(self, channel_data: np.ndarray) -> np.ndarray:
-        """Compute intensity profile for a single channel.
+        """Compute intensity profile for a single channel using optimized numpy operations.
 
         Args:
             channel_data: 2D array (height x width) of pixel values
@@ -560,24 +685,33 @@ class AnalysisDialog(QDialog):
             "d": Diagonal - extract pixels along main diagonal (top-left to bottom-right)
         """
         if self.profile_orientation == "h":
-            return channel_data.mean(axis=0)
+            return np.mean(channel_data, axis=0)
         elif self.profile_orientation == "v":
-            return channel_data.mean(axis=1)
+            return np.mean(channel_data, axis=1)
         else:  # diagonal
             h, w = channel_data.shape
-            diag_len = min(h, w)
 
+            # Handle edge cases first
+            if h == 0 or w == 0:
+                return np.array([])
+            if h == 1 and w == 1:
+                return np.array([channel_data[0, 0]])
+
+            # Use numpy diagonal extraction for square images
             if h == w:
-                # Square: simple diagonal extraction
                 return np.diag(channel_data)
-            else:
-                # Rectangular: sample diagonal proportionally
-                if diag_len <= 1:
-                    return np.array([channel_data[0, 0]])
 
-                y_coords = np.linspace(0, h - 1, diag_len).astype(int)
-                x_coords = np.linspace(0, w - 1, diag_len).astype(int)
-                return channel_data[y_coords, x_coords]
+            # For rectangular images, use efficient coordinate generation
+            diag_len = min(h, w)
+            if diag_len == 1:
+                return np.array([channel_data[0, 0]])
+
+            # Generate coordinates using numpy operations
+            y_coords = np.linspace(0, h - 1, diag_len, dtype=int)
+            x_coords = np.linspace(0, w - 1, diag_len, dtype=int)
+
+            # Extract diagonal values in one operation
+            return channel_data[y_coords, x_coords]
 
     def _get_profile_offset(self) -> int:
         """Get the offset for absolute x-axis mode.
@@ -588,10 +722,30 @@ class AnalysisDialog(QDialog):
         if self.image_rect is None:
             return 0
 
+        # Use dictionary for efficient orientation mapping
+        offset_map = {
+            "h": self.image_rect.x(),
+            "v": self.image_rect.y(),
+            "d": min(self.image_rect.x(), self.image_rect.y()),  # diagonal uses top-left corner
+        }
+        return offset_map.get(self.profile_orientation, 0)
+
+    def _on_prof_orientation_toggle(self):
+        """Toggle profile orientation between horizontal and vertical."""
         if self.profile_orientation == "h":
-            return self.image_rect.x()
-        elif self.profile_orientation == "v":
-            return self.image_rect.y()
-        else:  # diagonal
-            # For diagonal, use top-left corner as offset
-            return min(self.image_rect.x(), self.image_rect.y())
+            self.profile_orientation = "v"
+            self.prof_orientation_btn.setText("Vertical")
+        else:
+            self.profile_orientation = "h"
+            self.prof_orientation_btn.setText("Horizontal")
+        self.update_contents()
+
+    def _on_prof_xmode_toggle(self):
+        """Toggle x-axis mode between relative and absolute."""
+        if self.x_mode == "relative":
+            self.x_mode = "absolute"
+            self.prof_xmode_btn.setText("Absolute")
+        else:
+            self.x_mode = "relative"
+            self.prof_xmode_btn.setText("Relative")
+        self.update_contents()

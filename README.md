@@ -33,9 +33,7 @@ pip install -r requirements.txt
 - numpy (配列処理)
 - Pillow (画像読み込み)
 - exifread (完全なEXIF情報読み取り)
-
-オプション:
-- matplotlib (ヒストグラムプロファイル表示に必要)
+- pyqtgraph (高速グラフ描画、ヒストグラム・プロファイル表示)
 
 ## 使い方
 
@@ -59,8 +57,11 @@ python main.py
 
 | キー | 動作 |
 |------|------|
-| `Ctrl+A` | 全選択 |
+| `Ctrl+O` | 画像を開く |
+| `Ctrl+A` | 画像全体を選択 |
 | `Ctrl+C` | 選択範囲をコピー |
+| `Ctrl+W` | 現在の画像を閉じる |
+| `Ctrl+Shift+W` | すべての画像を閉じる |
 | `矢印キー` | 選択範囲を画像1px移動 |
 | `Shift+矢印` | 選択範囲を画像10px移動 |
 | `n` | 次の画像 |

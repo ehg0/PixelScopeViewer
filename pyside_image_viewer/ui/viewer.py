@@ -5,12 +5,13 @@ for displaying and navigating images with analysis tools.
 
 Features:
 - Multi-image loading and navigation
-- Zoom in/out with keyboard shortcuts
+- Zoom in/out with keyboard shortcuts and Ctrl+mouse wheel
 - Pixel-aligned selection with keyboard editing
 - Bit-shift operations for raw/scientific images
 - Analysis dialogs (histogram, profile, info)
 - Difference image creation
 - Status bar showing pixel values and coordinates
+- Title bar showing current filename and image index
 """
 
 import os
@@ -41,7 +42,7 @@ class ImageViewer(QMainWindow):
     The ImageViewer provides a complete interface for:
     - Loading and displaying images (single or multiple files)
     - Navigating between images with keyboard shortcuts (n/b)
-    - Zooming with +/- keys
+    - Zooming with +/- keys and mouse wheel
     - Creating and editing pixel-aligned selections
     - Bit-shifting for viewing raw/scientific data (</> keys)
     - Analysis tools (histogram, profile plots)
@@ -52,11 +53,17 @@ class ImageViewer(QMainWindow):
         - Ctrl+C: Copy selection to clipboard
         - n: Next image
         - b: Previous image
-        - +: Zoom in
-        - -: Zoom out
+        - +: Zoom in (2x)
+        - -: Zoom out (0.5x)
         - <: Left bit shift (darker)
         - >: Right bit shift (brighter)
         - ESC: Clear selection
+
+    Mouse Controls:
+        - Ctrl + Mouse wheel: Zoom in/out (binary steps: 2x/0.5x, centered on status bar coordinates)
+        - Left-drag: Create new selection rectangle
+        - Right-drag: Move existing selection
+        - Left-drag on edges/corners: Resize selection
 
     Attributes:
         images: List of loaded image dictionaries with keys:
@@ -75,6 +82,9 @@ class ImageViewer(QMainWindow):
         self.current_index = None
         self.scale = 1.0
 
+        # Track current mouse position in image coordinates for zoom centering
+        self.current_mouse_image_coords = None
+
         central = QWidget(self)
         self.setCentralWidget(central)
         layout = QVBoxLayout(central)
@@ -90,14 +100,10 @@ class ImageViewer(QMainWindow):
 
         self.status = QStatusBar()
         self.setStatusBar(self.status)
-        self.status_filename = QLabel()
-        self.status_index = QLabel()
         self.status_pixel = QLabel()
         self.status_selection = QLabel()
         self.status_shift = QLabel()
         self.status_scale = QLabel()
-        self.status.addWidget(self.status_filename, 2)
-        self.status.addWidget(self.status_index, 1)
         self.status.addPermanentWidget(self.status_pixel, 3)
         self.status.addPermanentWidget(self.status_selection, 2)
         self.status.addPermanentWidget(self.status_shift, 1)
@@ -114,31 +120,38 @@ class ImageViewer(QMainWindow):
         menubar = self.menuBar()
 
         file_menu = menubar.addMenu("ファイル")
-        file_menu.addAction(QAction("読み込み...", self, triggered=self.open_files))
-        file_menu.addAction(QAction("全選択", self, shortcut="Ctrl+A", triggered=self.select_all))
+        file_menu.addAction(QAction("読み込み...", self, shortcut="Ctrl+O", triggered=self.open_files))
+        file_menu.addSeparator()
+        file_menu.addAction(QAction("画像全体を選択", self, shortcut="Ctrl+A", triggered=self.select_all))
         file_menu.addAction(
-            QAction("選択領域の画像をコピー", self, shortcut="Ctrl+C", triggered=self.copy_selection_to_clipboard)
+            QAction("選択範囲をコピー", self, shortcut="Ctrl+C", triggered=self.copy_selection_to_clipboard)
         )
-        file_menu.addAction(QAction("閉じる", self, triggered=self.close_current_image))
-        file_menu.addAction(QAction("すべて閉じる", self, triggered=self.close_all_images))
+        file_menu.addSeparator()
+        file_menu.addAction(QAction("閉じる", self, shortcut="Ctrl+W", triggered=self.close_current_image))
+        file_menu.addAction(QAction("すべて閉じる", self, shortcut="Ctrl+Shift+W", triggered=self.close_all_images))
 
         self.img_menu = menubar.addMenu("画像")
         self.update_image_list_menu()
 
         view_menu = menubar.addMenu("表示")
-        view_menu.addAction(QAction("拡大", self, shortcut="+", triggered=lambda: self.set_zoom(self.scale * 2)))
         view_menu.addAction(
-            QAction("縮小", self, shortcut="-", triggered=lambda: self.set_zoom(max(0.125, self.scale / 2)))
+            QAction("拡大", self, shortcut="+", triggered=lambda: self.set_zoom(min(self.scale * 2, 128.0)))
         )
+        view_menu.addAction(
+            QAction("縮小", self, shortcut="-", triggered=lambda: self.set_zoom(max(self.scale / 2, 0.125)))
+        )
+        view_menu.addSeparator()
         view_menu.addAction(QAction("左ビットシフト", self, shortcut="<", triggered=lambda: self.bit_shift(-1)))
         view_menu.addAction(QAction("右ビットシフト", self, shortcut=">", triggered=lambda: self.bit_shift(1)))
-        # move diff display into view menu
+        view_menu.addSeparator()
         view_menu.addAction(QAction("差分画像表示", self, triggered=lambda: self.show_diff_dialog()))
 
         analysis = menubar.addMenu("解析")
         analysis.addAction(QAction("プロファイル", self, triggered=lambda: self.show_analysis_dialog(tab="Profile")))
         analysis.addAction(QAction("ヒストグラム", self, triggered=lambda: self.show_analysis_dialog(tab="Histogram")))
+        analysis.addSeparator()
         analysis.addAction(QAction("メタデータ", self, triggered=lambda: self.show_analysis_dialog(tab="Metadata")))
+
         help_menu = menubar.addMenu("ヘルプ")
         help_menu.addAction(QAction("キーボードショートカット", self, triggered=self.help_dialog.show))
 
@@ -170,8 +183,12 @@ class ImageViewer(QMainWindow):
                 arr = pil_to_numpy(f)
                 img_data = {"path": os.path.abspath(f), "array": arr, "base_array": arr.copy(), "bit_shift": 0}
                 self.images.append(img_data)
+            # Switch to the first newly added image
             if self.current_index is None:
                 self.current_index = 0
+            else:
+                # Switch to the first newly added image
+                self.current_index = len(self.images) - len(files)
             self.show_current_image()
             self.update_image_list_menu()
 
@@ -187,8 +204,12 @@ class ImageViewer(QMainWindow):
                 arr = pil_to_numpy(f)
                 img_data = {"path": os.path.abspath(f), "array": arr, "base_array": arr.copy(), "bit_shift": 0}
                 self.images.append(img_data)
+            # Switch to the first newly added image
             if self.current_index is None:
                 self.current_index = 0
+            else:
+                # Switch to the first newly added image
+                self.current_index = len(self.images) - len(image_files)
             self.show_current_image()
             self.update_image_list_menu()
 
@@ -341,21 +362,22 @@ class ImageViewer(QMainWindow):
         self.current_index = len(self.images) - 1
         self.show_current_image()
 
-    def set_zoom(self, scale: float):
-        """Set the zoom scale, preserving the center of the visible viewport.
+    def _apply_zoom_and_update_display(self, scale: float):
+        """Apply zoom scale and update display. Common logic for all zoom methods.
 
         Args:
             scale: New zoom scale factor (1.0 = original size)
-
-        The zoom operation calculates the current viewport center point in
-        image coordinates, applies the new scale, then adjusts scroll position
-        to keep the same center point visible.
         """
-        if self.current_index is None:
-            self.scale = scale
-            return
+        self.scale = scale
+        arr = self.images[self.current_index]["array"]
+        self.display_image(arr)
 
-        # Get current viewport center in image coordinates before zoom
+    def _calculate_viewport_center_in_image_coords(self) -> tuple[float, float]:
+        """Calculate current viewport center in image coordinates.
+
+        Returns:
+            (img_x, img_y) tuple of center point in image coordinates
+        """
         scroll_area = self.scroll_area
         old_h_scroll = scroll_area.horizontalScrollBar().value()
         old_v_scroll = scroll_area.verticalScrollBar().value()
@@ -375,21 +397,137 @@ class ImageViewer(QMainWindow):
             img_center_x = old_center_x
             img_center_y = old_center_y
 
-        # Apply new zoom
-        self.scale = scale
-        arr = self.images[self.current_index]["array"]
-        self.display_image(arr)
+        return (img_center_x, img_center_y)
 
-        # Calculate new scroll position to keep same center
-        new_center_x = img_center_x * scale
-        new_center_y = img_center_y * scale
+    def _set_scroll_to_keep_image_point_at_position(
+        self, img_coords: tuple[float, float], target_pos: tuple[float, float]
+    ):
+        """Set scroll position to keep an image point at a target widget position.
 
-        new_h_scroll = int(new_center_x - viewport_width / 2.0)
-        new_v_scroll = int(new_center_y - viewport_height / 2.0)
+        Args:
+            img_coords: (x, y) in image coordinates
+            target_pos: (x, y) in widget coordinates where the image point should appear
+        """
+        img_x, img_y = img_coords
+        target_x, target_y = target_pos
+
+        # Calculate where the image point appears in the new scale
+        new_widget_x = img_x * self.scale
+        new_widget_y = img_y * self.scale
+
+        # Calculate required scroll position
+        scroll_area = self.scroll_area
+        new_h_scroll = int(new_widget_x - target_x)
+        new_v_scroll = int(new_widget_y - target_y)
 
         # Apply new scroll position
         scroll_area.horizontalScrollBar().setValue(new_h_scroll)
         scroll_area.verticalScrollBar().setValue(new_v_scroll)
+
+    def set_zoom(self, scale: float):
+        """Set the zoom scale, preserving the center of the visible viewport.
+
+        Args:
+            scale: New zoom scale factor (1.0 = original size)
+        """
+        if self.current_index is None:
+            self.scale = scale
+            return
+
+        # Get current viewport center in image coordinates
+        img_center = self._calculate_viewport_center_in_image_coords()
+
+        # Apply new zoom
+        self._apply_zoom_and_update_display(scale)
+
+        # Calculate viewport center position for target
+        scroll_area = self.scroll_area
+        viewport_width = scroll_area.viewport().width()
+        viewport_height = scroll_area.viewport().height()
+        center_pos = (viewport_width / 2.0, viewport_height / 2.0)
+
+        # Keep center point at viewport center
+        self._set_scroll_to_keep_image_point_at_position(img_center, center_pos)
+
+    def set_zoom_at_status_coords(self, scale: float):
+        """Set the zoom scale, keeping the coordinates shown in status bar fixed.
+
+        Args:
+            scale: New zoom scale factor (1.0 = original size)
+        """
+        if self.current_index is None:
+            self.scale = scale
+            return
+
+        if self.current_mouse_image_coords is None:
+            # If no valid mouse coordinates, fall back to center zoom
+            self.set_zoom(scale)
+            return
+
+        # Apply new zoom
+        self._apply_zoom_and_update_display(scale)
+
+        # Get viewport center for positioning
+        scroll_area = self.scroll_area
+        viewport_width = scroll_area.viewport().width()
+        viewport_height = scroll_area.viewport().height()
+        center_pos = (viewport_width / 2.0, viewport_height / 2.0)
+
+        # Place the status coordinates at the center of the viewport
+        self._set_scroll_to_keep_image_point_at_position(self.current_mouse_image_coords, center_pos)
+
+    def set_zoom_at_image_point(self, scale: float, image_coords: tuple, widget_point):
+        """Set the zoom scale, keeping the specified image point fixed.
+
+        Args:
+            scale: New zoom scale factor (1.0 = original size)
+            image_coords: (x, y) tuple in image pixel coordinates
+            widget_point: QPoint in widget coordinates where the image point should remain
+        """
+        if self.current_index is None:
+            self.scale = scale
+            return
+
+        # Apply new zoom
+        self._apply_zoom_and_update_display(scale)
+
+        # Keep image point at widget point
+        target_pos = (widget_point.x(), widget_point.y())
+        self._set_scroll_to_keep_image_point_at_position(image_coords, target_pos)
+
+    def set_zoom_at_point(self, scale: float, widget_point):
+        """Set the zoom scale, keeping the specified point fixed.
+
+        Args:
+            scale: New zoom scale factor (1.0 = original size)
+            widget_point: QPoint in widget coordinates to keep fixed during zoom
+        """
+        if self.current_index is None:
+            self.scale = scale
+            return
+
+        # Get scroll area and current scroll positions
+        scroll_area = self.scroll_area
+        old_h_scroll = scroll_area.horizontalScrollBar().value()
+        old_v_scroll = scroll_area.verticalScrollBar().value()
+
+        # Convert widget point to scroll area coordinates
+        scroll_point_x = widget_point.x() + old_h_scroll
+        scroll_point_y = widget_point.y() + old_v_scroll
+
+        # Convert to image coordinates (independent of scale)
+        old_scale = self.scale
+        if old_scale > 0:
+            img_coords = (scroll_point_x / old_scale, scroll_point_y / old_scale)
+        else:
+            img_coords = (scroll_point_x, scroll_point_y)
+
+        # Apply new zoom
+        self._apply_zoom_and_update_display(scale)
+
+        # Keep the point fixed at the widget location
+        target_pos = (widget_point.x(), widget_point.y())
+        self._set_scroll_to_keep_image_point_at_position(img_coords, target_pos)
 
     def bit_shift(self, amount):
         if self.current_index is None:
@@ -459,6 +597,7 @@ class ImageViewer(QMainWindow):
     def update_mouse_status(self, pos):
         if self.current_index is None or not self.images:
             self.status_pixel.setText("")
+            self.current_mouse_image_coords = None
             return
         img = self.images[self.current_index]
         # prefer base_array (unshifted) for status display when available
@@ -474,21 +613,28 @@ class ImageViewer(QMainWindow):
             else:
                 val_str = "(" + ",".join(str(int(x)) for x in np.ravel(v)) + ")"
             self.status_pixel.setText(f"x={ix} y={iy} val={val_str}")
+            # Store current image coordinates for zoom centering
+            self.current_mouse_image_coords = (ix, iy)
         else:
             self.status_pixel.setText("")
+            self.current_mouse_image_coords = None
 
     def update_status(self):
         if self.current_index is None:
-            self.status_filename.setText("No image")
-            self.status_index.setText("")
+            # Update title bar to show no image
+            self.setWindowTitle("PySide6 Image Viewer")
             # still update scale display
             self.status_scale.setText(f"Scale: {self.scale:.2f}x")
             # clear shift when no image
             self.status_shift.setText("")
             return
         p = self.images[self.current_index]["path"]
-        self.status_filename.setText(p)
-        self.status_index.setText(f"{self.current_index+1}/{len(self.images)}")
+
+        # Update title bar with filename and index
+        filename = os.path.basename(p)
+        title = f"{filename} ({self.current_index+1}/{len(self.images)})"
+        self.setWindowTitle(title)
+
         # display current scale
         try:
             self.status_scale.setText(f"Scale: {self.scale:.2f}x")

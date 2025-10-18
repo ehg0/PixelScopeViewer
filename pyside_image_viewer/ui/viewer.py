@@ -362,21 +362,22 @@ class ImageViewer(QMainWindow):
         self.current_index = len(self.images) - 1
         self.show_current_image()
 
-    def set_zoom(self, scale: float):
-        """Set the zoom scale, preserving the center of the visible viewport.
+    def _apply_zoom_and_update_display(self, scale: float):
+        """Apply zoom scale and update display. Common logic for all zoom methods.
 
         Args:
             scale: New zoom scale factor (1.0 = original size)
-
-        The zoom operation calculates the current viewport center point in
-        image coordinates, applies the new scale, then adjusts scroll position
-        to keep the same center point visible.
         """
-        if self.current_index is None:
-            self.scale = scale
-            return
+        self.scale = scale
+        arr = self.images[self.current_index]["array"]
+        self.display_image(arr)
 
-        # Get current viewport center in image coordinates before zoom
+    def _calculate_viewport_center_in_image_coords(self) -> tuple[float, float]:
+        """Calculate current viewport center in image coordinates.
+
+        Returns:
+            (img_x, img_y) tuple of center point in image coordinates
+        """
         scroll_area = self.scroll_area
         old_h_scroll = scroll_area.horizontalScrollBar().value()
         old_v_scroll = scroll_area.verticalScrollBar().value()
@@ -396,30 +397,63 @@ class ImageViewer(QMainWindow):
             img_center_x = old_center_x
             img_center_y = old_center_y
 
-        # Apply new zoom
-        self.scale = scale
-        arr = self.images[self.current_index]["array"]
-        self.display_image(arr)
+        return (img_center_x, img_center_y)
 
-        # Calculate new scroll position to keep same center
-        new_center_x = img_center_x * scale
-        new_center_y = img_center_y * scale
+    def _set_scroll_to_keep_image_point_at_position(
+        self, img_coords: tuple[float, float], target_pos: tuple[float, float]
+    ):
+        """Set scroll position to keep an image point at a target widget position.
 
-        new_h_scroll = int(new_center_x - viewport_width / 2.0)
-        new_v_scroll = int(new_center_y - viewport_height / 2.0)
+        Args:
+            img_coords: (x, y) in image coordinates
+            target_pos: (x, y) in widget coordinates where the image point should appear
+        """
+        img_x, img_y = img_coords
+        target_x, target_y = target_pos
+
+        # Calculate where the image point appears in the new scale
+        new_widget_x = img_x * self.scale
+        new_widget_y = img_y * self.scale
+
+        # Calculate required scroll position
+        scroll_area = self.scroll_area
+        new_h_scroll = int(new_widget_x - target_x)
+        new_v_scroll = int(new_widget_y - target_y)
 
         # Apply new scroll position
         scroll_area.horizontalScrollBar().setValue(new_h_scroll)
         scroll_area.verticalScrollBar().setValue(new_v_scroll)
+
+    def set_zoom(self, scale: float):
+        """Set the zoom scale, preserving the center of the visible viewport.
+
+        Args:
+            scale: New zoom scale factor (1.0 = original size)
+        """
+        if self.current_index is None:
+            self.scale = scale
+            return
+
+        # Get current viewport center in image coordinates
+        img_center = self._calculate_viewport_center_in_image_coords()
+
+        # Apply new zoom
+        self._apply_zoom_and_update_display(scale)
+
+        # Calculate viewport center position for target
+        scroll_area = self.scroll_area
+        viewport_width = scroll_area.viewport().width()
+        viewport_height = scroll_area.viewport().height()
+        center_pos = (viewport_width / 2.0, viewport_height / 2.0)
+
+        # Keep center point at viewport center
+        self._set_scroll_to_keep_image_point_at_position(img_center, center_pos)
 
     def set_zoom_at_status_coords(self, scale: float):
         """Set the zoom scale, keeping the coordinates shown in status bar fixed.
 
         Args:
             scale: New zoom scale factor (1.0 = original size)
-
-        This method zooms while keeping the image coordinates currently displayed
-        in the status bar (under the mouse cursor) at the center of the view.
         """
         if self.current_index is None:
             self.scale = scale
@@ -430,30 +464,17 @@ class ImageViewer(QMainWindow):
             self.set_zoom(scale)
             return
 
-        img_x, img_y = self.current_mouse_image_coords
-
         # Apply new zoom
-        old_scale = self.scale
-        self.scale = scale
-        arr = self.images[self.current_index]["array"]
-        self.display_image(arr)
-
-        # Calculate where the image point should be in the new scale
-        new_widget_x = img_x * scale
-        new_widget_y = img_y * scale
+        self._apply_zoom_and_update_display(scale)
 
         # Get viewport center for positioning
         scroll_area = self.scroll_area
         viewport_width = scroll_area.viewport().width()
         viewport_height = scroll_area.viewport().height()
+        center_pos = (viewport_width / 2.0, viewport_height / 2.0)
 
         # Place the status coordinates at the center of the viewport
-        new_h_scroll = int(new_widget_x - viewport_width / 2.0)
-        new_v_scroll = int(new_widget_y - viewport_height / 2.0)
-
-        # Apply new scroll position
-        scroll_area.horizontalScrollBar().setValue(new_h_scroll)
-        scroll_area.verticalScrollBar().setValue(new_v_scroll)
+        self._set_scroll_to_keep_image_point_at_position(self.current_mouse_image_coords, center_pos)
 
     def set_zoom_at_image_point(self, scale: float, image_coords: tuple, widget_point):
         """Set the zoom scale, keeping the specified image point fixed.
@@ -462,32 +483,17 @@ class ImageViewer(QMainWindow):
             scale: New zoom scale factor (1.0 = original size)
             image_coords: (x, y) tuple in image pixel coordinates
             widget_point: QPoint in widget coordinates where the image point should remain
-
-        This method zooms while keeping a specific image pixel at a specific widget location.
         """
         if self.current_index is None:
             self.scale = scale
             return
 
-        img_x, img_y = image_coords
-
         # Apply new zoom
-        self.scale = scale
-        arr = self.images[self.current_index]["array"]
-        self.display_image(arr)
+        self._apply_zoom_and_update_display(scale)
 
-        # Calculate where the image point should be in the new scale
-        new_widget_x = img_x * scale
-        new_widget_y = img_y * scale
-
-        # Calculate the required scroll position to place the image point at the widget point
-        scroll_area = self.scroll_area
-        new_h_scroll = int(new_widget_x - widget_point.x())
-        new_v_scroll = int(new_widget_y - widget_point.y())
-
-        # Apply new scroll position
-        scroll_area.horizontalScrollBar().setValue(new_h_scroll)
-        scroll_area.verticalScrollBar().setValue(new_v_scroll)
+        # Keep image point at widget point
+        target_pos = (widget_point.x(), widget_point.y())
+        self._set_scroll_to_keep_image_point_at_position(image_coords, target_pos)
 
     def set_zoom_at_point(self, scale: float, widget_point):
         """Set the zoom scale, keeping the specified point fixed.
@@ -495,9 +501,6 @@ class ImageViewer(QMainWindow):
         Args:
             scale: New zoom scale factor (1.0 = original size)
             widget_point: QPoint in widget coordinates to keep fixed during zoom
-
-        This method is designed for mouse wheel zooming where the user expects
-        the point under the cursor to remain stationary during zoom operations.
         """
         if self.current_index is None:
             self.scale = scale
@@ -509,36 +512,22 @@ class ImageViewer(QMainWindow):
         old_v_scroll = scroll_area.verticalScrollBar().value()
 
         # Convert widget point to scroll area coordinates
-        # widget_point is relative to the image widget, but we need coordinates
-        # relative to the scroll area viewport
         scroll_point_x = widget_point.x() + old_h_scroll
         scroll_point_y = widget_point.y() + old_v_scroll
 
         # Convert to image coordinates (independent of scale)
         old_scale = self.scale
         if old_scale > 0:
-            img_point_x = scroll_point_x / old_scale
-            img_point_y = scroll_point_y / old_scale
+            img_coords = (scroll_point_x / old_scale, scroll_point_y / old_scale)
         else:
-            img_point_x = scroll_point_x
-            img_point_y = scroll_point_y
+            img_coords = (scroll_point_x, scroll_point_y)
 
         # Apply new zoom
-        self.scale = scale
-        arr = self.images[self.current_index]["array"]
-        self.display_image(arr)
+        self._apply_zoom_and_update_display(scale)
 
-        # Calculate new scroll position to keep the mouse point fixed
-        new_scroll_point_x = img_point_x * scale
-        new_scroll_point_y = img_point_y * scale
-
-        # The new scroll position should place the zoom point at the same widget location
-        new_h_scroll = int(new_scroll_point_x - widget_point.x())
-        new_v_scroll = int(new_scroll_point_y - widget_point.y())
-
-        # Apply new scroll position
-        scroll_area.horizontalScrollBar().setValue(new_h_scroll)
-        scroll_area.verticalScrollBar().setValue(new_v_scroll)
+        # Keep the point fixed at the widget location
+        target_pos = (widget_point.x(), widget_point.y())
+        self._set_scroll_to_keep_image_point_at_position(img_coords, target_pos)
 
     def bit_shift(self, amount):
         if self.current_index is None:

@@ -4,18 +4,19 @@ This module provides functions for:
 - Converting NumPy arrays to QImage for Qt display
 - Loading images from files using PIL
 - Validating image file extensions
+- Extracting comprehensive image metadata
 
 All functions handle edge cases gracefully and are UI-independent.
 """
 
 import os
-import sys
 from io import StringIO
 from contextlib import redirect_stdout, redirect_stderr
-from typing import Optional
 import numpy as np
 from PIL import Image
 from PySide6.QtGui import QImage
+
+from .metadata_utils import is_binary_tag, is_printable_text, decode_bytes
 
 
 def numpy_to_qimage(arr: np.ndarray) -> QImage:
@@ -90,54 +91,6 @@ def is_image_file(path: str) -> bool:
     return ext in (".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp")
 
 
-def _is_binary_tag(tag: str) -> bool:
-    """Check if a tag contains binary data that should be skipped.
-
-    Args:
-        tag: EXIF tag name
-
-    Returns:
-        True if tag should be skipped (binary/thumbnail data)
-    """
-    skip_keywords = ["thumbnail", "makernote", "printim"]
-    return any(keyword in tag.lower() for keyword in skip_keywords) or tag.startswith("Info.")
-
-
-def _is_printable_text(text: str, min_ratio: float = 0.7) -> bool:
-    """Check if text is mostly printable characters.
-
-    Args:
-        text: Text to check
-        min_ratio: Minimum ratio of printable characters (0.0-1.0)
-
-    Returns:
-        True if text has enough printable characters
-    """
-    if not text:
-        return False
-    printable_count = sum(1 for c in text if c.isprintable() or c in "\r\n\t")
-    return printable_count / len(text) >= min_ratio
-
-
-def _decode_bytes(data: bytes) -> str:
-    """Attempt to decode bytes using multiple encodings.
-
-    Args:
-        data: Bytes to decode
-
-    Returns:
-        Decoded string, or empty string if all attempts fail
-    """
-    for encoding in ["utf-8", "shift-jis", "cp932", "latin-1"]:
-        try:
-            decoded = data.decode(encoding)
-            if _is_printable_text(decoded):
-                return decoded
-        except (UnicodeDecodeError, LookupError):
-            continue
-    return ""
-
-
 def get_image_metadata(path: str) -> dict:
     """Extract metadata from an image file using exifread for comprehensive EXIF data.
 
@@ -155,8 +108,8 @@ def get_image_metadata(path: str) -> dict:
     """
     metadata = {}
 
+    # Extract basic PIL information
     try:
-        # Basic image information via PIL (format, size, mode only - no EXIF)
         with Image.open(path) as img:
             metadata["Format"] = img.format or "Unknown"
             metadata["Size"] = f"{img.size[0]} x {img.size[1]}"
@@ -165,18 +118,18 @@ def get_image_metadata(path: str) -> dict:
     except Exception as e:
         metadata["Error (PIL)"] = str(e)
 
-    # Extract EXIF data using exifread for comprehensive information
+    # Extract comprehensive EXIF data
     try:
         import exifread
 
-        # Suppress exifread's debug messages (e.g., "PNG file does not have exif data.")
         with open(path, "rb") as f:
+            # Suppress exifread's debug messages
             with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
                 tags = exifread.process_file(f, details=False)
 
             for tag, value in tags.items():
                 # Skip binary/thumbnail data
-                if _is_binary_tag(tag):
+                if is_binary_tag(tag):
                     continue
 
                 try:
@@ -189,13 +142,13 @@ def get_image_metadata(path: str) -> dict:
                             continue
 
                         # Try decoding with multiple encodings
-                        decoded = _decode_bytes(value.values)
+                        decoded = decode_bytes(value.values)
                         if not decoded:
                             continue
                         value_str = decoded
 
                     # Skip fields with excessive control characters
-                    if not _is_printable_text(value_str, min_ratio=0.8):
+                    if not is_printable_text(value_str, min_ratio=0.8):
                         continue
 
                     # Store with cleaned tag name

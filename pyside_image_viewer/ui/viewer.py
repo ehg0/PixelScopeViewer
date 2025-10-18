@@ -11,6 +11,7 @@ Features:
 - Analysis dialogs (histogram, profile, info)
 - Difference image creation
 - Status bar showing pixel values and coordinates
+- Title bar showing current filename and image index
 """
 
 import os
@@ -99,14 +100,10 @@ class ImageViewer(QMainWindow):
 
         self.status = QStatusBar()
         self.setStatusBar(self.status)
-        self.status_filename = QLabel()
-        self.status_index = QLabel()
         self.status_pixel = QLabel()
         self.status_selection = QLabel()
         self.status_shift = QLabel()
         self.status_scale = QLabel()
-        self.status.addWidget(self.status_filename, 2)
-        self.status.addWidget(self.status_index, 1)
         self.status.addPermanentWidget(self.status_pixel, 3)
         self.status.addPermanentWidget(self.status_selection, 2)
         self.status.addPermanentWidget(self.status_shift, 1)
@@ -184,8 +181,12 @@ class ImageViewer(QMainWindow):
                 arr = pil_to_numpy(f)
                 img_data = {"path": os.path.abspath(f), "array": arr, "base_array": arr.copy(), "bit_shift": 0}
                 self.images.append(img_data)
+            # Switch to the first newly added image
             if self.current_index is None:
                 self.current_index = 0
+            else:
+                # Switch to the first newly added image
+                self.current_index = len(self.images) - len(files)
             self.show_current_image()
             self.update_image_list_menu()
 
@@ -201,8 +202,12 @@ class ImageViewer(QMainWindow):
                 arr = pil_to_numpy(f)
                 img_data = {"path": os.path.abspath(f), "array": arr, "base_array": arr.copy(), "bit_shift": 0}
                 self.images.append(img_data)
+            # Switch to the first newly added image
             if self.current_index is None:
                 self.current_index = 0
+            else:
+                # Switch to the first newly added image
+                self.current_index = len(self.images) - len(image_files)
             self.show_current_image()
             self.update_image_list_menu()
 
@@ -625,16 +630,20 @@ class ImageViewer(QMainWindow):
 
     def update_status(self):
         if self.current_index is None:
-            self.status_filename.setText("No image")
-            self.status_index.setText("")
+            # Update title bar to show no image
+            self.setWindowTitle("PySide6 Image Viewer")
             # still update scale display
             self.status_scale.setText(f"Scale: {self.scale:.2f}x")
             # clear shift when no image
             self.status_shift.setText("")
             return
         p = self.images[self.current_index]["path"]
-        self.status_filename.setText(p)
-        self.status_index.setText(f"{self.current_index+1}/{len(self.images)}")
+
+        # Update title bar with filename and index
+        filename = os.path.basename(p)
+        title = f"{filename} ({self.current_index+1}/{len(self.images)})"
+        self.setWindowTitle(title)
+
         # display current scale
         try:
             self.status_scale.setText(f"Scale: {self.scale:.2f}x")

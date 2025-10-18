@@ -536,8 +536,8 @@ class AnalysisDialog(QDialog):
             if btn == 1:  # Left: cycle orientation h → v → d → h
                 if self.profile_orientation == "h":
                     self.profile_orientation = "v"
-                elif self.profile_orientation == "v":
-                    self.profile_orientation = "d"
+                # elif self.profile_orientation == "v":
+                #     self.profile_orientation = "d"
                 else:
                     self.profile_orientation = "h"
                 self.update_contents()

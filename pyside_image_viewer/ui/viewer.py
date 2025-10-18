@@ -143,7 +143,7 @@ class ImageViewer(QMainWindow):
         analysis.addAction(QAction("ヒストグラム", self, triggered=lambda: self.show_analysis_dialog(tab="Histogram")))
         analysis.addSeparator()
         analysis.addAction(QAction("メタデータ", self, triggered=lambda: self.show_analysis_dialog(tab="Metadata")))
-        
+
         help_menu = menubar.addMenu("ヘルプ")
         help_menu.addAction(QAction("キーボードショートカット", self, triggered=self.help_dialog.show))
 

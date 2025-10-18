@@ -4,7 +4,7 @@ This module combines all widget functionality into a single ImageLabel class.
 """
 
 from typing import Optional
-from PySide6.QtGui import QPixmap, QPainter, QImage
+from PySide6.QtGui import QPixmap, QPainter, QImage, QWheelEvent
 from PySide6.QtCore import Qt, QRect
 
 from .base_image_label import BaseImageLabel
@@ -95,3 +95,46 @@ class ImageLabel(SelectionManagerMixin, SelectionEditorMixin, BaseImageLabel):
 
         # Paint selection (from selection manager)
         self.paint_selection(painter)
+
+    def wheelEvent(self, event: QWheelEvent):
+        """Handle mouse wheel events for zooming with binary steps.
+
+        Args:
+            event: QWheelEvent containing wheel movement information
+        """
+        if not self.showing or self.viewer.current_index is None:
+            event.ignore()
+            return
+
+        # Check if Ctrl key is pressed for zoom operation
+        modifiers = event.modifiers()
+        if not (modifiers & Qt.ControlModifier):
+            # If Ctrl is not pressed, let the parent handle scrolling
+            event.ignore()
+            return
+
+        # Get the scroll direction (positive = zoom in, negative = zoom out)
+        angle_delta = event.angleDelta().y()
+        if angle_delta == 0:
+            event.ignore()
+            return
+
+        # Use binary steps like keyboard shortcuts (2x zoom in/out)
+        current_scale = self.viewer.scale
+        if angle_delta > 0:
+            # Zoom in: multiply by 2
+            new_scale = current_scale * 2
+        else:
+            # Zoom out: divide by 2
+            new_scale = current_scale / 2
+
+        # Set reasonable zoom limits (same as keyboard shortcuts)
+        min_scale = 0.125  # 1/8x
+        max_scale = 16.0  # 16x (extending range for better pixel-level work)
+        new_scale = max(min_scale, min(max_scale, new_scale))
+
+        # Apply zoom centered on the coordinates displayed in status bar
+        self.viewer.set_zoom_at_status_coords(new_scale)
+
+        # Accept the event
+        event.accept()

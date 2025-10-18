@@ -5,7 +5,7 @@ for displaying and navigating images with analysis tools.
 
 Features:
 - Multi-image loading and navigation
-- Zoom in/out with keyboard shortcuts
+- Zoom in/out with keyboard shortcuts and Ctrl+mouse wheel
 - Pixel-aligned selection with keyboard editing
 - Bit-shift operations for raw/scientific images
 - Analysis dialogs (histogram, profile, info)
@@ -41,7 +41,7 @@ class ImageViewer(QMainWindow):
     The ImageViewer provides a complete interface for:
     - Loading and displaying images (single or multiple files)
     - Navigating between images with keyboard shortcuts (n/b)
-    - Zooming with +/- keys
+    - Zooming with +/- keys and mouse wheel
     - Creating and editing pixel-aligned selections
     - Bit-shifting for viewing raw/scientific data (</> keys)
     - Analysis tools (histogram, profile plots)
@@ -52,11 +52,17 @@ class ImageViewer(QMainWindow):
         - Ctrl+C: Copy selection to clipboard
         - n: Next image
         - b: Previous image
-        - +: Zoom in
-        - -: Zoom out
+        - +: Zoom in (2x)
+        - -: Zoom out (0.5x)
         - <: Left bit shift (darker)
         - >: Right bit shift (brighter)
         - ESC: Clear selection
+
+    Mouse Controls:
+        - Ctrl + Mouse wheel: Zoom in/out (binary steps: 2x/0.5x, centered on status bar coordinates)
+        - Left-drag: Create new selection rectangle
+        - Right-drag: Move existing selection
+        - Left-drag on edges/corners: Resize selection
 
     Attributes:
         images: List of loaded image dictionaries with keys:
@@ -74,6 +80,9 @@ class ImageViewer(QMainWindow):
         self.images = []
         self.current_index = None
         self.scale = 1.0
+
+        # Track current mouse position in image coordinates for zoom centering
+        self.current_mouse_image_coords = None
 
         central = QWidget(self)
         self.setCentralWidget(central)
@@ -396,6 +405,134 @@ class ImageViewer(QMainWindow):
         scroll_area.horizontalScrollBar().setValue(new_h_scroll)
         scroll_area.verticalScrollBar().setValue(new_v_scroll)
 
+    def set_zoom_at_status_coords(self, scale: float):
+        """Set the zoom scale, keeping the coordinates shown in status bar fixed.
+
+        Args:
+            scale: New zoom scale factor (1.0 = original size)
+
+        This method zooms while keeping the image coordinates currently displayed
+        in the status bar (under the mouse cursor) at the center of the view.
+        """
+        if self.current_index is None:
+            self.scale = scale
+            return
+
+        if self.current_mouse_image_coords is None:
+            # If no valid mouse coordinates, fall back to center zoom
+            self.set_zoom(scale)
+            return
+
+        img_x, img_y = self.current_mouse_image_coords
+
+        # Apply new zoom
+        old_scale = self.scale
+        self.scale = scale
+        arr = self.images[self.current_index]["array"]
+        self.display_image(arr)
+
+        # Calculate where the image point should be in the new scale
+        new_widget_x = img_x * scale
+        new_widget_y = img_y * scale
+
+        # Get viewport center for positioning
+        scroll_area = self.scroll_area
+        viewport_width = scroll_area.viewport().width()
+        viewport_height = scroll_area.viewport().height()
+
+        # Place the status coordinates at the center of the viewport
+        new_h_scroll = int(new_widget_x - viewport_width / 2.0)
+        new_v_scroll = int(new_widget_y - viewport_height / 2.0)
+
+        # Apply new scroll position
+        scroll_area.horizontalScrollBar().setValue(new_h_scroll)
+        scroll_area.verticalScrollBar().setValue(new_v_scroll)
+
+    def set_zoom_at_image_point(self, scale: float, image_coords: tuple, widget_point):
+        """Set the zoom scale, keeping the specified image point fixed.
+
+        Args:
+            scale: New zoom scale factor (1.0 = original size)
+            image_coords: (x, y) tuple in image pixel coordinates
+            widget_point: QPoint in widget coordinates where the image point should remain
+
+        This method zooms while keeping a specific image pixel at a specific widget location.
+        """
+        if self.current_index is None:
+            self.scale = scale
+            return
+
+        img_x, img_y = image_coords
+
+        # Apply new zoom
+        self.scale = scale
+        arr = self.images[self.current_index]["array"]
+        self.display_image(arr)
+
+        # Calculate where the image point should be in the new scale
+        new_widget_x = img_x * scale
+        new_widget_y = img_y * scale
+
+        # Calculate the required scroll position to place the image point at the widget point
+        scroll_area = self.scroll_area
+        new_h_scroll = int(new_widget_x - widget_point.x())
+        new_v_scroll = int(new_widget_y - widget_point.y())
+
+        # Apply new scroll position
+        scroll_area.horizontalScrollBar().setValue(new_h_scroll)
+        scroll_area.verticalScrollBar().setValue(new_v_scroll)
+
+    def set_zoom_at_point(self, scale: float, widget_point):
+        """Set the zoom scale, keeping the specified point fixed.
+
+        Args:
+            scale: New zoom scale factor (1.0 = original size)
+            widget_point: QPoint in widget coordinates to keep fixed during zoom
+
+        This method is designed for mouse wheel zooming where the user expects
+        the point under the cursor to remain stationary during zoom operations.
+        """
+        if self.current_index is None:
+            self.scale = scale
+            return
+
+        # Get scroll area and current scroll positions
+        scroll_area = self.scroll_area
+        old_h_scroll = scroll_area.horizontalScrollBar().value()
+        old_v_scroll = scroll_area.verticalScrollBar().value()
+
+        # Convert widget point to scroll area coordinates
+        # widget_point is relative to the image widget, but we need coordinates
+        # relative to the scroll area viewport
+        scroll_point_x = widget_point.x() + old_h_scroll
+        scroll_point_y = widget_point.y() + old_v_scroll
+
+        # Convert to image coordinates (independent of scale)
+        old_scale = self.scale
+        if old_scale > 0:
+            img_point_x = scroll_point_x / old_scale
+            img_point_y = scroll_point_y / old_scale
+        else:
+            img_point_x = scroll_point_x
+            img_point_y = scroll_point_y
+
+        # Apply new zoom
+        self.scale = scale
+        arr = self.images[self.current_index]["array"]
+        self.display_image(arr)
+
+        # Calculate new scroll position to keep the mouse point fixed
+        new_scroll_point_x = img_point_x * scale
+        new_scroll_point_y = img_point_y * scale
+
+        # The new scroll position should place the zoom point at the same widget location
+        new_h_scroll = int(new_scroll_point_x - widget_point.x())
+        new_v_scroll = int(new_scroll_point_y - widget_point.y())
+
+        # Apply new scroll position
+        scroll_area.horizontalScrollBar().setValue(new_h_scroll)
+        scroll_area.verticalScrollBar().setValue(new_v_scroll)
+
     def bit_shift(self, amount):
         if self.current_index is None:
             return
@@ -464,6 +601,7 @@ class ImageViewer(QMainWindow):
     def update_mouse_status(self, pos):
         if self.current_index is None or not self.images:
             self.status_pixel.setText("")
+            self.current_mouse_image_coords = None
             return
         img = self.images[self.current_index]
         # prefer base_array (unshifted) for status display when available
@@ -479,8 +617,11 @@ class ImageViewer(QMainWindow):
             else:
                 val_str = "(" + ",".join(str(int(x)) for x in np.ravel(v)) + ")"
             self.status_pixel.setText(f"x={ix} y={iy} val={val_str}")
+            # Store current image coordinates for zoom centering
+            self.current_mouse_image_coords = (ix, iy)
         else:
             self.status_pixel.setText("")
+            self.current_mouse_image_coords = None
 
     def update_status(self):
         if self.current_index is None:

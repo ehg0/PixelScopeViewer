@@ -43,13 +43,102 @@ class SelectionManagerMixin:
         self._resize_orig_img_rect = None
         self._edge_grab_distance = 8  # pixels from edge to trigger resize
 
+    def _update_selection_rect_in_widget_coords(self, img_rect: QRect):
+        """Convert image rectangle to widget coordinates and update selection_rect.
+
+        Args:
+            img_rect: Rectangle in image coordinates
+        """
+        left = self._image_to_widget_x(img_rect.left())
+        top = self._image_to_widget_y(img_rect.top())
+        right_ex = self._image_to_widget_x(img_rect.left() + img_rect.width())
+        bottom_ex = self._image_to_widget_y(img_rect.top() + img_rect.height())
+        w = max(1, right_ex - left)
+        h = max(1, bottom_ex - top)
+        self.selection_rect = QRect(left, top, w, h)
+
+    def _handle_resize_operation(self, cur_img):
+        """Handle selection resizing operation.
+
+        Args:
+            cur_img: Current mouse position in image coordinates
+        """
+        if not (self._resize_start_img and self._resize_orig_img_rect):
+            return
+
+        orig = self._resize_orig_img_rect
+        edge = self._resize_edge
+
+        # Start with original rectangle
+        new_left = orig.left()
+        new_top = orig.top()
+        new_width = orig.width()
+        new_height = orig.height()
+
+        # Handle horizontal resize (left/right edges and corners)
+        if edge in ("left", "tl", "bl"):  # Left edge or left corners
+            new_left_candidate = max(0, min(cur_img[0], orig.left() + orig.width() - 1))
+            new_width = orig.left() + orig.width() - new_left_candidate
+            new_left = new_left_candidate
+        elif edge in ("right", "tr", "br"):  # Right edge or right corners
+            new_right_candidate = max(orig.left(), min(cur_img[0], self._qimage.width() - 1))
+            new_width = new_right_candidate - orig.left() + 1
+
+        # Handle vertical resize (top/bottom edges and corners)
+        if edge in ("top", "tl", "tr"):  # Top edge or top corners
+            new_top_candidate = max(0, min(cur_img[1], orig.top() + orig.height() - 1))
+            new_height = orig.top() + orig.height() - new_top_candidate
+            new_top = new_top_candidate
+        elif edge in ("bottom", "bl", "br"):  # Bottom edge or bottom corners
+            new_bottom_candidate = max(orig.top(), min(cur_img[1], self._qimage.height() - 1))
+            new_height = new_bottom_candidate - orig.top() + 1
+
+        # Ensure minimum size and update
+        new_width = max(1, new_width)
+        new_height = max(1, new_height)
+        new_rect = QRect(new_left, new_top, new_width, new_height)
+        self._update_selection_rect_in_widget_coords(new_rect)
+
+    def _handle_move_operation(self, cur_img):
+        """Handle selection moving operation.
+
+        Args:
+            cur_img: Current mouse position in image coordinates
+        """
+        if not (self._move_start_img and self._move_orig_img_rect):
+            return
+
+        orig = self._move_orig_img_rect
+        dx = cur_img[0] - self._move_start_img[0]
+        dy = cur_img[1] - self._move_start_img[1]
+
+        new_x = max(0, min(orig.x() + dx, self._qimage.width() - orig.width()))
+        new_y = max(0, min(orig.y() + dy, self._qimage.height() - orig.height()))
+        new_rect = QRect(new_x, new_y, orig.width(), orig.height())
+        self._update_selection_rect_in_widget_coords(new_rect)
+
+    def _handle_create_operation(self, cur_img):
+        """Handle new selection creation operation.
+
+        Args:
+            cur_img: Current mouse position in image coordinates
+        """
+        if not self._start_img:
+            return
+
+        x0 = min(self._start_img[0], cur_img[0])
+        x1 = max(self._start_img[0], cur_img[0])
+        y0 = min(self._start_img[1], cur_img[1])
+        y1 = max(self._start_img[1], cur_img[1])
+        new_rect = QRect(x0, y0, x1 - x0 + 1, y1 - y0 + 1)
+        self._update_selection_rect_in_widget_coords(new_rect)
+
     def mousePressEvent(self, ev):
         """Handle mouse press for selection operations."""
         if not self.showing:
             return
-        self.start_point = ev.position().toPoint()
 
-        # Check if clicking on selection edge for resizing
+        self.start_point = ev.position().toPoint()
         edge = self._get_resize_edge(self.start_point)
 
         if ev.button() == Qt.LeftButton:
@@ -61,18 +150,18 @@ class SelectionManagerMixin:
                 self._resize_orig_img_rect = self.get_selection_in_image_coords()
                 self.dragging = True
             else:
-                # start selection creation
+                # Start selection creation
                 self._moving = False
                 self._resizing = False
                 self._start_img = self._widget_to_image_point(self.start_point)
-                # create minimal visible rect immediately
+                # Create minimal visible rect immediately
                 if self._start_img is not None:
                     sx = self._image_to_widget_x(self._start_img[0])
                     sy = self._image_to_widget_y(self._start_img[1])
                     self.selection_rect = QRect(sx, sy, 1, 1)
                 self.dragging = True
         elif ev.button() == Qt.RightButton:
-            # start moving only if clicked inside selection (but not on edge)
+            # Start moving only if clicked inside selection (but not on edge)
             if self.selection_rect and self.selection_rect.contains(self.start_point) and not edge:
                 self._moving = True
                 self._resizing = False
@@ -89,94 +178,20 @@ class SelectionManagerMixin:
 
         if self.showing and self.dragging:
             cur_pt = ev.position().toPoint()
+            cur_img = self._widget_to_image_point(cur_pt)
+            if cur_img is None:
+                return
 
-            # Resizing selection
-            if self._resizing and self._resize_start_img is not None and self._resize_orig_img_rect is not None:
-                cur_img = self._widget_to_image_point(cur_pt)
-                if cur_img is None:
-                    return
-
-                orig = self._resize_orig_img_rect
-                edge = self._resize_edge
-
-                # Start with original rectangle
-                new_left = orig.left()
-                new_top = orig.top()
-                new_width = orig.width()
-                new_height = orig.height()
-
-                # Handle horizontal resize (left/right edges and corners)
-                if edge in ("left", "tl", "bl"):  # Left edge or left corners
-                    new_left_candidate = max(0, min(cur_img[0], orig.left() + orig.width() - 1))
-                    new_width = orig.left() + orig.width() - new_left_candidate
-                    new_left = new_left_candidate
-                elif edge in ("right", "tr", "br"):  # Right edge or right corners
-                    new_right_candidate = max(orig.left(), min(cur_img[0], self._qimage.width() - 1))
-                    new_width = new_right_candidate - orig.left() + 1
-
-                # Handle vertical resize (top/bottom edges and corners)
-                if edge in ("top", "tl", "tr"):  # Top edge or top corners
-                    new_top_candidate = max(0, min(cur_img[1], orig.top() + orig.height() - 1))
-                    new_height = orig.top() + orig.height() - new_top_candidate
-                    new_top = new_top_candidate
-                elif edge in ("bottom", "bl", "br"):  # Bottom edge or bottom corners
-                    new_bottom_candidate = max(orig.top(), min(cur_img[1], self._qimage.height() - 1))
-                    new_height = new_bottom_candidate - orig.top() + 1
-
-                # Ensure minimum size
-                new_width = max(1, new_width)
-                new_height = max(1, new_height)
-
-                # Convert to widget coordinates
-                left = self._image_to_widget_x(new_left)
-                top = self._image_to_widget_y(new_top)
-                right_ex = self._image_to_widget_x(new_left + new_width)
-                bottom_ex = self._image_to_widget_y(new_top + new_height)
-                w = max(1, right_ex - left)
-                h = max(1, bottom_ex - top)
-                self.selection_rect = QRect(left, top, w, h)
-                self.update()
-                self._notify_selection_changed()
-            # moving selection
-            elif self._moving and self._move_start_img is not None and self._move_orig_img_rect is not None:
-                cur_img = self._widget_to_image_point(cur_pt)
-                if cur_img is None:
-                    return
-                dx = cur_img[0] - self._move_start_img[0]
-                dy = cur_img[1] - self._move_start_img[1]
-                orig = self._move_orig_img_rect
-                if orig is None:
-                    return
-                new_x = max(0, min(orig.x() + dx, self._qimage.width() - orig.width()))
-                new_y = max(0, min(orig.y() + dy, self._qimage.height() - orig.height()))
-                left = self._image_to_widget_x(new_x)
-                top = self._image_to_widget_y(new_y)
-                right_ex = self._image_to_widget_x(new_x + orig.width())
-                bottom_ex = self._image_to_widget_y(new_y + orig.height())
-                w = max(1, right_ex - left)
-                h = max(1, bottom_ex - top)
-                self.selection_rect = QRect(left, top, w, h)
-                self.update()
-                self._notify_selection_changed()
+            # Handle different operation types
+            if self._resizing:
+                self._handle_resize_operation(cur_img)
+            elif self._moving:
+                self._handle_move_operation(cur_img)
             else:
-                # creating new selection
-                cur_img = self._widget_to_image_point(cur_pt)
-                start_img = self._start_img
-                if start_img is None or cur_img is None:
-                    return
-                x0 = min(start_img[0], cur_img[0])
-                x1 = max(start_img[0], cur_img[0])
-                y0 = min(start_img[1], cur_img[1])
-                y1 = max(start_img[1], cur_img[1])
-                left = self._image_to_widget_x(x0)
-                top = self._image_to_widget_y(y0)
-                right_ex = self._image_to_widget_x(x1 + 1)
-                bottom_ex = self._image_to_widget_y(y1 + 1)
-                w = max(1, right_ex - left)
-                h = max(1, bottom_ex - top)
-                self.selection_rect = QRect(left, top, w, h)
-                self.update()
-                self._notify_selection_changed()
+                self._handle_create_operation(cur_img)
+
+            self.update()
+            self._notify_selection_changed()
 
         # Notify parent of mouse move
         if hasattr(self.parent(), "on_mouse_move"):
@@ -193,6 +208,7 @@ class SelectionManagerMixin:
         """Handle mouse release for selection operations."""
         if not self.showing:
             return
+
         if ev.button() == Qt.LeftButton:
             if self._resizing:
                 # Finish resizing
@@ -207,32 +223,18 @@ class SelectionManagerMixin:
                 # Finish creating new selection
                 self.dragging = False
                 end_img = self._widget_to_image_point(ev.position().toPoint())
-                start_img = self._start_img
-                if start_img is not None and end_img is not None:
-                    x0 = min(start_img[0], end_img[0])
-                    x1 = max(start_img[0], end_img[0])
-                    y0 = min(start_img[1], end_img[1])
-                    y1 = max(start_img[1], end_img[1])
-                    left = self._image_to_widget_x(x0)
-                    top = self._image_to_widget_y(y0)
-                    right_ex = self._image_to_widget_x(x1 + 1)
-                    bottom_ex = self._image_to_widget_y(y1 + 1)
-                    w = max(1, right_ex - left)
-                    h = max(1, bottom_ex - top)
-                    self.selection_rect = QRect(left, top, w, h)
+                if self._start_img is not None and end_img is not None:
+                    self._handle_create_operation(end_img)
                 self.update()
                 self._notify_selection_changed()
-            return
-        if ev.button() == Qt.RightButton:
-            # finish moving
-            if getattr(self, "_moving", False):
-                self._moving = False
-                self._move_start_img = None
-                self._move_orig_img_rect = None
-                self.dragging = False
-                self.update()
-                self._notify_selection_changed()
-            return
+        elif ev.button() == Qt.RightButton and self._moving:
+            # Finish moving
+            self._moving = False
+            self._move_start_img = None
+            self._move_orig_img_rect = None
+            self.dragging = False
+            self.update()
+            self._notify_selection_changed()
 
     def paint_selection(self, painter: QPainter):
         """Paint the selection rectangle.

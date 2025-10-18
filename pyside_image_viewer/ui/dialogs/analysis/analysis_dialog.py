@@ -633,15 +633,20 @@ class AnalysisDialog(QDialog):
         if not getattr(self, "last_hist_data", None):
             QMessageBox.information(self, "Copy", "No data.")
             return
+
+        # Use numpy array operations for efficient data processing
         keys = list(self.last_hist_data.keys())
         xs = self.last_hist_data[keys[0]][0]
-        lines = [",".join(["x"] + keys)]
-        for i in range(len(xs)):
-            row = [str(xs[i])]
-            for k in keys:
-                row.append(str(int(self.last_hist_data[k][1][i])))
-            lines.append(",".join(row))
-        QGuiApplication.clipboard().setText("\n".join(lines))
+
+        # Build data matrix efficiently
+        data_matrix = np.column_stack([xs] + [self.last_hist_data[k][1] for k in keys])
+
+        # Create header and format data
+        header = ",".join(["x"] + keys)
+        data_lines = [",".join(map(str, row.astype(int))) for row in data_matrix]
+
+        text = "\n".join([header] + data_lines)
+        QGuiApplication.clipboard().setText(text)
         QMessageBox.information(self, "Copy", "Histogram copied to clipboard.")
 
     def copy_profile_to_clipboard(self):
@@ -649,19 +654,24 @@ class AnalysisDialog(QDialog):
         if not getattr(self, "last_profile_data", None):
             QMessageBox.information(self, "Copy", "No data.")
             return
+
+        # Use numpy array operations for efficient data processing
         keys = list(self.last_profile_data.keys())
         xs = self.last_profile_data[keys[0]][0]
-        lines = [",".join(["x"] + keys)]
-        for i in range(len(xs)):
-            row = [str(xs[i])]
-            for k in keys:
-                row.append(str(float(self.last_profile_data[k][1][i])))
-            lines.append(",".join(row))
-        QGuiApplication.clipboard().setText("\n".join(lines))
+
+        # Build data matrix efficiently
+        data_matrix = np.column_stack([xs] + [self.last_profile_data[k][1] for k in keys])
+
+        # Create header and format data
+        header = ",".join(["x"] + keys)
+        data_lines = [",".join(map(str, row)) for row in data_matrix]
+
+        text = "\n".join([header] + data_lines)
+        QGuiApplication.clipboard().setText(text)
         QMessageBox.information(self, "Copy", "Profile copied to clipboard.")
 
     def _compute_profile(self, channel_data: np.ndarray) -> np.ndarray:
-        """Compute intensity profile for a single channel.
+        """Compute intensity profile for a single channel using optimized numpy operations.
 
         Args:
             channel_data: 2D array (height x width) of pixel values
@@ -675,24 +685,33 @@ class AnalysisDialog(QDialog):
             "d": Diagonal - extract pixels along main diagonal (top-left to bottom-right)
         """
         if self.profile_orientation == "h":
-            return channel_data.mean(axis=0)
+            return np.mean(channel_data, axis=0)
         elif self.profile_orientation == "v":
-            return channel_data.mean(axis=1)
+            return np.mean(channel_data, axis=1)
         else:  # diagonal
             h, w = channel_data.shape
-            diag_len = min(h, w)
 
+            # Handle edge cases first
+            if h == 0 or w == 0:
+                return np.array([])
+            if h == 1 and w == 1:
+                return np.array([channel_data[0, 0]])
+
+            # Use numpy diagonal extraction for square images
             if h == w:
-                # Square: simple diagonal extraction
                 return np.diag(channel_data)
-            else:
-                # Rectangular: sample diagonal proportionally
-                if diag_len <= 1:
-                    return np.array([channel_data[0, 0]])
 
-                y_coords = np.linspace(0, h - 1, diag_len).astype(int)
-                x_coords = np.linspace(0, w - 1, diag_len).astype(int)
-                return channel_data[y_coords, x_coords]
+            # For rectangular images, use efficient coordinate generation
+            diag_len = min(h, w)
+            if diag_len == 1:
+                return np.array([channel_data[0, 0]])
+
+            # Generate coordinates using numpy operations
+            y_coords = np.linspace(0, h - 1, diag_len, dtype=int)
+            x_coords = np.linspace(0, w - 1, diag_len, dtype=int)
+
+            # Extract diagonal values in one operation
+            return channel_data[y_coords, x_coords]
 
     def _get_profile_offset(self) -> int:
         """Get the offset for absolute x-axis mode.
@@ -703,13 +722,13 @@ class AnalysisDialog(QDialog):
         if self.image_rect is None:
             return 0
 
-        if self.profile_orientation == "h":
-            return self.image_rect.x()
-        elif self.profile_orientation == "v":
-            return self.image_rect.y()
-        else:  # diagonal
-            # For diagonal, use top-left corner as offset
-            return min(self.image_rect.x(), self.image_rect.y())
+        # Use dictionary for efficient orientation mapping
+        offset_map = {
+            "h": self.image_rect.x(),
+            "v": self.image_rect.y(),
+            "d": min(self.image_rect.x(), self.image_rect.y()),  # diagonal uses top-left corner
+        }
+        return offset_map.get(self.profile_orientation, 0)
 
     def _on_prof_orientation_toggle(self):
         """Toggle profile orientation between horizontal and vertical."""

@@ -134,9 +134,11 @@ class ImageViewer(QMainWindow):
         self.update_image_list_menu()
 
         view_menu = menubar.addMenu("表示")
-        view_menu.addAction(QAction("拡大", self, shortcut="+", triggered=lambda: self.set_zoom(self.scale * 2)))
         view_menu.addAction(
-            QAction("縮小", self, shortcut="-", triggered=lambda: self.set_zoom(max(0.125, self.scale / 2)))
+            QAction("拡大", self, shortcut="+", triggered=lambda: self.set_zoom(min(self.scale * 2, 128.0)))
+        )
+        view_menu.addAction(
+            QAction("縮小", self, shortcut="-", triggered=lambda: self.set_zoom(max(self.scale / 2, 0.125)))
         )
         view_menu.addSeparator()
         view_menu.addAction(QAction("左ビットシフト", self, shortcut="<", triggered=lambda: self.bit_shift(-1)))

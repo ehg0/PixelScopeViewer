@@ -130,7 +130,7 @@ class ImageLabel(SelectionManagerMixin, SelectionEditorMixin, BaseImageLabel):
 
         # Set reasonable zoom limits (same as keyboard shortcuts)
         min_scale = 0.125  # 1/8x
-        max_scale = 16.0  # 16x (extending range for better pixel-level work)
+        max_scale = 128.0  # 128x (extending range for better pixel-level work)
         new_scale = max(min_scale, min(max_scale, new_scale))
 
         # Apply zoom centered on the coordinates displayed in status bar

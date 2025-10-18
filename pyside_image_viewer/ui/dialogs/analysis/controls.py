@@ -2,18 +2,10 @@
 
 This module provides utility dialogs for:
 - ChannelsDialog: Select which color channels to display in plots
-- RangesDialog: Set manual axis ranges for plots
 """
 
-from typing import Optional, Tuple
-from PySide6.QtWidgets import (
-    QDialog,
-    QVBoxLayout,
-    QCheckBox,
-    QDialogButtonBox,
-    QFormLayout,
-    QLineEdit,
-)
+from typing import Optional
+from PySide6.QtWidgets import QDialog, QVBoxLayout, QCheckBox
 
 
 class ChannelsDialog(QDialog):
@@ -61,56 +53,3 @@ class ChannelsDialog(QDialog):
 
     def results(self) -> list[bool]:
         return [cb.isChecked() for cb in self.checks]
-
-
-class RangesDialog(QDialog):
-    """Dialog for manually setting axis ranges in plots.
-
-    Allows user to specify custom min/max values for X and Y axes.
-    Empty fields are treated as None (auto range).
-
-    Args:
-        parent: Parent widget
-        xmin, xmax, ymin, ymax: Initial range values (None for auto)
-
-    Usage:
-        dlg = RangesDialog(parent, xmin=0, xmax=100, ymin=None, ymax=255)
-        if dlg.exec() == QDialog.Accepted:
-            xmin, xmax, ymin, ymax = dlg.results()
-    """
-
-    def __init__(self, parent, xmin, xmax, ymin, ymax):
-        super().__init__(parent)
-        self.setWindowTitle("Axis ranges")
-        self.setModal(True)
-        layout = QFormLayout(self)
-        self.xmin = QLineEdit()
-        self.xmin.setText("" if xmin is None else str(xmin))
-        self.xmax = QLineEdit()
-        self.xmax.setText("" if xmax is None else str(xmax))
-        self.ymin = QLineEdit()
-        self.ymin.setText("" if ymin is None else str(ymin))
-        self.ymax = QLineEdit()
-        self.ymax.setText("" if ymax is None else str(ymax))
-        layout.addRow("x min:", self.xmin)
-        layout.addRow("x max:", self.xmax)
-        layout.addRow("y min:", self.ymin)
-        layout.addRow("y max:", self.ymax)
-        btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        btns.accepted.connect(self.accept)
-        btns.rejected.connect(self.reject)
-        layout.addWidget(btns)
-
-    def _parse(self, txt: str) -> Optional[float]:
-        try:
-            return float(txt) if txt is not None and txt != "" else None
-        except Exception:
-            return None
-
-    def results(self) -> Tuple[Optional[float], Optional[float], Optional[float], Optional[float]]:
-        return (
-            self._parse(self.xmin.text()),
-            self._parse(self.xmax.text()),
-            self._parse(self.ymin.text()),
-            self._parse(self.ymax.text()),
-        )

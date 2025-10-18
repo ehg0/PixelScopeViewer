@@ -47,7 +47,7 @@ except ImportError:
     PlotWidget = None
     PYQTGRAPH_AVAILABLE = False
 
-from .controls import ChannelsDialog, RangesDialog
+from .controls import ChannelsDialog
 from .widgets import CopyableTableWidget
 
 
@@ -111,7 +111,7 @@ class AnalysisDialog(QDialog):
         self.x_mode = "relative"
         self.hist_yscale = "linear"
         self.channel_checks: list[bool] = []
-        self.manual_ranges = (None, None, None, None)
+
         self.last_hist_data = {}
         self.last_profile_data = {}
 
@@ -187,10 +187,11 @@ class AnalysisDialog(QDialog):
 
             # Enable right-click menu but disable drag operations
             self.prof_widget.setMenuEnabled(True)
-            # Disable all mouse drag interactions while preserving right-click
+            # Configure ViewBox for analysis use
             view_box = self.prof_widget.getViewBox()
             view_box.setMouseEnabled(x=False, y=False)  # Disable mouse drag/zoom
-            view_box.enableAutoRange(enable=False)  # Prevent auto-ranging
+            # Ensure axes are in Auto state (must be called after mouse configuration)
+            view_box.enableAutoRange(axis=pg.ViewBox.XYAxes, enable=True)
 
             pl.addWidget(self.prof_widget, 1)
         else:
@@ -199,9 +200,6 @@ class AnalysisDialog(QDialog):
         self.prof_channels_btn = QPushButton("Channels...")
         self.prof_channels_btn.clicked.connect(self._on_prof_channels)
         pv.addWidget(self.prof_channels_btn)
-        self.prof_ranges_btn = QPushButton("Axis ranges...")
-        self.prof_ranges_btn.clicked.connect(self._on_ranges)
-        pv.addWidget(self.prof_ranges_btn)
         self.prof_copy_btn = QPushButton("Copy data")
         self.prof_copy_btn.clicked.connect(self.copy_profile_to_clipboard)
         pv.addWidget(self.prof_copy_btn)
@@ -229,10 +227,11 @@ class AnalysisDialog(QDialog):
 
             # Enable right-click menu but disable drag operations
             self.hist_widget.setMenuEnabled(True)
-            # Disable all mouse drag interactions while preserving right-click
+            # Configure ViewBox for analysis use
             view_box = self.hist_widget.getViewBox()
             view_box.setMouseEnabled(x=False, y=False)  # Disable mouse drag/zoom
-            view_box.enableAutoRange(enable=False)  # Prevent auto-ranging
+            # Ensure axes are in Auto state (must be called after mouse configuration)
+            view_box.enableAutoRange(axis=pg.ViewBox.XYAxes, enable=True)
 
             hl.addWidget(self.hist_widget, 1)
         else:
@@ -242,9 +241,6 @@ class AnalysisDialog(QDialog):
         self.hist_channels_btn = QPushButton("Channels...")
         self.hist_channels_btn.clicked.connect(self._on_hist_channels)
         vcol.addWidget(self.hist_channels_btn)
-        self.hist_ranges_btn = QPushButton("Axis ranges...")
-        self.hist_ranges_btn.clicked.connect(self._on_ranges)
-        vcol.addWidget(self.hist_ranges_btn)
         self.hist_copy_btn = QPushButton("Copy data")
         self.hist_copy_btn.clicked.connect(self.copy_histogram_to_clipboard)
         vcol.addWidget(self.hist_copy_btn)
@@ -299,13 +295,6 @@ class AnalysisDialog(QDialog):
         # reuse histogram channels handler for profile
         self._on_hist_channels()
 
-    def _on_ranges(self):
-        xmin, xmax, ymin, ymax = self.manual_ranges
-        dlg = RangesDialog(self, xmin, xmax, ymin, ymax)
-        if dlg.exec() == QDialog.Accepted:
-            self.manual_ranges = dlg.results()
-            self.update_contents()
-
     def update_contents(self):
         """Refresh all tabs with current image data and settings."""
         arr = self.image_array
@@ -337,12 +326,8 @@ class AnalysisDialog(QDialog):
         # Histogram
         self.hist_widget.clear()
         self.last_hist_data = {}
-        # Professional color palette for better UI integration
-        colors = ["#e74c3c", "#2ecc71", "#3498db", "#34495e"]  # Red, Green, Blue, Dark gray
-
-        # Store data for range calculation
-        all_x_data = []
-        all_y_data = []
+        # Improved color palette for better visibility of 3 channels
+        colors = ["#ff0000", "#00cc00", "#0066ff", "#333333"]  # Bright Red, Green, Blue, Dark gray
 
         if arr.ndim == 3 and arr.shape[2] > 1:
             nch = arr.shape[2]
@@ -353,41 +338,21 @@ class AnalysisDialog(QDialog):
                 hist, bins = np.histogram(data, bins=256, range=(0, 255))
                 xs = (bins[:-1] + bins[1:]) / 2.0
                 self.last_hist_data[f"C{c}"] = (xs, hist)
-                all_x_data.extend(xs)
-                all_y_data.extend(hist)
                 if self.channel_checks[c]:
-                    # Thicker line with small dots
-                    pen = pg.mkPen(color=colors[c] if c < len(colors) else "#7f8c8d", width=3)
-                    symbol_brush = pg.mkBrush(color=colors[c] if c < len(colors) else "#7f8c8d")
-                    self.hist_widget.plot(
-                        xs, hist, pen=pen, symbol="o", symbolSize=4, symbolBrush=symbol_brush, name=f"C{c}"
-                    )
+                    # Line only, no symbols
+                    pen = pg.mkPen(color=colors[c] if c < len(colors) else "#7f8c8d", width=2)
+                    self.hist_widget.plot(xs, hist, pen=pen, name=f"C{c}")
         else:
             gray = arr if arr.ndim == 2 else arr[:, :, 0]
             hist, bins = np.histogram(gray.ravel(), bins=256, range=(0, 255))
             xs = (bins[:-1] + bins[1:]) / 2.0
             self.last_hist_data["I"] = (xs, hist)
-            all_x_data.extend(xs)
-            all_y_data.extend(hist)
-            # Thicker line with small dots
-            pen = pg.mkPen(color="#34495e", width=3)
-            symbol_brush = pg.mkBrush(color="#34495e")
-            self.hist_widget.plot(
-                xs, hist, pen=pen, symbol="o", symbolSize=4, symbolBrush=symbol_brush, name="Intensity"
-            )
+            # Line only, no symbols
+            pen = pg.mkPen(color="#333333", width=2)
+            self.hist_widget.plot(xs, hist, pen=pen, name="Intensity")
 
         # Set title with improved styling
         self.hist_widget.setTitle("Intensity Histogram", color="#2c3e50", size="12pt")
-
-        # Set default x-axis range: 0 to maximum value
-        if all_x_data:
-            x_max = max(all_x_data)
-            self.hist_widget.setXRange(0, x_max, padding=0.02)
-
-        # Set default y-axis range: 0 to maximum count (for histogram)
-        if all_y_data:
-            y_max = max(all_y_data)
-            self.hist_widget.setYRange(0, y_max, padding=0.05)
 
         # Apply log scale if needed
         if hasattr(self, "hist_yscale") and self.hist_yscale == "log":
@@ -395,28 +360,11 @@ class AnalysisDialog(QDialog):
         else:
             self.hist_widget.setLogMode(y=False)
 
-        # Apply manual ranges
-        xmin, xmax, ymin, ymax = self.manual_ranges
-        if xmin is not None or xmax is not None:
-            self.hist_widget.setXRange(
-                float(xmin) if xmin is not None else self.hist_widget.viewRange()[0][0],
-                float(xmax) if xmax is not None else self.hist_widget.viewRange()[0][1],
-            )
-        if ymin is not None or ymax is not None:
-            self.hist_widget.setYRange(
-                float(ymin) if ymin is not None else self.hist_widget.viewRange()[1][0],
-                float(ymax) if ymax is not None else self.hist_widget.viewRange()[1][1],
-            )
-
         # Profile
         self.prof_widget.clear()
         self.last_profile_data = {}
-        # Use same professional color palette as histogram
-        colors = ["#e74c3c", "#2ecc71", "#3498db", "#34495e"]  # Red, Green, Blue, Dark gray
-
-        # Store data for range calculation
-        all_x_data = []
-        all_y_data = []
+        # Use same improved color palette as histogram
+        colors = ["#ff0000", "#00cc00", "#0066ff", "#333333"]  # Bright Red, Green, Blue, Dark gray
 
         if arr.ndim == 3 and arr.shape[2] > 1:
             nch = arr.shape[2]
@@ -430,15 +378,10 @@ class AnalysisDialog(QDialog):
                 else:
                     xs2 = np.arange(prof.size)
                 self.last_profile_data[f"C{c}"] = (xs2, prof)
-                all_x_data.extend(xs2)
-                all_y_data.extend(prof)
                 if self.channel_checks[c]:
-                    # Thicker line with small dots
-                    pen = pg.mkPen(color=colors[c] if c < len(colors) else "#7f8c8d", width=3)
-                    symbol_brush = pg.mkBrush(color=colors[c] if c < len(colors) else "#7f8c8d")
-                    self.prof_widget.plot(
-                        xs2, prof, pen=pen, symbol="o", symbolSize=4, symbolBrush=symbol_brush, name=f"C{c}"
-                    )
+                    # Line only, no symbols
+                    pen = pg.mkPen(color=colors[c] if c < len(colors) else "#7f8c8d", width=2)
+                    self.prof_widget.plot(xs2, prof, pen=pen, name=f"C{c}")
         else:
             gray_data = arr if arr.ndim == 2 else arr[:, :, 0]
             prof = self._compute_profile(gray_data)
@@ -448,14 +391,9 @@ class AnalysisDialog(QDialog):
             else:
                 xs2 = np.arange(prof.size)
             self.last_profile_data["I"] = (xs2, prof)
-            all_x_data.extend(xs2)
-            all_y_data.extend(prof)
-            # Thicker line with small dots
-            pen = pg.mkPen(color="#34495e", width=3)
-            symbol_brush = pg.mkBrush(color="#34495e")
-            self.prof_widget.plot(
-                xs2, prof, pen=pen, symbol="o", symbolSize=4, symbolBrush=symbol_brush, name="Intensity"
-            )
+            # Line only, no symbols
+            pen = pg.mkPen(color="#333333", width=2)
+            self.prof_widget.plot(xs2, prof, pen=pen, name="Intensity")
 
         orientation_label = {"h": "Horizontal", "v": "Vertical", "d": "Diagonal"}[self.profile_orientation]
         mode_label = "Absolute" if self.x_mode == "absolute" else "Relative"
@@ -464,25 +402,17 @@ class AnalysisDialog(QDialog):
         self.prof_widget.setLabel("bottom", "Position" if self.x_mode == "relative" else "Absolute Position")
         self.prof_widget.setLabel("left", "Intensity")
 
-        # Set default x-axis range: 0 to maximum value
-        if all_x_data:
-            x_max = max(all_x_data)
-            x_min = min(all_x_data)
-            # For profile, use 0 as minimum unless all values are greater than 0
-            x_range_min = 0 if x_min >= 0 else x_min
-            self.prof_widget.setXRange(x_range_min, x_max, padding=0.02)
+        # Ensure both widgets are in true "Auto" state for axes
+        if PYQTGRAPH_AVAILABLE:
+            # Set histogram to auto range state (order is important)
+            hist_vb = self.hist_widget.getViewBox()
+            hist_vb.autoRange()  # First fit to current data
+            hist_vb.enableAutoRange(axis=pg.ViewBox.XYAxes)  # Then enable auto for future
 
-        # Apply manual ranges
-        if xmin is not None or xmax is not None:
-            self.prof_widget.setXRange(
-                float(xmin) if xmin is not None else self.prof_widget.viewRange()[0][0],
-                float(xmax) if xmax is not None else self.prof_widget.viewRange()[0][1],
-            )
-        if ymin is not None or ymax is not None:
-            self.prof_widget.setYRange(
-                float(ymin) if ymin is not None else self.prof_widget.viewRange()[1][0],
-                float(ymax) if ymax is not None else self.prof_widget.viewRange()[1][1],
-            )
+            # Set profile to auto range state (order is important)
+            prof_vb = self.prof_widget.getViewBox()
+            prof_vb.autoRange()  # First fit to current data
+            prof_vb.enableAutoRange(axis=pg.ViewBox.XYAxes)  # Then enable auto for future
 
     def _update_metadata(self):
         """Update the metadata tab with image file information in table format."""

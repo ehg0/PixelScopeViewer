@@ -3,15 +3,17 @@
 This module provides the main AnalysisDialog which displays:
 - Info tab: Selection size and position
 - Histogram tab: Intensity histogram with logarithmic scale toggle
-- Profile tab: Line profile (horizontal/vertical) with absolute/relative modes
+- Profile tab: Line profile (horizontal/vertical/diagonal) with absolute/relative modes
+- Metadata tab: Image metadata in table format with EXIF information
 
-The dialog supports matplotlib-based interactive plots with double-click
-gestures for toggling plot modes. If matplotlib is not available, the
+The dialog supports pyqtgraph-based interactive plots with double-click
+gestures for toggling plot modes. If pyqtgraph is not available, the
 histogram and profile tabs will show empty placeholders.
 
 Dependencies:
-    - matplotlib (optional): For histogram and profile plotting
+    - pyqtgraph (optional): For fast histogram and profile plotting
     - numpy: For data processing
+    - exifread: For comprehensive EXIF metadata reading
 """
 
 from typing import Optional
@@ -36,13 +38,14 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QGuiApplication
 
 try:
-    from matplotlib.figure import Figure
-    from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
-    from matplotlib.ticker import AutoMinorLocator
+    import pyqtgraph as pg
+    from pyqtgraph import PlotWidget
+
+    PYQTGRAPH_AVAILABLE = True
 except ImportError:
-    Figure = None
-    FigureCanvas = None
-    AutoMinorLocator = None
+    pg = None
+    PlotWidget = None
+    PYQTGRAPH_AVAILABLE = False
 
 from .controls import ChannelsDialog, RangesDialog
 from .widgets import CopyableTableWidget
@@ -85,7 +88,7 @@ class AnalysisDialog(QDialog):
         dlg.set_image_and_rect(new_array, new_rect)
 
     Note:
-        Requires matplotlib for histogram and profile plots. If matplotlib
+        Requires pyqtgraph for histogram and profile plots. If pyqtgraph
         is not available, those tabs will be empty.
     """
 
@@ -119,10 +122,10 @@ class AnalysisDialog(QDialog):
         self._build_ui()
 
         try:
-            if hasattr(self, "hist_canvas") and self.hist_canvas is not None:
-                self.hist_canvas.mpl_connect("button_press_event", self._on_hist_click)
-            if hasattr(self, "prof_canvas") and self.prof_canvas is not None:
-                self.prof_canvas.mpl_connect("button_press_event", self._on_profile_click)
+            if hasattr(self, "hist_widget") and self.hist_widget is not None:
+                self.hist_widget.scene().sigMouseClicked.connect(self._on_hist_click)
+            if hasattr(self, "prof_widget") and self.prof_widget is not None:
+                self.prof_widget.scene().sigMouseClicked.connect(self._on_profile_click)
         except Exception:
             pass
 
@@ -167,13 +170,31 @@ class AnalysisDialog(QDialog):
         # Profile tab
         prof_tab = QWidget()
         pl = QHBoxLayout(prof_tab)
-        if Figure is not None:
-            self.prof_fig = Figure(figsize=(5, 3))
-            self.prof_canvas = FigureCanvas(self.prof_fig)
-            pl.addWidget(self.prof_canvas, 1)
+        if PYQTGRAPH_AVAILABLE:
+            self.prof_widget = PlotWidget()
+            self.prof_widget.setLabel("left", "Intensity")
+            self.prof_widget.setLabel("bottom", "Position")
+
+            # Style configuration for better UI integration
+            self.prof_widget.setBackground("white")
+            self.prof_widget.showGrid(x=True, y=True, alpha=0.2)
+            self.prof_widget.getAxis("left").setPen(pg.mkPen(color="#bdc3c7", width=1))
+            self.prof_widget.getAxis("bottom").setPen(pg.mkPen(color="#bdc3c7", width=1))
+            self.prof_widget.getAxis("left").setTextPen(pg.mkPen(color="#2c3e50"))
+            self.prof_widget.getAxis("bottom").setTextPen(pg.mkPen(color="#2c3e50"))
+            # Add subtle border
+            self.prof_widget.setStyleSheet("QWidget { border: 1px solid #bdc3c7; }")
+
+            # Enable right-click menu but disable drag operations
+            self.prof_widget.setMenuEnabled(True)
+            # Disable all mouse drag interactions while preserving right-click
+            view_box = self.prof_widget.getViewBox()
+            view_box.setMouseEnabled(x=False, y=False)  # Disable mouse drag/zoom
+            view_box.enableAutoRange(enable=False)  # Prevent auto-ranging
+
+            pl.addWidget(self.prof_widget, 1)
         else:
-            self.prof_fig = None
-            self.prof_canvas = None
+            self.prof_widget = None
         pv = QVBoxLayout()
         self.prof_channels_btn = QPushButton("Channels...")
         self.prof_channels_btn.clicked.connect(self._on_prof_channels)
@@ -191,13 +212,31 @@ class AnalysisDialog(QDialog):
         # Histogram tab
         hist_tab = QWidget()
         hl = QHBoxLayout(hist_tab)
-        if Figure is not None:
-            self.hist_fig = Figure(figsize=(5, 3))
-            self.hist_canvas = FigureCanvas(self.hist_fig)
-            hl.addWidget(self.hist_canvas, 1)
+        if PYQTGRAPH_AVAILABLE:
+            self.hist_widget = PlotWidget()
+            self.hist_widget.setLabel("left", "Count")
+            self.hist_widget.setLabel("bottom", "Intensity")
+
+            # Style configuration for better UI integration
+            self.hist_widget.setBackground("white")
+            self.hist_widget.showGrid(x=True, y=True, alpha=0.2)
+            self.hist_widget.getAxis("left").setPen(pg.mkPen(color="#bdc3c7", width=1))
+            self.hist_widget.getAxis("bottom").setPen(pg.mkPen(color="#bdc3c7", width=1))
+            self.hist_widget.getAxis("left").setTextPen(pg.mkPen(color="#2c3e50"))
+            self.hist_widget.getAxis("bottom").setTextPen(pg.mkPen(color="#2c3e50"))
+            # Add subtle border
+            self.hist_widget.setStyleSheet("QWidget { border: 1px solid #bdc3c7; }")
+
+            # Enable right-click menu but disable drag operations
+            self.hist_widget.setMenuEnabled(True)
+            # Disable all mouse drag interactions while preserving right-click
+            view_box = self.hist_widget.getViewBox()
+            view_box.setMouseEnabled(x=False, y=False)  # Disable mouse drag/zoom
+            view_box.enableAutoRange(enable=False)  # Prevent auto-ranging
+
+            hl.addWidget(self.hist_widget, 1)
         else:
-            self.hist_fig = None
-            self.hist_canvas = None
+            self.hist_widget = None
 
         vcol = QVBoxLayout()
         self.hist_channels_btn = QPushButton("Channels...")
@@ -246,10 +285,15 @@ class AnalysisDialog(QDialog):
         if self.image_array is None:
             return
         nch = self.image_array.shape[2] if self.image_array.ndim == 3 else 1
-        dlg = ChannelsDialog(self, nch, self.channel_checks)
-        if dlg.exec() == QDialog.Accepted:
-            self.channel_checks = dlg.results()
+
+        def immediate_update(new_checks):
+            """Callback for immediate graph update when checkboxes change."""
+            self.channel_checks = new_checks
             self.update_contents()
+
+        # Create and show modeless dialog with immediate updates
+        dlg = ChannelsDialog(self, nch, self.channel_checks, callback=immediate_update)
+        dlg.show()  # Show modeless dialog without blocking
 
     def _on_prof_channels(self):
         # reuse histogram channels handler for profile
@@ -287,14 +331,19 @@ class AnalysisDialog(QDialog):
         # Update metadata tab (always update when image changes)
         self._update_metadata()
 
-        if self.hist_fig is None:
+        if not PYQTGRAPH_AVAILABLE:
             return
 
         # Histogram
-        self.hist_fig.clear()
-        ax = self.hist_fig.add_subplot(111)
+        self.hist_widget.clear()
         self.last_hist_data = {}
-        colors = ["r", "g", "b", "k"]
+        # Professional color palette for better UI integration
+        colors = ["#e74c3c", "#2ecc71", "#3498db", "#34495e"]  # Red, Green, Blue, Dark gray
+
+        # Store data for range calculation
+        all_x_data = []
+        all_y_data = []
+
         if arr.ndim == 3 and arr.shape[2] > 1:
             nch = arr.shape[2]
             if not self.channel_checks:
@@ -304,51 +353,71 @@ class AnalysisDialog(QDialog):
                 hist, bins = np.histogram(data, bins=256, range=(0, 255))
                 xs = (bins[:-1] + bins[1:]) / 2.0
                 self.last_hist_data[f"C{c}"] = (xs, hist)
+                all_x_data.extend(xs)
+                all_y_data.extend(hist)
                 if self.channel_checks[c]:
-                    ax.plot(xs, hist, color=colors[c] if c < len(colors) else None, label=f"C{c}")
+                    # Thicker line with small dots
+                    pen = pg.mkPen(color=colors[c] if c < len(colors) else "#7f8c8d", width=3)
+                    symbol_brush = pg.mkBrush(color=colors[c] if c < len(colors) else "#7f8c8d")
+                    self.hist_widget.plot(
+                        xs, hist, pen=pen, symbol="o", symbolSize=4, symbolBrush=symbol_brush, name=f"C{c}"
+                    )
         else:
             gray = arr if arr.ndim == 2 else arr[:, :, 0]
             hist, bins = np.histogram(gray.ravel(), bins=256, range=(0, 255))
             xs = (bins[:-1] + bins[1:]) / 2.0
             self.last_hist_data["I"] = (xs, hist)
-            ax.plot(xs, hist, color="k", label="Intensity")
+            all_x_data.extend(xs)
+            all_y_data.extend(hist)
+            # Thicker line with small dots
+            pen = pg.mkPen(color="#34495e", width=3)
+            symbol_brush = pg.mkBrush(color="#34495e")
+            self.hist_widget.plot(
+                xs, hist, pen=pen, symbol="o", symbolSize=4, symbolBrush=symbol_brush, name="Intensity"
+            )
 
-        ax.set_title("Intensity Histogram")
-        try:
-            if AutoMinorLocator is not None:
-                ax.xaxis.set_minor_locator(AutoMinorLocator())
-                ax.yaxis.set_minor_locator(AutoMinorLocator())
-            ax.grid(which="major", linestyle="-", color="gray", linewidth=0.6)
-            ax.grid(which="minor", linestyle=":", color="lightgray", linewidth=0.4)
-        except Exception:
-            pass
-        try:
-            ax.set_yscale(self.hist_yscale)
-        except Exception:
-            pass
-        if ax.get_legend():
-            ax.legend()
+        # Set title with improved styling
+        self.hist_widget.setTitle("Intensity Histogram", color="#2c3e50", size="12pt")
+
+        # Set default x-axis range: 0 to maximum value
+        if all_x_data:
+            x_max = max(all_x_data)
+            self.hist_widget.setXRange(0, x_max, padding=0.02)
+
+        # Set default y-axis range: 0 to maximum count (for histogram)
+        if all_y_data:
+            y_max = max(all_y_data)
+            self.hist_widget.setYRange(0, y_max, padding=0.05)
+
+        # Apply log scale if needed
+        if hasattr(self, "hist_yscale") and self.hist_yscale == "log":
+            self.hist_widget.setLogMode(y=True)
+        else:
+            self.hist_widget.setLogMode(y=False)
+
+        # Apply manual ranges
         xmin, xmax, ymin, ymax = self.manual_ranges
-        try:
-            if xmin is not None:
-                ax.set_xlim(left=float(xmin))
-            if xmax is not None:
-                ax.set_xlim(right=float(xmax))
-            if ymin is not None:
-                ax.set_ylim(bottom=float(ymin))
-            if ymax is not None:
-                ax.set_ylim(top=float(ymax))
-        except Exception:
-            pass
-        try:
-            self.hist_canvas.draw()
-        except Exception:
-            pass
+        if xmin is not None or xmax is not None:
+            self.hist_widget.setXRange(
+                float(xmin) if xmin is not None else self.hist_widget.viewRange()[0][0],
+                float(xmax) if xmax is not None else self.hist_widget.viewRange()[0][1],
+            )
+        if ymin is not None or ymax is not None:
+            self.hist_widget.setYRange(
+                float(ymin) if ymin is not None else self.hist_widget.viewRange()[1][0],
+                float(ymax) if ymax is not None else self.hist_widget.viewRange()[1][1],
+            )
 
         # Profile
-        self.prof_fig.clear()
-        ax2 = self.prof_fig.add_subplot(111)
+        self.prof_widget.clear()
         self.last_profile_data = {}
+        # Use same professional color palette as histogram
+        colors = ["#e74c3c", "#2ecc71", "#3498db", "#34495e"]  # Red, Green, Blue, Dark gray
+
+        # Store data for range calculation
+        all_x_data = []
+        all_y_data = []
+
         if arr.ndim == 3 and arr.shape[2] > 1:
             nch = arr.shape[2]
             if not self.channel_checks:
@@ -361,8 +430,15 @@ class AnalysisDialog(QDialog):
                 else:
                     xs2 = np.arange(prof.size)
                 self.last_profile_data[f"C{c}"] = (xs2, prof)
+                all_x_data.extend(xs2)
+                all_y_data.extend(prof)
                 if self.channel_checks[c]:
-                    ax2.plot(xs2, prof, color=colors[c] if c < len(colors) else None, label=f"C{c}")
+                    # Thicker line with small dots
+                    pen = pg.mkPen(color=colors[c] if c < len(colors) else "#7f8c8d", width=3)
+                    symbol_brush = pg.mkBrush(color=colors[c] if c < len(colors) else "#7f8c8d")
+                    self.prof_widget.plot(
+                        xs2, prof, pen=pen, symbol="o", symbolSize=4, symbolBrush=symbol_brush, name=f"C{c}"
+                    )
         else:
             gray_data = arr if arr.ndim == 2 else arr[:, :, 0]
             prof = self._compute_profile(gray_data)
@@ -372,38 +448,41 @@ class AnalysisDialog(QDialog):
             else:
                 xs2 = np.arange(prof.size)
             self.last_profile_data["I"] = (xs2, prof)
-            ax2.plot(xs2, prof, color="k", label="Intensity")
+            all_x_data.extend(xs2)
+            all_y_data.extend(prof)
+            # Thicker line with small dots
+            pen = pg.mkPen(color="#34495e", width=3)
+            symbol_brush = pg.mkBrush(color="#34495e")
+            self.prof_widget.plot(
+                xs2, prof, pen=pen, symbol="o", symbolSize=4, symbolBrush=symbol_brush, name="Intensity"
+            )
 
         orientation_label = {"h": "Horizontal", "v": "Vertical", "d": "Diagonal"}[self.profile_orientation]
         mode_label = "Absolute" if self.x_mode == "absolute" else "Relative"
-        ax2.set_title(f"Profile ({orientation_label}, {mode_label})")
-        ax2.set_xlabel("Position" if self.x_mode == "relative" else "Absolute Position")
-        ax2.set_ylabel("Intensity")
-        try:
-            if AutoMinorLocator is not None:
-                ax2.xaxis.set_minor_locator(AutoMinorLocator())
-                ax2.yaxis.set_minor_locator(AutoMinorLocator())
-            ax2.grid(which="major", linestyle="-", color="gray", linewidth=0.6)
-            ax2.grid(which="minor", linestyle=":", color="lightgray", linewidth=0.4)
-        except Exception:
-            pass
-        try:
-            if xmin is not None:
-                ax2.set_xlim(left=float(xmin))
-            if xmax is not None:
-                ax2.set_xlim(right=float(xmax))
-            if ymin is not None:
-                ax2.set_ylim(bottom=float(ymin))
-            if ymax is not None:
-                ax2.set_ylim(top=float(ymax))
-        except Exception:
-            pass
-        if ax2.get_legend():
-            ax2.legend()
-        try:
-            self.prof_canvas.draw()
-        except Exception:
-            pass
+        # Set title with improved styling
+        self.prof_widget.setTitle(f"Profile ({orientation_label}, {mode_label})", color="#2c3e50", size="12pt")
+        self.prof_widget.setLabel("bottom", "Position" if self.x_mode == "relative" else "Absolute Position")
+        self.prof_widget.setLabel("left", "Intensity")
+
+        # Set default x-axis range: 0 to maximum value
+        if all_x_data:
+            x_max = max(all_x_data)
+            x_min = min(all_x_data)
+            # For profile, use 0 as minimum unless all values are greater than 0
+            x_range_min = 0 if x_min >= 0 else x_min
+            self.prof_widget.setXRange(x_range_min, x_max, padding=0.02)
+
+        # Apply manual ranges
+        if xmin is not None or xmax is not None:
+            self.prof_widget.setXRange(
+                float(xmin) if xmin is not None else self.prof_widget.viewRange()[0][0],
+                float(xmax) if xmax is not None else self.prof_widget.viewRange()[0][1],
+            )
+        if ymin is not None or ymax is not None:
+            self.prof_widget.setYRange(
+                float(ymin) if ymin is not None else self.prof_widget.viewRange()[1][0],
+                float(ymax) if ymax is not None else self.prof_widget.viewRange()[1][1],
+            )
 
     def _update_metadata(self):
         """Update the metadata tab with image file information in table format."""
@@ -505,45 +584,30 @@ class AnalysisDialog(QDialog):
 
     def _on_hist_click(self, event):
         """Handle histogram plot click events."""
-        if getattr(event, "dblclick", False) and getattr(event, "button", None) == 1:
-            self.hist_yscale = "log" if self.hist_yscale == "linear" else "linear"
+        if event.double() and event.button() == 1:  # Left double-click
+            if hasattr(self, "hist_yscale"):
+                self.hist_yscale = "log" if self.hist_yscale == "linear" else "linear"
+            else:
+                self.hist_yscale = "log"
             self.update_contents()
 
     def _on_profile_click(self, event):
-        """Handle profile plot click events with time-based double-click fallback.
+        """Handle profile plot click events.
 
         Left double-click: cycle through orientation modes (h → v → d → h)
         Right double-click: toggle x-axis mode (relative ↔ absolute)
         """
-        import time
+        if not event.double():
+            return
 
-        btn = getattr(event, "button", None)
-        is_dblclick = getattr(event, "dblclick", False)
-
-        # Fallback: time-based double-click detection
-        if not is_dblclick and btn is not None:
-            now = time.time()
-            last_time = self._last_click_time.get(btn, 0)
-
-            if now - last_time <= self._double_click_interval:
-                is_dblclick = True
-                self._last_click_time[btn] = 0
-            else:
-                self._last_click_time[btn] = now
-                return
-
-        if is_dblclick:
-            if btn == 1:  # Left: cycle orientation h → v → d → h
-                if self.profile_orientation == "h":
-                    self.profile_orientation = "v"
-                # elif self.profile_orientation == "v":
-                #     self.profile_orientation = "d"
-                else:
-                    self.profile_orientation = "h"
-                self.update_contents()
-            elif btn == 3:  # Right: toggle x-mode
-                self.x_mode = "absolute" if self.x_mode == "relative" else "relative"
-                self.update_contents()
+        if event.button() == 1:  # Left double-click
+            orientations = ["h", "v", "d"]
+            current_idx = orientations.index(self.profile_orientation)
+            self.profile_orientation = orientations[(current_idx + 1) % len(orientations)]
+            self.update_contents()
+        elif event.button() == 2:  # Right double-click
+            self.x_mode = "absolute" if self.x_mode == "relative" else "relative"
+            self.update_contents()
 
     def _compute_profile(self, channel_data: np.ndarray) -> np.ndarray:
         """Compute intensity profile for a single channel.

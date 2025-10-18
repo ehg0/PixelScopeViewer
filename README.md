@@ -33,9 +33,7 @@ pip install -r requirements.txt
 - numpy (配列処理)
 - Pillow (画像読み込み)
 - exifread (完全なEXIF情報読み取り)
-
-オプション:
-- matplotlib (ヒストグラムプロファイル表示に必要)
+- pyqtgraph (高速グラフ描画、ヒストグラム・プロファイル表示)
 
 ## 使い方
 

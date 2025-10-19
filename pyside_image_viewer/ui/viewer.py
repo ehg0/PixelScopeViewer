@@ -14,8 +14,8 @@ Features:
 - Title bar showing current filename and image index
 """
 
-import os
-from typing import Optional
+from pathlib import Path
+from typing import Iterable, Optional
 import numpy as np
 from PySide6.QtWidgets import (
     QMainWindow,
@@ -33,7 +33,7 @@ from PySide6.QtCore import Qt, QRect, QEvent
 
 from ..core.image_io import numpy_to_qimage, pil_to_numpy, is_image_file
 from .widgets import ImageLabel
-from .dialogs import HelpDialog, DiffDialog, AnalysisDialog
+from .dialogs import HelpDialog, DiffDialog, AnalysisDialog, BrightnessDialog
 
 
 class ImageViewer(QMainWindow):
@@ -85,6 +85,11 @@ class ImageViewer(QMainWindow):
         # Track current mouse position in image coordinates for zoom centering
         self.current_mouse_image_coords = None
 
+        # Brightness adjustment parameters
+        self.brightness_offset = 0
+        self.brightness_gain = 1.0
+        self.brightness_saturation = 255
+
         central = QWidget(self)
         self.setCentralWidget(central)
         layout = QVBoxLayout(central)
@@ -100,16 +105,18 @@ class ImageViewer(QMainWindow):
 
         self.status = QStatusBar()
         self.setStatusBar(self.status)
+        self.statusBar().setStyleSheet("font-size: 11pt;")
         self.status_pixel = QLabel()
         self.status_selection = QLabel()
-        self.status_shift = QLabel()
+        self.status_brightness = QLabel()  # Changed from status_shift to status_brightness
         self.status_scale = QLabel()
-        self.status.addPermanentWidget(self.status_pixel, 3)
-        self.status.addPermanentWidget(self.status_selection, 2)
-        self.status.addPermanentWidget(self.status_shift, 1)
+        self.status.addPermanentWidget(self.status_pixel, 2)
+        self.status.addPermanentWidget(self.status_selection, 3)
+        self.status.addPermanentWidget(self.status_brightness, 2)  # Display brightness params
         self.status.addPermanentWidget(self.status_scale, 1)
 
         self.help_dialog = HelpDialog(self)
+        self.brightness_dialog = None  # Will be created when needed
 
         self.create_menus()
         self.setAcceptDrops(True)
@@ -134,26 +141,158 @@ class ImageViewer(QMainWindow):
         self.update_image_list_menu()
 
         view_menu = menubar.addMenu("表示")
+        view_menu.addAction(QAction("表示輝度調整", self, triggered=self.show_brightness_dialog))
+        view_menu.addSeparator()
         view_menu.addAction(
             QAction("拡大", self, shortcut="+", triggered=lambda: self.set_zoom(min(self.scale * 2, 128.0)))
         )
         view_menu.addAction(
             QAction("縮小", self, shortcut="-", triggered=lambda: self.set_zoom(max(self.scale / 2, 0.125)))
         )
-        view_menu.addSeparator()
-        view_menu.addAction(QAction("左ビットシフト", self, shortcut="<", triggered=lambda: self.bit_shift(-1)))
-        view_menu.addAction(QAction("右ビットシフト", self, shortcut=">", triggered=lambda: self.bit_shift(1)))
-        view_menu.addSeparator()
-        view_menu.addAction(QAction("差分画像表示", self, triggered=lambda: self.show_diff_dialog()))
 
         analysis = menubar.addMenu("解析")
+        analysis.addAction(QAction("メタデータ", self, triggered=lambda: self.show_analysis_dialog(tab="Metadata")))
+        analysis.addSeparator()
         analysis.addAction(QAction("プロファイル", self, triggered=lambda: self.show_analysis_dialog(tab="Profile")))
         analysis.addAction(QAction("ヒストグラム", self, triggered=lambda: self.show_analysis_dialog(tab="Histogram")))
         analysis.addSeparator()
-        analysis.addAction(QAction("メタデータ", self, triggered=lambda: self.show_analysis_dialog(tab="Metadata")))
+        analysis.addAction(QAction("差分画像表示", self, triggered=lambda: self.show_diff_dialog()))
 
         help_menu = menubar.addMenu("ヘルプ")
         help_menu.addAction(QAction("キーボードショートカット", self, triggered=self.help_dialog.show))
+
+        # Add global shortcuts
+        self.reset_brightness_action = QAction(self)
+        self.reset_brightness_action.setShortcut("Ctrl+R")
+        self.reset_brightness_action.setShortcutContext(Qt.ApplicationShortcut)
+        self.reset_brightness_action.triggered.connect(self.reset_brightness_settings)
+        self.addAction(self.reset_brightness_action)
+
+        self.left_bit_shift_action = QAction(self)
+        self.left_bit_shift_action.setShortcut("<")
+        self.left_bit_shift_action.setShortcutContext(Qt.ApplicationShortcut)
+        self.left_bit_shift_action.triggered.connect(lambda: self.bit_shift(-1))
+        self.addAction(self.left_bit_shift_action)
+
+        self.right_bit_shift_action = QAction(self)
+        self.right_bit_shift_action.setShortcut(">")
+        self.right_bit_shift_action.setShortcutContext(Qt.ApplicationShortcut)
+        self.right_bit_shift_action.triggered.connect(lambda: self.bit_shift(1))
+        self.addAction(self.right_bit_shift_action)
+
+    def show_brightness_dialog(self):
+        """表示輝度調整ダイアログを表示します。
+
+        現在選択中の画像が存在しない場合は情報ダイアログを表示して終了します。
+
+        このメソッドはダイアログを初めて作成する際にダイアログを生成し、
+        ダイアログからのシグナルを購読してビューア側の輝度パラメータを同期します。
+
+        例外やエラーは GUI 内でユーザ向けに通知されます。
+        """
+        if self.current_index is None:
+            QMessageBox.information(self, "表示輝度調整", "画像が選択されていません。")
+            return
+
+        img = self.images[self.current_index]
+        arr = img.get("base_array", img.get("array"))
+        img_path = img.get("path")
+
+        # Create dialog if it doesn't exist
+        if self.brightness_dialog is None:
+            self.brightness_dialog = BrightnessDialog(self, arr, img_path)
+            self.brightness_dialog.brightness_changed.connect(self.on_brightness_changed)
+            # Initialize status bar with current parameters
+            params = self.brightness_dialog.get_parameters()
+            self.brightness_offset = params[0]
+            self.brightness_gain = params[1]
+            self.brightness_saturation = params[2]
+            self.update_brightness_status()
+        else:
+            # Update dialog for new image
+            self.brightness_dialog.update_for_new_image(arr, img_path)
+            # Note: update_for_new_image will emit brightness_changed signal
+            # which will update the status bar through on_brightness_changed
+
+        self.brightness_dialog.show()
+
+    def reset_brightness_settings(self):
+        """輝度設定を初期値に戻します（Ctrl+R 等から呼び出されます）。
+
+        動作:
+        - 現在画像のビットシフトを 0 に戻す
+        - 表示配列を base_array に復元する
+        - 輝度ダイアログが開いている場合はダイアログ側のリセット処理に委譲し、
+          ダイアログが閉じている場合はビューア側でパラメータを手動でリセットします。
+        """
+        handled_by_dialog = False
+
+        # Reset bit shift to 0 and restore base array
+        if self.current_index is not None:
+            img = self.images[self.current_index]
+            img["bit_shift"] = 0
+            img["array"] = img["base_array"].copy()
+
+        if self.brightness_dialog is not None:
+            # Let the dialog emit the reset signal so the viewer stays in sync
+            self.brightness_dialog.reset_parameters()
+            handled_by_dialog = True
+        else:
+            # Reset brightness parameters manually when dialog is closed
+            self.brightness_offset = 0
+            self.brightness_gain = 1.0
+            self.brightness_saturation = 255
+            self.update_brightness_status()
+
+        # Refresh display if the dialog didn't already trigger it
+        if not handled_by_dialog and self.current_index is not None:
+            self.display_image(self.images[self.current_index]["array"])
+
+    def on_brightness_changed(self, offset, gain, saturation):
+        """Handle brightness parameter changes.
+
+        Args:
+            offset: Offset value
+            gain: Gain value
+            saturation: Saturation level
+        """
+        self.brightness_offset = offset
+        self.brightness_gain = gain
+        self.brightness_saturation = saturation
+
+        # Update status bar
+        self.update_brightness_status()
+
+        # Refresh display with new brightness settings
+        if self.current_index is not None:
+            self.display_image(self.images[self.current_index]["array"])
+
+    def apply_brightness_adjustment(self, arr: np.ndarray) -> np.ndarray:
+        """画像配列に対して輝度補正を適用して新しい配列を返します。
+
+        使用する式:
+            yout = gain * (yin - offset) / saturation * 255
+
+        パラメータ:
+            arr: 入力画像の NumPy 配列（任意の dtype を受け付けます）
+
+        戻り値:
+            uint8 にクリップ/変換された補正後の配列を返します。
+
+        注意:
+            saturation が 0 の場合はゼロ除算を避けるため元配列をそのまま返します。
+        """
+        # Avoid division by zero
+        if self.brightness_saturation == 0:
+            return arr
+
+        # Apply formula with proper type conversion
+        adjusted = (
+            self.brightness_gain * (arr.astype(np.float32) - self.brightness_offset) / self.brightness_saturation * 255
+        )
+
+        # Clip to valid range and convert back to uint8
+        return np.clip(adjusted, 0, 255).astype(np.uint8)
 
     def show_analysis_dialog(self, tab: Optional[str] = None):
         # open analysis dialog for current image and current selection
@@ -164,7 +303,8 @@ class ImageViewer(QMainWindow):
         arr = img.get("base_array", img.get("array"))
         sel = self.current_selection_rect
         img_path = img.get("path")
-        dlg = AnalysisDialog(self, image_array=arr, image_rect=sel, image_path=img_path)
+        pil_img = img.get("pil_image")  # Get cached PIL image
+        dlg = AnalysisDialog(self, image_array=arr, image_rect=sel, image_path=img_path, pil_image=pil_img)
         dlg.show()
         # keep a reference until the dialog is closed
         self._analysis_dialogs.append(dlg)
@@ -178,19 +318,8 @@ class ImageViewer(QMainWindow):
 
     def open_files(self):
         files, _ = QFileDialog.getOpenFileNames(self, "画像を開く", "", "Images (*.png *.jpg *.tif *.bmp *.jpeg)")
-        if files:
-            for f in files:
-                arr = pil_to_numpy(f)
-                img_data = {"path": os.path.abspath(f), "array": arr, "base_array": arr.copy(), "bit_shift": 0}
-                self.images.append(img_data)
-            # Switch to the first newly added image
-            if self.current_index is None:
-                self.current_index = 0
-            else:
-                # Switch to the first newly added image
-                self.current_index = len(self.images) - len(files)
-            self.show_current_image()
-            self.update_image_list_menu()
+        new_count = self._add_images(files)
+        self._finalize_image_addition(new_count)
 
     def dragEnterEvent(self, e):
         if e.mimeData().hasUrls():
@@ -199,19 +328,44 @@ class ImageViewer(QMainWindow):
     def dropEvent(self, e):
         files = [u.toLocalFile() for u in e.mimeData().urls()]
         image_files = [f for f in files if is_image_file(f)]
-        if image_files:
-            for f in image_files:
-                arr = pil_to_numpy(f)
-                img_data = {"path": os.path.abspath(f), "array": arr, "base_array": arr.copy(), "bit_shift": 0}
-                self.images.append(img_data)
-            # Switch to the first newly added image
-            if self.current_index is None:
-                self.current_index = 0
-            else:
-                # Switch to the first newly added image
-                self.current_index = len(self.images) - len(image_files)
-            self.show_current_image()
-            self.update_image_list_menu()
+        new_count = self._add_images(image_files)
+        self._finalize_image_addition(new_count)
+
+    def _add_images(self, paths: Iterable[str]) -> int:
+        """Load image files and append them to the viewer."""
+        new_images = []
+        for path in paths or []:
+            if not path:
+                continue
+            try:
+                arr, pil_img = pil_to_numpy(path)
+            except Exception:
+                continue
+            img_data = {
+                "path": str(Path(path).resolve()),
+                "array": arr,
+                "base_array": arr.copy(),
+                "bit_shift": 0,
+                "pil_image": pil_img,  # Store PIL image for metadata extraction
+            }
+            new_images.append(img_data)
+
+        if not new_images:
+            return 0
+
+        self.images.extend(new_images)
+        return len(new_images)
+
+    def _finalize_image_addition(self, new_count: int) -> None:
+        """Select the newly added images and refresh UI state."""
+        if new_count <= 0:
+            return
+        if self.current_index is None:
+            self.current_index = 0
+        else:
+            self.current_index = len(self.images) - new_count
+        self.show_current_image()
+        self.update_image_list_menu()
 
     def update_image_list_menu(self):
         self.img_menu.clear()
@@ -257,18 +411,35 @@ class ImageViewer(QMainWindow):
             self.image_label.clear()
             self.update_status()
             return
-        arr = self.images[self.current_index]["array"]
+
+        # Reset bit shift when switching images and restore base array
+        img = self.images[self.current_index]
+        if "bit_shift" not in img or img["bit_shift"] != 0:
+            img["bit_shift"] = 0
+            if "base_array" in img:
+                img["array"] = img["base_array"].copy()
+
+        arr = img["array"]
         self.display_image(arr)
         self.update_image_list_menu()
+
+        # Update brightness dialog if it's open
+        if self.brightness_dialog is not None and self.brightness_dialog.isVisible():
+            img = self.images[self.current_index]
+            arr_for_brightness = img.get("base_array", img.get("array"))
+            img_path = img.get("path", None)
+            # Keep current brightness settings when switching images
+            self.brightness_dialog.update_for_new_image(arr_for_brightness, img_path, keep_settings=True)
 
         # notify open analysis dialogs about new image
         try:
             img = self.images[self.current_index]
             arr_for_analysis = img.get("base_array", img.get("array"))
             img_path = img.get("path", None)
+            pil_img = img.get("pil_image")
             for dlg in list(self._analysis_dialogs):
                 try:
-                    dlg.set_image_and_rect(arr_for_analysis, self.current_selection_rect, img_path)
+                    dlg.set_image_and_rect(arr_for_analysis, self.current_selection_rect, img_path, pil_img)
                 except Exception:
                     pass
         except Exception:
@@ -287,11 +458,18 @@ class ImageViewer(QMainWindow):
             self.update_selection_status(rect)
 
     def display_image(self, arr):
-        """Display an image array in the viewer.
+        """指定した画像配列をビューアに表示します。
 
-        Args:
-            arr: NumPy array of the image to display
+        引数で渡された配列に対して現在の輝度パラメータがデフォルトでない場合は
+        apply_brightness_adjustment を経由して補正を行い、QImage に変換して `ImageLabel` に渡します。
+
+        パラメータ:
+            arr: NumPy 配列（H,W[,C]）で表された画像データ
         """
+        # Apply brightness adjustment if parameters are not default
+        if self.brightness_offset != 0 or self.brightness_gain != 1.0 or self.brightness_saturation != 255:
+            arr = self.apply_brightness_adjustment(arr)
+
         qimg = numpy_to_qimage(arr)
         self.image_label.set_image(qimg, self.scale)
         self.update_status()
@@ -342,7 +520,7 @@ class ImageViewer(QMainWindow):
         if len(self.images) < 2:
             QMessageBox.information(self, "差分", "比較する画像が2枚必要です。")
             return
-        dlg = DiffDialog(self, image_list=self.images, default_offset=256)
+        dlg = DiffDialog(self, image_list=self.images, default_offset=127)
         if dlg.exec() != QDialog.Accepted:
             return
         a_idx, b_idx, offset = dlg.get_result()
@@ -356,7 +534,7 @@ class ImageViewer(QMainWindow):
         except Exception:
             QMessageBox.information(self, "差分", "差分の作成に失敗しました。画像サイズや型を確認してください。")
             return
-        img_data = {"path": f"diff:{a_idx}-{b_idx}", "array": diff, "base_array": diff.copy(), "bit_shift": 0}
+        img_data = {"path": f"diff:{a_idx+1}-{b_idx+1}", "array": diff, "base_array": diff.copy(), "bit_shift": 0}
         self.images.append(img_data)
         # switch to the new image
         self.current_index = len(self.images) - 1
@@ -425,10 +603,12 @@ class ImageViewer(QMainWindow):
         scroll_area.verticalScrollBar().setValue(new_v_scroll)
 
     def set_zoom(self, scale: float):
-        """Set the zoom scale, preserving the center of the visible viewport.
+        """ズーム倍率を設定し、可視領域の中心位置を維持します。
 
-        Args:
-            scale: New zoom scale factor (1.0 = original size)
+        パラメータ:
+            scale: 新しい倍率（1.0 が原寸）
+
+        このメソッドは表示中の画像がない場合は単に scale を設定して終了します。
         """
         if self.current_index is None:
             self.scale = scale
@@ -450,10 +630,9 @@ class ImageViewer(QMainWindow):
         self._set_scroll_to_keep_image_point_at_position(img_center, center_pos)
 
     def set_zoom_at_status_coords(self, scale: float):
-        """Set the zoom scale, keeping the coordinates shown in status bar fixed.
+        """ステータスバーに表示している座標（マウス位置）をビュー中心に固定してズームします。
 
-        Args:
-            scale: New zoom scale factor (1.0 = original size)
+        マウス位置が未取得（None）の場合は通常の center ベースの `set_zoom` にフォールバックします。
         """
         if self.current_index is None:
             self.scale = scale
@@ -476,65 +655,45 @@ class ImageViewer(QMainWindow):
         # Place the status coordinates at the center of the viewport
         self._set_scroll_to_keep_image_point_at_position(self.current_mouse_image_coords, center_pos)
 
-    def set_zoom_at_image_point(self, scale: float, image_coords: tuple, widget_point):
-        """Set the zoom scale, keeping the specified image point fixed.
-
-        Args:
-            scale: New zoom scale factor (1.0 = original size)
-            image_coords: (x, y) tuple in image pixel coordinates
-            widget_point: QPoint in widget coordinates where the image point should remain
-        """
-        if self.current_index is None:
-            self.scale = scale
-            return
-
-        # Apply new zoom
-        self._apply_zoom_and_update_display(scale)
-
-        # Keep image point at widget point
-        target_pos = (widget_point.x(), widget_point.y())
-        self._set_scroll_to_keep_image_point_at_position(image_coords, target_pos)
-
-    def set_zoom_at_point(self, scale: float, widget_point):
-        """Set the zoom scale, keeping the specified point fixed.
-
-        Args:
-            scale: New zoom scale factor (1.0 = original size)
-            widget_point: QPoint in widget coordinates to keep fixed during zoom
-        """
-        if self.current_index is None:
-            self.scale = scale
-            return
-
-        # Get scroll area and current scroll positions
-        scroll_area = self.scroll_area
-        old_h_scroll = scroll_area.horizontalScrollBar().value()
-        old_v_scroll = scroll_area.verticalScrollBar().value()
-
-        # Convert widget point to scroll area coordinates
-        scroll_point_x = widget_point.x() + old_h_scroll
-        scroll_point_y = widget_point.y() + old_v_scroll
-
-        # Convert to image coordinates (independent of scale)
-        old_scale = self.scale
-        if old_scale > 0:
-            img_coords = (scroll_point_x / old_scale, scroll_point_y / old_scale)
-        else:
-            img_coords = (scroll_point_x, scroll_point_y)
-
-        # Apply new zoom
-        self._apply_zoom_and_update_display(scale)
-
-        # Keep the point fixed at the widget location
-        target_pos = (widget_point.x(), widget_point.y())
-        self._set_scroll_to_keep_image_point_at_position(img_coords, target_pos)
-
     def bit_shift(self, amount):
+        """ビットシフト（表示の明るさ操作）を行います。
+
+        説明:
+            - amount が負の場合は左シフト（暗くする）
+            - amount が正の場合は右シフト（明るくする）
+            - シフトに合わせて内部の gain を 2 倍/半分に調整し、
+              近い 2^n 値にスナップします。
+
+        制限:
+            - uint8 データは左シフト最大 -7 ビットに制限しています（値の破綻を防ぐため）。
+            - 右シフトは最大 +10 ビットまで許容します。
+        """
         if self.current_index is None:
             return
         img = self.images[self.current_index]
         base = img["base_array"]
-        new_shift = img.get("bit_shift", 0) + amount
+        current_shift = img.get("bit_shift", 0)
+        new_shift = current_shift + amount
+
+        # Apply limits based on data type
+        dtype = base.dtype
+        if np.issubdtype(dtype, np.uint8):
+            # For uint8, left shift max is 7 bits (since we have 8 bits total)
+            max_left_shift = -7
+        else:
+            # For other types, use same limit
+            max_left_shift = -7
+
+        # Right shift max is 10 bits (1024x)
+        max_right_shift = 10
+
+        # Clamp shift amount
+        new_shift = max(max_left_shift, min(max_right_shift, new_shift))
+
+        # If shift didn't change (already at limit), do nothing
+        if new_shift == current_shift:
+            return
+
         if new_shift >= 0:
             shifted = np.clip(base.astype(np.int32) << new_shift, 0, 255).astype(np.uint8)
         else:
@@ -542,11 +701,46 @@ class ImageViewer(QMainWindow):
 
         img["array"] = shifted
         img["bit_shift"] = new_shift
+
+        # Update gain: left shift -> darker (gain /= 2), right shift -> brighter (gain *= 2)
+        current_gain = self.brightness_gain
+
+        if amount < 0:  # Left shift - darker
+            new_gain = current_gain * 0.5
+        else:  # Right shift - brighter
+            new_gain = current_gain * 2.0
+
+        # Snap to nearest power of 2 or 0.5
+        # Valid values: ..., 0.125, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0, ...
+        if new_gain >= 1.0:
+            # Round to nearest power of 2
+            power = round(np.log2(new_gain))
+            snapped_gain = 2.0**power
+        else:
+            # Round to nearest power of 0.5 (which is 2^-n)
+            power = round(np.log2(new_gain))
+            snapped_gain = 2.0**power
+
+        # Don't clamp - allow values outside normal range for extreme bit shifts
+        # The UI will handle display appropriately
+
+        # Update brightness_gain property
+        self.brightness_gain = snapped_gain
+
+        # Update dialog if it exists
+        if self.brightness_dialog is not None:
+            self.brightness_dialog.set_gain(snapped_gain)
+
+        # Update status bar
+        self.update_brightness_status()
+
         self.display_image(shifted)
-        self.status_shift.setText(f"Shift: {new_shift:+d}")
 
     def select_all(self):
-        """Select the entire image."""
+        """画像全体を選択状態にします。
+
+        選択が更新された場合は on_selection_changed を経由して関連ダイアログに通知します。
+        """
         if self.current_index is None or not self.images:
             return
         self.image_label.set_selection_full()
@@ -570,9 +764,10 @@ class ImageViewer(QMainWindow):
             if img:
                 arr = img.get("base_array", img.get("array"))
                 img_path = img.get("path")
+                pil_img = img.get("pil_image")
                 for dlg in list(self._analysis_dialogs):
                     try:
-                        dlg.set_image_and_rect(arr, self.current_selection_rect, img_path)
+                        dlg.set_image_and_rect(arr, self.current_selection_rect, img_path, pil_img)
                     except Exception:
                         # ignore dialog-specific errors and continue notifying others
                         pass
@@ -620,18 +815,19 @@ class ImageViewer(QMainWindow):
             self.current_mouse_image_coords = None
 
     def update_status(self):
+        """Update status bar with current image info and brightness parameters."""
         if self.current_index is None:
             # Update title bar to show no image
             self.setWindowTitle("PySide6 Image Viewer")
             # still update scale display
             self.status_scale.setText(f"Scale: {self.scale:.2f}x")
-            # clear shift when no image
-            self.status_shift.setText("")
+            # clear brightness when no image
+            self.status_brightness.setText("")
             return
         p = self.images[self.current_index]["path"]
 
         # Update title bar with filename and index
-        filename = os.path.basename(p)
+        filename = Path(p).name
         title = f"{filename} ({self.current_index+1}/{len(self.images)})"
         self.setWindowTitle(title)
 
@@ -640,13 +836,42 @@ class ImageViewer(QMainWindow):
             self.status_scale.setText(f"Scale: {self.scale:.2f}x")
         except Exception:
             self.status_scale.setText("")
-        # display current bit shift for the current image
+
+        # Display brightness parameters instead of bit shift
+        self.update_brightness_status()
+
+    def update_brightness_status(self):
+        """ステータスバーに現在の輝度パラメータを表示用に整形して設定します。
+
+        表示用の文字列整形は値の大きさに応じて桁数を調整します（小さい値は小数点以下を多く表示）。
+        """
         try:
-            img_info = self.images[self.current_index]
-            shift = img_info.get("bit_shift", 0)
-            self.status_shift.setText(f"Shift: {shift:+d}")
-        except Exception:
-            self.status_shift.setText("")
+            # Format offset
+            if isinstance(self.brightness_offset, (int, np.integer)):
+                offset_str = str(self.brightness_offset)
+            else:
+                offset_str = f"{self.brightness_offset:.1f}"
+
+            # Format gain - use more decimals for small values, fewer for large values
+            if self.brightness_gain < 0.01:
+                gain_str = f"{self.brightness_gain:.6f}"
+            elif self.brightness_gain < 0.1:
+                gain_str = f"{self.brightness_gain:.5f}"
+            elif self.brightness_gain >= 100:
+                gain_str = f"{self.brightness_gain:.1f}"
+            else:
+                gain_str = f"{self.brightness_gain:.2f}"
+
+            # Format saturation
+            if isinstance(self.brightness_saturation, (int, np.integer)):
+                sat_str = str(self.brightness_saturation)
+            else:
+                sat_str = f"{self.brightness_saturation:.1f}"
+
+            brightness_text = f"Offset: {offset_str}, Gain: {gain_str}, Sat: {sat_str}"
+            self.status_brightness.setText(brightness_text)
+        except Exception as e:
+            self.status_brightness.setText("")
 
     def update_selection_status(self, rect=None):
         if rect is None or rect.isNull():

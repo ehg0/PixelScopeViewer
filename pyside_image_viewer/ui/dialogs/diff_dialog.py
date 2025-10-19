@@ -22,28 +22,6 @@ class DiffDialog(QDialog):
     """Dialog for creating difference images between two images.
 
     Allows user to select two images from the loaded list and specify
-    an offset value for the difference calculation. The result is:
-    diff = (imageA - imageB) + offset
-
-    This is useful for comparing similar images or detecting changes.
-
-    Args:
-        parent: Parent widget
-        image_list: List of image info dictionaries (with 'path' key)
-        default_offset: Default offset value (default: 256 for mid-gray)
-
-    Usage:
-        dlg = DiffDialog(parent, image_list)
-        if dlg.exec() == QDialog.Accepted:
-            a_idx, b_idx, offset = dlg.get_result()
-            # Create difference image...
-    """
-
-
-class DiffDialog(QDialog):
-    """Dialog for creating difference images between two images.
-
-    Allows user to select two images from the loaded list and specify
     an offset value for the difference calculation.
     """
 
@@ -59,7 +37,7 @@ class DiffDialog(QDialog):
         h1.addWidget(QLabel("画像 A:"))
         self.combo_a = QComboBox()
         for i, info in enumerate(self.image_list):
-            self.combo_a.addItem(f"{i}: {info.get('path','(untitled)')}")
+            self.combo_a.addItem(f"{i+1}: {info.get('path','(untitled)')}")
         h1.addWidget(self.combo_a)
         layout.addLayout(h1)
 
@@ -67,7 +45,8 @@ class DiffDialog(QDialog):
         h2.addWidget(QLabel("画像 B:"))
         self.combo_b = QComboBox()
         for i, info in enumerate(self.image_list):
-            self.combo_b.addItem(f"{i}: {info.get('path','(untitled)')}")
+            self.combo_b.addItem(f"{i+1}: {info.get('path','(untitled)')}")
+        self.combo_b.setCurrentIndex(1)
         h2.addWidget(self.combo_b)
         layout.addLayout(h2)
 
@@ -101,5 +80,13 @@ class DiffDialog(QDialog):
         self.accept()
 
     def get_result(self):
-        """Returns (image_a_index, image_b_index, offset) or (None, None, None)."""
-        return (getattr(self, "selected_a", None), getattr(self, "selected_b", None), getattr(self, "offset", None))
+        """選択結果を返します。
+
+        戻り値:
+            tuple: (image_a_index, image_b_index, offset) - 未選択時は各要素が None になります。
+        """
+        return (
+            getattr(self, "selected_a", None),
+            getattr(self, "selected_b", None),
+            getattr(self, "offset", None),
+        )

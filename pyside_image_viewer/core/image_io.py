@@ -9,9 +9,10 @@ This module provides functions for:
 All functions handle edge cases gracefully and are UI-independent.
 """
 
-import os
+from pathlib import Path
 from io import StringIO
 from contextlib import redirect_stdout, redirect_stderr
+from typing import Union, Tuple
 import numpy as np
 from PIL import Image
 from PySide6.QtGui import QImage
@@ -20,24 +21,30 @@ from .metadata_utils import is_binary_tag, is_printable_text, decode_bytes
 
 
 def numpy_to_qimage(arr: np.ndarray) -> QImage:
-    """Convert a NumPy array to QImage for Qt display.
+    """Convert a NumPy image array to a Qt QImage suitable for display.
+
+    This utility accepts common image array shapes and returns a copied
+    QImage instance (detached from the original NumPy buffer) so the
+    caller does not need to keep the NumPy array alive.
+
+    Supported input shapes:
+      - (H, W) -> 8-bit grayscale
+      - (H, W, 3) -> RGB (8-bit per channel)
+      - (H, W, 4) -> RGBA (8-bit per channel)
+      - Any other channel count -> converted to grayscale by averaging
 
     Args:
-        arr: NumPy array with shape (H, W) for grayscale or (H, W, C) for color.
-             Values should be in range [0, 255] or will be clipped.
+        arr: Numeric array-like image. Values outside [0,255] are clipped.
 
     Returns:
-        QImage ready for display in Qt widgets.
-        Returns empty QImage if arr is None.
+        QImage: A freshly allocated QImage instance. If ``arr`` is ``None``
+        an empty QImage is returned.
 
     Raises:
-        ValueError: If array has unsupported shape (not 2D or 3D).
+        ValueError: If ``arr`` has less than 2 dimensions.
 
-    Notes:
-        - Grayscale: Format_Grayscale8
-        - RGB: Format_RGB888 (3 channels)
-        - RGBA: Format_RGBA8888 (4 channels)
-        - Other channel counts: converted to grayscale by averaging
+    Example:
+        >>> qimg = numpy_to_qimage(np.zeros((100, 200), dtype=np.uint8))
     """
     if arr is None:
         return QImage()
@@ -60,107 +67,159 @@ def numpy_to_qimage(arr: np.ndarray) -> QImage:
         raise ValueError("Unsupported array shape")
 
 
-def pil_to_numpy(path: str) -> np.ndarray:
-    """Load an image from file path using PIL and convert to NumPy array.
+def pil_to_numpy(path: Union[str, Path, Image.Image]) -> Tuple[np.ndarray, Image.Image]:
+    """Load an image and return a NumPy array together with the PIL Image.
+
+    This helper is a thin wrapper around Pillow's ``Image.open``. It is
+    convenient when callers need both the NumPy pixel data for processing
+    and the original PIL object for metadata extraction.
 
     Args:
-        path: File path to the image.
+        path: Path to the image file (``str`` or ``Path``), or an already
+            opened ``PIL.Image.Image`` instance. If a PIL Image is passed,
+            this function will still return a tuple ``(array, pil_image)``
+            where ``pil_image`` is the same object.
 
     Returns:
-        NumPy array with shape (H, W) or (H, W, C).
+        (array, pil_image):
+            - array: NumPy array representation of the image (dtype depends
+              on the source image).
+            - pil_image: The PIL Image object (opened by this function if a
+              path was given).
 
     Raises:
-        PIL.UnidentifiedImageError: If file cannot be opened as image.
-        FileNotFoundError: If file does not exist.
+        PIL.UnidentifiedImageError: If the file cannot be opened as an image.
+        FileNotFoundError: If a file path is provided but the file does not exist.
+
+    Note:
+        The returned NumPy array shares no required semantics with the
+        QImage conversion helper; callers should copy or cast as needed.
     """
-    img = Image.open(path)
-    return np.array(img)
+    if isinstance(path, Image.Image):
+        img = path
+    else:
+        img = Image.open(path)
+    arr = np.array(img)
+    return arr, img
 
 
-def is_image_file(path: str) -> bool:
-    """Check if a file path has a supported image extension.
+def is_image_file(path: Union[str, Path]) -> bool:
+    """Return True if the given path has a supported image file suffix.
+
+    This is a lightweight check that relies solely on the filename suffix
+    (case-insensitive). It does not attempt to open the file.
 
     Args:
-        path: File path to check.
+        path: File path (string or Path-like).
 
     Returns:
-        True if extension is one of: .png, .jpg, .jpeg, .tif, .tiff, .bmp
-        (case-insensitive).
+        bool: True when suffix is one of (.png, .jpg, .jpeg, .tif, .tiff, .bmp).
     """
-    ext = os.path.splitext(path)[1].lower()
+    path_obj = Path(path)
+    ext = path_obj.suffix.lower()
     return ext in (".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp")
 
 
-def get_image_metadata(path: str) -> dict:
-    """Extract metadata from an image file using exifread for comprehensive EXIF data.
+def get_image_metadata(path_or_img: Union[str, Path, Image.Image], pil_image: Image.Image = None) -> dict:
+    """Return a dictionary of image metadata.
+
+    The function tries to extract basic image properties using Pillow
+    (format, size, mode) and, when a file path is available, attempts to
+    read comprehensive EXIF tags using the ``exifread`` library.
 
     Args:
-        path: File path to the image.
+        path_or_img: Either a filesystem path (str/Path) to the image file
+            or a ``PIL.Image.Image`` instance.
+        pil_image: Deprecated alias for passing a PIL Image; provided for
+            backward compatibility.
 
     Returns:
-        Dictionary containing image metadata including:
-        - Basic info: format, size, mode (via PIL for image properties only)
-        - Complete EXIF data (via exifread library)
+        dict: Mapping of metadata keys to values. Basic keys include
+        ``Filepath``, ``Format``, ``Size``, ``Mode`` and ``DataType``. If
+        ``exifread`` is available and a path is provided, EXIF tags are
+        included with spaces replaced by underscores in tag names.
 
-    Notes:
-        Returns empty dict if file cannot be opened or has no metadata.
-        Uses exifread library for complete EXIF extraction.
+    Behavior:
+        - If ``path_or_img`` is a PIL image, only basic properties are
+          extracted (no disk EXIF parsing).
+        - If the ``exifread`` package is not installed, the returned
+          dictionary will include a ``Warning`` key advising installation.
+
+    Example:
+        >>> md = get_image_metadata('photo.jpg')
+        >>> print(md['Format'], md.get('EXIF_DateTimeDigitized'))
     """
     metadata = {}
+
+    # Handle deprecated pil_image parameter
+    if pil_image is not None:
+        img_obj = pil_image
+        path = getattr(pil_image, "filename", None)
+    elif isinstance(path_or_img, str):
+        img_obj = None
+        path = path_or_img
+    else:
+        # Assume it's a PIL Image object
+        img_obj = path_or_img
+        path = getattr(path_or_img, "filename", None)
 
     # Extract basic PIL information
     try:
         with Image.open(path) as img:
+            metadata["Filepath"] = str(Path(path).resolve())
             metadata["Format"] = img.format or "Unknown"
             metadata["Size"] = f"{img.size[0]} x {img.size[1]}"
+            metadata["DataType"] = str(np.array(img_obj).dtype)
             metadata["Mode"] = img.mode
-            metadata["Filename"] = os.path.basename(path)
     except Exception as e:
         metadata["Error (PIL)"] = str(e)
 
-    # Extract comprehensive EXIF data
-    try:
-        import exifread
+    # Extract comprehensive EXIF data (only if we have a file path)
+    if isinstance(path_or_img, str) or (pil_image is not None and path):
+        file_path = path if isinstance(path_or_img, str) else path
+        if file_path:
+            try:
+                import exifread
 
-        with open(path, "rb") as f:
-            # Suppress exifread's debug messages
-            with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
-                tags = exifread.process_file(f, details=False)
+                with open(file_path, "rb") as f:
+                    # Suppress exifread's debug messages
+                    with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
+                        tags = exifread.process_file(f, details=False)
 
-            for tag, value in tags.items():
-                # Skip binary/thumbnail data
-                if is_binary_tag(tag):
-                    continue
-
-                try:
-                    value_str = str(value)
-
-                    # Handle byte data with multiple encoding attempts
-                    if isinstance(value.values, bytes):
-                        # Skip large binary data
-                        if len(value.values) > 1000:
+                    for tag, value in tags.items():
+                        # Skip binary/thumbnail data
+                        if is_binary_tag(tag):
                             continue
 
-                        # Try decoding with multiple encodings
-                        decoded = decode_bytes(value.values)
-                        if not decoded:
+                        try:
+                            value_str = str(value)
+
+                            # Handle byte data with multiple encoding attempts
+                            if isinstance(value.values, bytes):
+                                # Skip large binary data
+                                if len(value.values) > 1000:
+                                    continue
+
+                                # Try decoding with multiple encodings
+                                decoded = decode_bytes(value.values)
+                                if not decoded:
+                                    continue
+                                value_str = decoded
+
+                            # Skip fields with excessive control characters
+                            if not is_printable_text(value_str, min_ratio=0.8):
+                                continue
+
+                            # Store with cleaned tag name
+                            clean_tag = tag.replace(" ", "_")
+                            metadata[clean_tag] = value_str
+
+                        except Exception:
                             continue
-                        value_str = decoded
 
-                    # Skip fields with excessive control characters
-                    if not is_printable_text(value_str, min_ratio=0.8):
-                        continue
-
-                    # Store with cleaned tag name
-                    clean_tag = tag.replace(" ", "_")
-                    metadata[clean_tag] = value_str
-
-                except Exception:
-                    continue
-
-    except ImportError:
-        metadata["Warning"] = "exifread library not installed. Install with: pip install exifread"
-    except Exception as e:
-        metadata["Error (EXIF)"] = str(e)
+            except ImportError:
+                metadata["Warning"] = "exifread library not installed. Install with: pip install exifread"
+            except Exception as e:
+                metadata["Error (EXIF)"] = str(e)
 
     return metadata

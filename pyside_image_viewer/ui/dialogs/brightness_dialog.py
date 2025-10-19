@@ -160,15 +160,15 @@ class BrightnessDialog(QDialog):
             self.offset_spinbox.setDecimals(3)
             self.offset_spinbox.setSingleStep(0.001)
             self.offset_spinbox.setReadOnly(False)
-            self.offset_spinbox.setKeyboardTracking(False)
+            self.offset_spinbox.setKeyboardTracking(True)  # Enable real-time tracking
         else:
             self.offset_spinbox = QSpinBox()
             self.offset_spinbox.setSingleStep(1)
             self.offset_spinbox.setReadOnly(False)
-            self.offset_spinbox.setKeyboardTracking(False)
+            self.offset_spinbox.setKeyboardTracking(True)  # Enable real-time tracking
 
         self.offset_spinbox.setRange(self.offset_range[0], self.offset_range[1])
-        self.offset_spinbox.setStyleSheet("QSpinBox, QDoubleSpinBox { padding: 5px; font-size: 10pt; }")
+        self.offset_spinbox.setStyleSheet("QSpinBox, QDoubleSpinBox { padding: 10px; font-size: 10pt; }")
         self.offset_spinbox.blockSignals(True)
         self.offset_spinbox.setValue(self.initial_offset)
         self.offset_spinbox.blockSignals(False)
@@ -220,12 +220,12 @@ class BrightnessDialog(QDialog):
         self.gain_spinbox.setDecimals(5)  # Support values like 0.0078125 (2^-7)
         self.gain_spinbox.setSingleStep(0.01)
         self.gain_spinbox.setReadOnly(False)
-        self.gain_spinbox.setKeyboardTracking(False)
+        self.gain_spinbox.setKeyboardTracking(True)  # Enable real-time tracking
         # Spinbox range is wider than slider to accommodate bit shift operations
         # Left shift: 7 bits max for uint8 -> 2^-7 = 0.0078125
         # Right shift: 10 bits max -> 2^10 = 1024
         self.gain_spinbox.setRange(self._gain_spinbox_min, self._gain_spinbox_max)
-        self.gain_spinbox.setStyleSheet("QDoubleSpinBox { padding: 5px; font-size: 10pt; }")
+        self.gain_spinbox.setStyleSheet("QDoubleSpinBox { padding: 10px; font-size: 10pt; }")
         self.gain_spinbox.blockSignals(True)
         self.gain_spinbox.setValue(self.initial_gain)
         self.gain_spinbox.blockSignals(False)
@@ -279,7 +279,7 @@ class BrightnessDialog(QDialog):
             self.saturation_spinbox.setDecimals(3)
             self.saturation_spinbox.setSingleStep(0.001)
             self.saturation_spinbox.setReadOnly(False)
-            self.saturation_spinbox.setKeyboardTracking(False)
+            self.saturation_spinbox.setKeyboardTracking(True)  # Enable real-time tracking
         else:
             self.saturation_slider.setRange(self.saturation_range[0], self.saturation_range[1])
             self.saturation_slider.setTickInterval((self.saturation_range[1] - self.saturation_range[0]) // 4)
@@ -289,11 +289,11 @@ class BrightnessDialog(QDialog):
             self.saturation_spinbox = QSpinBox()
             self.saturation_spinbox.setSingleStep(1)
             self.saturation_spinbox.setReadOnly(False)
-            self.saturation_spinbox.setKeyboardTracking(False)
+            self.saturation_spinbox.setKeyboardTracking(True)  # Enable real-time tracking
 
         self.saturation_slider.valueChanged.connect(self._on_saturation_slider_changed)
         self.saturation_spinbox.setRange(self.saturation_range[0], self.saturation_range[1])
-        self.saturation_spinbox.setStyleSheet("QSpinBox, QDoubleSpinBox { padding: 5px; font-size: 10pt; }")
+        self.saturation_spinbox.setStyleSheet("QSpinBox, QDoubleSpinBox { padding: 10px; font-size: 10pt; }")
         self.saturation_spinbox.blockSignals(True)
         self.saturation_spinbox.setValue(self.initial_saturation)
         self.saturation_spinbox.blockSignals(False)

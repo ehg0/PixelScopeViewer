@@ -15,7 +15,7 @@ Features:
 """
 
 import os
-from typing import Optional
+from typing import Iterable, Optional
 import numpy as np
 from PySide6.QtWidgets import (
     QMainWindow,
@@ -222,7 +222,7 @@ class ImageViewer(QMainWindow):
 
         if self.brightness_dialog is not None:
             # Let the dialog emit the reset signal so the viewer stays in sync
-            self.brightness_dialog._on_reset_clicked()
+            self.brightness_dialog.reset_parameters()
             handled_by_dialog = True
         else:
             # Reset brightness parameters manually when dialog is closed
@@ -300,19 +300,8 @@ class ImageViewer(QMainWindow):
 
     def open_files(self):
         files, _ = QFileDialog.getOpenFileNames(self, "画像を開く", "", "Images (*.png *.jpg *.tif *.bmp *.jpeg)")
-        if files:
-            for f in files:
-                arr = pil_to_numpy(f)
-                img_data = {"path": os.path.abspath(f), "array": arr, "base_array": arr.copy(), "bit_shift": 0}
-                self.images.append(img_data)
-            # Switch to the first newly added image
-            if self.current_index is None:
-                self.current_index = 0
-            else:
-                # Switch to the first newly added image
-                self.current_index = len(self.images) - len(files)
-            self.show_current_image()
-            self.update_image_list_menu()
+        new_count = self._add_images(files)
+        self._finalize_image_addition(new_count)
 
     def dragEnterEvent(self, e):
         if e.mimeData().hasUrls():
@@ -321,19 +310,43 @@ class ImageViewer(QMainWindow):
     def dropEvent(self, e):
         files = [u.toLocalFile() for u in e.mimeData().urls()]
         image_files = [f for f in files if is_image_file(f)]
-        if image_files:
-            for f in image_files:
-                arr = pil_to_numpy(f)
-                img_data = {"path": os.path.abspath(f), "array": arr, "base_array": arr.copy(), "bit_shift": 0}
-                self.images.append(img_data)
-            # Switch to the first newly added image
-            if self.current_index is None:
-                self.current_index = 0
-            else:
-                # Switch to the first newly added image
-                self.current_index = len(self.images) - len(image_files)
-            self.show_current_image()
-            self.update_image_list_menu()
+        new_count = self._add_images(image_files)
+        self._finalize_image_addition(new_count)
+
+    def _add_images(self, paths: Iterable[str]) -> int:
+        """Load image files and append them to the viewer."""
+        new_images = []
+        for path in paths or []:
+            if not path:
+                continue
+            try:
+                arr = pil_to_numpy(path)
+            except Exception:
+                continue
+            img_data = {
+                "path": os.path.abspath(path),
+                "array": arr,
+                "base_array": arr.copy(),
+                "bit_shift": 0,
+            }
+            new_images.append(img_data)
+
+        if not new_images:
+            return 0
+
+        self.images.extend(new_images)
+        return len(new_images)
+
+    def _finalize_image_addition(self, new_count: int) -> None:
+        """Select the newly added images and refresh UI state."""
+        if new_count <= 0:
+            return
+        if self.current_index is None:
+            self.current_index = 0
+        else:
+            self.current_index = len(self.images) - new_count
+        self.show_current_image()
+        self.update_image_list_menu()
 
     def update_image_list_menu(self):
         self.img_menu.clear()
@@ -617,59 +630,6 @@ class ImageViewer(QMainWindow):
 
         # Place the status coordinates at the center of the viewport
         self._set_scroll_to_keep_image_point_at_position(self.current_mouse_image_coords, center_pos)
-
-    def set_zoom_at_image_point(self, scale: float, image_coords: tuple, widget_point):
-        """Set the zoom scale, keeping the specified image point fixed.
-
-        Args:
-            scale: New zoom scale factor (1.0 = original size)
-            image_coords: (x, y) tuple in image pixel coordinates
-            widget_point: QPoint in widget coordinates where the image point should remain
-        """
-        if self.current_index is None:
-            self.scale = scale
-            return
-
-        # Apply new zoom
-        self._apply_zoom_and_update_display(scale)
-
-        # Keep image point at widget point
-        target_pos = (widget_point.x(), widget_point.y())
-        self._set_scroll_to_keep_image_point_at_position(image_coords, target_pos)
-
-    def set_zoom_at_point(self, scale: float, widget_point):
-        """Set the zoom scale, keeping the specified point fixed.
-
-        Args:
-            scale: New zoom scale factor (1.0 = original size)
-            widget_point: QPoint in widget coordinates to keep fixed during zoom
-        """
-        if self.current_index is None:
-            self.scale = scale
-            return
-
-        # Get scroll area and current scroll positions
-        scroll_area = self.scroll_area
-        old_h_scroll = scroll_area.horizontalScrollBar().value()
-        old_v_scroll = scroll_area.verticalScrollBar().value()
-
-        # Convert widget point to scroll area coordinates
-        scroll_point_x = widget_point.x() + old_h_scroll
-        scroll_point_y = widget_point.y() + old_v_scroll
-
-        # Convert to image coordinates (independent of scale)
-        old_scale = self.scale
-        if old_scale > 0:
-            img_coords = (scroll_point_x / old_scale, scroll_point_y / old_scale)
-        else:
-            img_coords = (scroll_point_x, scroll_point_y)
-
-        # Apply new zoom
-        self._apply_zoom_and_update_display(scale)
-
-        # Keep the point fixed at the widget location
-        target_pos = (widget_point.x(), widget_point.y())
-        self._set_scroll_to_keep_image_point_at_position(img_coords, target_pos)
 
     def bit_shift(self, amount):
         """Apply bit shift and adjust gain accordingly.

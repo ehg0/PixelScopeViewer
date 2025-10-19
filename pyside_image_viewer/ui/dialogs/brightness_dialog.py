@@ -509,10 +509,14 @@ class BrightnessDialog(QDialog):
 
         self._emit_brightness_changed()
 
-    def _on_reset_clicked(self):
-        """Handle reset button click."""
+    def reset_parameters(self):
+        """Reset parameters to their defaults and notify listeners."""
         self._reset_to_initial()
         self._emit_brightness_changed()
+
+    def _on_reset_clicked(self):
+        """Handle reset button click."""
+        self.reset_parameters()
 
     def _reset_to_initial(self):
         """Reset all parameters to initial values."""

@@ -356,7 +356,7 @@ class ImageViewer(QMainWindow):
         except Exception:
             QMessageBox.information(self, "差分", "差分の作成に失敗しました。画像サイズや型を確認してください。")
             return
-        img_data = {"path": f"diff:{a_idx}-{b_idx}", "array": diff, "base_array": diff.copy(), "bit_shift": 0}
+        img_data = {"path": f"diff:{a_idx+1}-{b_idx+1}", "array": diff, "base_array": diff.copy(), "bit_shift": 0}
         self.images.append(img_data)
         # switch to the new image
         self.current_index = len(self.images) - 1

@@ -59,7 +59,7 @@ class DiffDialog(QDialog):
         h1.addWidget(QLabel("画像 A:"))
         self.combo_a = QComboBox()
         for i, info in enumerate(self.image_list):
-            self.combo_a.addItem(f"{i}: {info.get('path','(untitled)')}")
+            self.combo_a.addItem(f"{i+1}: {info.get('path','(untitled)')}")
         h1.addWidget(self.combo_a)
         layout.addLayout(h1)
 
@@ -67,7 +67,8 @@ class DiffDialog(QDialog):
         h2.addWidget(QLabel("画像 B:"))
         self.combo_b = QComboBox()
         for i, info in enumerate(self.image_list):
-            self.combo_b.addItem(f"{i}: {info.get('path','(untitled)')}")
+            self.combo_b.addItem(f"{i+1}: {info.get('path','(untitled)')}")
+        self.combo_b.setCurrentIndex(1)
         h2.addWidget(self.combo_b)
         layout.addLayout(h2)
 

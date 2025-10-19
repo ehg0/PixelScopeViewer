@@ -97,6 +97,7 @@ class AnalysisDialog(QDialog):
         image_array: Optional[np.ndarray] = None,
         image_rect: Optional[QRect] = None,
         image_path: Optional[str] = None,
+        pil_image=None,
     ):
         super().__init__(parent)
         self.setWindowTitle("Analysis")
@@ -104,6 +105,7 @@ class AnalysisDialog(QDialog):
         self.image_array = image_array
         self.image_rect = image_rect
         self.image_path = image_path
+        self.pil_image = pil_image  # Store PIL image for metadata extraction
 
         # state
         self.profile_orientation = "h"  # "h", "v", or "d" (diagonal)
@@ -123,14 +125,6 @@ class AnalysisDialog(QDialog):
         main = QVBoxLayout(self)
         self.tabs = QTabWidget()
         main.addWidget(self.tabs)
-
-        # Info tab
-        info_tab = QWidget()
-        il = QVBoxLayout(info_tab)
-        self.info_browser = QTextBrowser()
-        self.info_browser.setReadOnly(True)
-        il.addWidget(self.info_browser)
-        self.tabs.addTab(info_tab, "Info")
 
         # Metadata tab
         metadata_tab = QWidget()
@@ -153,6 +147,14 @@ class AnalysisDialog(QDialog):
         ml.addWidget(self.metadata_copy_btn)
 
         self.tabs.addTab(metadata_tab, "Metadata")
+
+        # Info tab
+        info_tab = QWidget()
+        il = QVBoxLayout(info_tab)
+        self.info_browser = QTextBrowser()
+        self.info_browser.setReadOnly(True)
+        il.addWidget(self.info_browser)
+        self.tabs.addTab(info_tab, "Info")
 
         # Profile tab
         prof_tab = QWidget()
@@ -369,13 +371,19 @@ class AnalysisDialog(QDialog):
         main.addWidget(box)
 
     def set_image_and_rect(
-        self, image_array: Optional[np.ndarray], image_rect: Optional[QRect], image_path: Optional[str] = None
+        self,
+        image_array: Optional[np.ndarray],
+        image_rect: Optional[QRect],
+        image_path: Optional[str] = None,
+        pil_image=None,
     ):
         """Update the dialog with new image data and/or selection rectangle."""
         self.image_array = image_array
         self.image_rect = image_rect
         if image_path is not None:
             self.image_path = image_path
+        if pil_image is not None:
+            self.pil_image = pil_image
         self.update_contents()
 
     def set_current_tab(self, tab):
@@ -574,7 +582,11 @@ class AnalysisDialog(QDialog):
             return
 
         try:
-            metadata = get_image_metadata(self.image_path)
+            # Use cached PIL image if available, otherwise fall back to file path
+            if self.pil_image is not None:
+                metadata = get_image_metadata(self.pil_image, pil_image=self.pil_image)
+            else:
+                metadata = get_image_metadata(self.image_path)
 
             if not metadata:
                 self.metadata_table.setRowCount(1)
@@ -586,7 +598,7 @@ class AnalysisDialog(QDialog):
             rows = []
 
             # 1. Basic information (from PIL)
-            basic_keys = ["Filename", "Format", "Size", "Mode"]
+            basic_keys = ["Filepath", "Format", "Size", "DataType", "Mode"]
             for key in basic_keys:
                 if key in metadata:
                     value_str = str(metadata[key])

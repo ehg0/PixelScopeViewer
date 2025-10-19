@@ -12,6 +12,7 @@ All functions handle edge cases gracefully and are UI-independent.
 import os
 from io import StringIO
 from contextlib import redirect_stdout, redirect_stderr
+from typing import Union
 import numpy as np
 from PIL import Image
 from PySide6.QtGui import QImage
@@ -60,21 +61,24 @@ def numpy_to_qimage(arr: np.ndarray) -> QImage:
         raise ValueError("Unsupported array shape")
 
 
-def pil_to_numpy(path: str) -> np.ndarray:
+def pil_to_numpy(path: str):
     """Load an image from file path using PIL and convert to NumPy array.
 
     Args:
         path: File path to the image.
 
     Returns:
-        NumPy array with shape (H, W) or (H, W, C).
+        Tuple of (numpy_array, pil_image):
+            - numpy_array: NumPy array with shape (H, W) or (H, W, C)
+            - pil_image: PIL Image object (for metadata extraction)
 
     Raises:
         PIL.UnidentifiedImageError: If file cannot be opened as image.
         FileNotFoundError: If file does not exist.
     """
     img = Image.open(path)
-    return np.array(img)
+    arr = np.array(img)
+    return arr, img
 
 
 def is_image_file(path: str) -> bool:
@@ -91,11 +95,12 @@ def is_image_file(path: str) -> bool:
     return ext in (".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp")
 
 
-def get_image_metadata(path: str) -> dict:
-    """Extract metadata from an image file using exifread for comprehensive EXIF data.
+def get_image_metadata(path_or_img, pil_image=None) -> dict:
+    """Extract metadata from an image file or PIL Image object using exifread for comprehensive EXIF data.
 
     Args:
-        path: File path to the image.
+        path_or_img: File path to the image (str) or PIL Image object.
+        pil_image: (Deprecated) PIL Image object. Use path_or_img parameter instead.
 
     Returns:
         Dictionary containing image metadata including:
@@ -105,62 +110,79 @@ def get_image_metadata(path: str) -> dict:
     Notes:
         Returns empty dict if file cannot be opened or has no metadata.
         Uses exifread library for complete EXIF extraction.
+        If PIL Image object is passed, only basic info is extracted (no EXIF from file).
     """
     metadata = {}
+
+    # Handle deprecated pil_image parameter
+    if pil_image is not None:
+        img_obj = pil_image
+        path = getattr(pil_image, "filename", None)
+    elif isinstance(path_or_img, str):
+        img_obj = None
+        path = path_or_img
+    else:
+        # Assume it's a PIL Image object
+        img_obj = path_or_img
+        path = getattr(path_or_img, "filename", None)
 
     # Extract basic PIL information
     try:
         with Image.open(path) as img:
+            metadata["Filepath"] = os.path.abspath(path)
             metadata["Format"] = img.format or "Unknown"
             metadata["Size"] = f"{img.size[0]} x {img.size[1]}"
+            metadata["DataType"] = str(np.array(img_obj).dtype)
             metadata["Mode"] = img.mode
-            metadata["Filename"] = os.path.basename(path)
     except Exception as e:
         metadata["Error (PIL)"] = str(e)
 
-    # Extract comprehensive EXIF data
-    try:
-        import exifread
+    # Extract comprehensive EXIF data (only if we have a file path)
+    if isinstance(path_or_img, str) or (pil_image is not None and path):
+        file_path = path if isinstance(path_or_img, str) else path
+        if file_path:
+            try:
+                import exifread
 
-        with open(path, "rb") as f:
-            # Suppress exifread's debug messages
-            with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
-                tags = exifread.process_file(f, details=False)
+                with open(file_path, "rb") as f:
+                    # Suppress exifread's debug messages
+                    with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
+                        tags = exifread.process_file(f, details=False)
 
-            for tag, value in tags.items():
-                # Skip binary/thumbnail data
-                if is_binary_tag(tag):
-                    continue
-
-                try:
-                    value_str = str(value)
-
-                    # Handle byte data with multiple encoding attempts
-                    if isinstance(value.values, bytes):
-                        # Skip large binary data
-                        if len(value.values) > 1000:
+                    for tag, value in tags.items():
+                        # Skip binary/thumbnail data
+                        if is_binary_tag(tag):
                             continue
 
-                        # Try decoding with multiple encodings
-                        decoded = decode_bytes(value.values)
-                        if not decoded:
+                        try:
+                            value_str = str(value)
+
+                            # Handle byte data with multiple encoding attempts
+                            if isinstance(value.values, bytes):
+                                # Skip large binary data
+                                if len(value.values) > 1000:
+                                    continue
+
+                                # Try decoding with multiple encodings
+                                decoded = decode_bytes(value.values)
+                                if not decoded:
+                                    continue
+                                value_str = decoded
+
+                            # Skip fields with excessive control characters
+                            if not is_printable_text(value_str, min_ratio=0.8):
+                                continue
+
+                            # Store with cleaned tag name
+                            clean_tag = tag.replace(" ", "_")
+                            metadata[clean_tag] = value_str
+
+                        except Exception:
                             continue
-                        value_str = decoded
 
-                    # Skip fields with excessive control characters
-                    if not is_printable_text(value_str, min_ratio=0.8):
-                        continue
-
-                    # Store with cleaned tag name
-                    clean_tag = tag.replace(" ", "_")
-                    metadata[clean_tag] = value_str
-
-                except Exception:
-                    continue
-
-    except ImportError:
-        metadata["Warning"] = "exifread library not installed. Install with: pip install exifread"
-    except Exception as e:
-        metadata["Error (EXIF)"] = str(e)
+            except ImportError:
+                metadata["Warning"] = "exifread library not installed. Install with: pip install exifread"
+            except Exception as e:
+                metadata["Error (EXIF)"] = str(e)
 
     return metadata

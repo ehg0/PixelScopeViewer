@@ -105,12 +105,13 @@ class ImageViewer(QMainWindow):
 
         self.status = QStatusBar()
         self.setStatusBar(self.status)
+        self.statusBar().setStyleSheet("font-size: 11pt;")
         self.status_pixel = QLabel()
         self.status_selection = QLabel()
         self.status_brightness = QLabel()  # Changed from status_shift to status_brightness
         self.status_scale = QLabel()
-        self.status.addPermanentWidget(self.status_pixel, 3)
-        self.status.addPermanentWidget(self.status_selection, 2)
+        self.status.addPermanentWidget(self.status_pixel, 2)
+        self.status.addPermanentWidget(self.status_selection, 3)
         self.status.addPermanentWidget(self.status_brightness, 2)  # Display brightness params
         self.status.addPermanentWidget(self.status_scale, 1)
 
@@ -140,25 +141,22 @@ class ImageViewer(QMainWindow):
         self.update_image_list_menu()
 
         view_menu = menubar.addMenu("表示")
+        view_menu.addAction(QAction("表示輝度調整", self, triggered=self.show_brightness_dialog))
+        view_menu.addSeparator()
         view_menu.addAction(
             QAction("拡大", self, shortcut="+", triggered=lambda: self.set_zoom(min(self.scale * 2, 128.0)))
         )
         view_menu.addAction(
             QAction("縮小", self, shortcut="-", triggered=lambda: self.set_zoom(max(self.scale / 2, 0.125)))
         )
-        view_menu.addSeparator()
-        view_menu.addAction(QAction("表示輝度調整", self, triggered=self.show_brightness_dialog))
-        view_menu.addSeparator()
-        view_menu.addAction(QAction("左ビットシフト", self, triggered=lambda: self.bit_shift(-1)))
-        view_menu.addAction(QAction("右ビットシフト", self, triggered=lambda: self.bit_shift(1)))
-        view_menu.addSeparator()
-        view_menu.addAction(QAction("差分画像表示", self, triggered=lambda: self.show_diff_dialog()))
 
         analysis = menubar.addMenu("解析")
+        analysis.addAction(QAction("メタデータ", self, triggered=lambda: self.show_analysis_dialog(tab="Metadata")))
+        analysis.addSeparator()
         analysis.addAction(QAction("プロファイル", self, triggered=lambda: self.show_analysis_dialog(tab="Profile")))
         analysis.addAction(QAction("ヒストグラム", self, triggered=lambda: self.show_analysis_dialog(tab="Histogram")))
         analysis.addSeparator()
-        analysis.addAction(QAction("メタデータ", self, triggered=lambda: self.show_analysis_dialog(tab="Metadata")))
+        analysis.addAction(QAction("差分画像表示", self, triggered=lambda: self.show_diff_dialog()))
 
         help_menu = menubar.addMenu("ヘルプ")
         help_menu.addAction(QAction("キーボードショートカット", self, triggered=self.help_dialog.show))
@@ -286,7 +284,8 @@ class ImageViewer(QMainWindow):
         arr = img.get("base_array", img.get("array"))
         sel = self.current_selection_rect
         img_path = img.get("path")
-        dlg = AnalysisDialog(self, image_array=arr, image_rect=sel, image_path=img_path)
+        pil_img = img.get("pil_image")  # Get cached PIL image
+        dlg = AnalysisDialog(self, image_array=arr, image_rect=sel, image_path=img_path, pil_image=pil_img)
         dlg.show()
         # keep a reference until the dialog is closed
         self._analysis_dialogs.append(dlg)
@@ -320,7 +319,7 @@ class ImageViewer(QMainWindow):
             if not path:
                 continue
             try:
-                arr = pil_to_numpy(path)
+                arr, pil_img = pil_to_numpy(path)
             except Exception:
                 continue
             img_data = {
@@ -328,6 +327,7 @@ class ImageViewer(QMainWindow):
                 "array": arr,
                 "base_array": arr.copy(),
                 "bit_shift": 0,
+                "pil_image": pil_img,  # Store PIL image for metadata extraction
             }
             new_images.append(img_data)
 
@@ -417,9 +417,10 @@ class ImageViewer(QMainWindow):
             img = self.images[self.current_index]
             arr_for_analysis = img.get("base_array", img.get("array"))
             img_path = img.get("path", None)
+            pil_img = img.get("pil_image")
             for dlg in list(self._analysis_dialogs):
                 try:
-                    dlg.set_image_and_rect(arr_for_analysis, self.current_selection_rect, img_path)
+                    dlg.set_image_and_rect(arr_for_analysis, self.current_selection_rect, img_path, pil_img)
                 except Exception:
                     pass
         except Exception:
@@ -497,7 +498,7 @@ class ImageViewer(QMainWindow):
         if len(self.images) < 2:
             QMessageBox.information(self, "差分", "比較する画像が2枚必要です。")
             return
-        dlg = DiffDialog(self, image_list=self.images, default_offset=256)
+        dlg = DiffDialog(self, image_list=self.images, default_offset=127)
         if dlg.exec() != QDialog.Accepted:
             return
         a_idx, b_idx, offset = dlg.get_result()
@@ -735,9 +736,10 @@ class ImageViewer(QMainWindow):
             if img:
                 arr = img.get("base_array", img.get("array"))
                 img_path = img.get("path")
+                pil_img = img.get("pil_image")
                 for dlg in list(self._analysis_dialogs):
                     try:
-                        dlg.set_image_and_rect(arr, self.current_selection_rect, img_path)
+                        dlg.set_image_and_rect(arr, self.current_selection_rect, img_path, pil_img)
                     except Exception:
                         # ignore dialog-specific errors and continue notifying others
                         pass

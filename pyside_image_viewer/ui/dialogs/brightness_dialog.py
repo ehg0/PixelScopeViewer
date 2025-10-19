@@ -115,23 +115,6 @@ class BrightnessDialog(QDialog):
         main_layout.setSpacing(20)
         main_layout.setContentsMargins(25, 25, 25, 25)
 
-        # Title and formula
-        title_label = QLabel("表示輝度調整")
-        title_label.setStyleSheet("font-size: 16pt; font-weight: bold; color: #222;")
-        main_layout.addWidget(title_label)
-
-        formula_label = QLabel("yout = gain × (yin - offset) / saturation × 255")
-        formula_label.setStyleSheet("font-style: italic; color: #666; font-size: 9pt; padding: 5px 0px;")
-        main_layout.addWidget(formula_label)
-
-        # Separator line
-        separator = QLabel()
-        separator.setStyleSheet("background-color: #ccc;")
-        separator.setFixedHeight(1)
-        main_layout.addWidget(separator)
-
-        main_layout.addSpacing(10)
-
         # Offset control
         # Offset label with value
         offset_label_layout = QHBoxLayout()
@@ -200,6 +183,8 @@ class BrightnessDialog(QDialog):
         gain_label_layout = QHBoxLayout()
         gain_title_label = QLabel("ゲイン (Gain)")
         gain_title_label.setStyleSheet("font-weight: bold; font-size: 10pt;")
+        gain_title_label.setToolTip("左ビットシフト : <,  右ビットシフト : >")
+
         self.gain_value_label = QLabel(f"{self.initial_gain:.2f}")
         self.gain_value_label.setStyleSheet("color: #555; font-size: 10pt;")
         gain_label_layout.addWidget(gain_title_label)
@@ -318,63 +303,19 @@ class BrightnessDialog(QDialog):
         saturation_control_layout.addWidget(self.saturation_spinbox, 1)
         main_layout.addLayout(saturation_control_layout)
 
-        # Separator line
-        separator2 = QLabel()
-        separator2.setStyleSheet("background-color: #ddd; max-height: 1px;")
-        separator2.setFixedHeight(1)
-        main_layout.addWidget(separator2)
+        formula_label = QLabel("-> yout = gain × (yin - offset) / saturation × 255")
+        formula_label.setStyleSheet("font-style: italic; font-size: 10pt")
+        main_layout.addWidget(formula_label)
 
         # Buttons
         button_layout = QHBoxLayout()
         button_layout.setSpacing(10)
 
-        info_label = QLabel("💡 Tip: Ctrl+Rでリセット")
-        info_label.setStyleSheet("color: #999; font-size: 9pt; font-style: italic;")
-        button_layout.addWidget(info_label)
-        button_layout.addStretch(1)
-
-        self.reset_button = QPushButton("🔄 リセット")
-        self.reset_button.setToolTip("パラメータを初期値にリセット (Ctrl+R)")
-        self.reset_button.setStyleSheet(
-            """
-            QPushButton {
-                background-color: #f5f5f5;
-                border: 1px solid #ccc;
-                border-radius: 4px;
-                padding: 8px 16px;
-                font-size: 10pt;
-            }
-            QPushButton:hover {
-                background-color: #e0e0e0;
-            }
-            QPushButton:pressed {
-                background-color: #d0d0d0;
-            }
-        """
-        )
+        self.reset_button = QPushButton("Reset (Ctrl+R)")
         self.reset_button.clicked.connect(self._on_reset_clicked)
         button_layout.addWidget(self.reset_button)
 
-        self.close_button = QPushButton("閉じる")
-        self.close_button.setStyleSheet(
-            """
-            QPushButton {
-                background-color: #2196F3;
-                color: white;
-                border: none;
-                border-radius: 4px;
-                padding: 8px 16px;
-                font-size: 10pt;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #1976D2;
-            }
-            QPushButton:pressed {
-                background-color: #0D47A1;
-            }
-        """
-        )
+        self.close_button = QPushButton("Close")
         self.close_button.clicked.connect(self.accept)
         button_layout.addWidget(self.close_button)
 

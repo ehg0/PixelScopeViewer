@@ -419,10 +419,14 @@ class BrightnessDialog(QDialog):
         self.brightness_changed.emit(offset, gain, saturation)
 
     def set_gain(self, gain_value):
-        """Set gain value programmatically (e.g., from bit shift).
+        """プログラム的にゲイン値を設定します（例: ビットシフトによる更新）。
 
-        Args:
-            gain_value: New gain value to set
+        引数:
+            gain_value: 設定する新しいゲイン値（float）。
+
+        説明:
+            スライダーとスピンボックス両方を更新します。スライダーは UI 上の視覚範囲に制限されますが、
+            スピンボックスは拡張レンジを許容しているためビットシフト等の極端な値も扱えます。
         """
         # Allow values outside slider range for bit shift operations.
         # Spinbox is clamped to an extended range while the slider stays within its UI bounds.
@@ -451,7 +455,10 @@ class BrightnessDialog(QDialog):
         self._emit_brightness_changed()
 
     def reset_parameters(self):
-        """Reset parameters to their defaults and notify listeners."""
+        """パラメータを初期値に戻し、変更をリスナに通知します。
+
+        主に外部（例: 親ビューア）から呼び出されることを想定しています。
+        """
         self._reset_to_initial()
         self._emit_brightness_changed()
 
@@ -489,9 +496,9 @@ class BrightnessDialog(QDialog):
         self.saturation_spinbox.blockSignals(False)
 
     def get_parameters(self):
-        """Get current brightness adjustment parameters.
+        """現在の輝度補正パラメータを取得します。
 
-        Returns:
+        戻り値:
             tuple: (offset, gain, saturation)
         """
         return (
@@ -501,12 +508,16 @@ class BrightnessDialog(QDialog):
         )
 
     def update_for_new_image(self, image_array=None, image_path=None, keep_settings=True):
-        """Update dialog for a new image.
+        """新しい画像に合わせてダイアログのパラメータ範囲／表示を更新します。
 
-        Args:
-            image_array: NumPy array of new image
-            image_path: Path to new image file
-            keep_settings: If True, keep current parameter values; if False, reset to defaults
+        引数:
+            image_array: 新しい画像の NumPy 配列
+            image_path: 新しい画像のファイルパス
+            keep_settings: True の場合は既存の値を可能な限り保持し、False の場合は初期値にリセットします。
+
+        注意:
+            画像のデータ型が変化した場合は内部ウィジェットの再作成が必要になる可能性がありますが、
+            現状は範囲のみを更新して既存ウィジェットを再利用します。
         """
         # Store current values if we want to keep them
         if keep_settings:

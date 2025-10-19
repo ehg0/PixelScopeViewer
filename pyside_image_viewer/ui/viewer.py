@@ -14,7 +14,7 @@ Features:
 - Title bar showing current filename and image index
 """
 
-import os
+from pathlib import Path
 from typing import Iterable, Optional
 import numpy as np
 from PySide6.QtWidgets import (
@@ -181,7 +181,15 @@ class ImageViewer(QMainWindow):
         self.addAction(self.right_bit_shift_action)
 
     def show_brightness_dialog(self):
-        """Show brightness adjustment dialog."""
+        """表示輝度調整ダイアログを表示します。
+
+        現在選択中の画像が存在しない場合は情報ダイアログを表示して終了します。
+
+        このメソッドはダイアログを初めて作成する際にダイアログを生成し、
+        ダイアログからのシグナルを購読してビューア側の輝度パラメータを同期します。
+
+        例外やエラーは GUI 内でユーザ向けに通知されます。
+        """
         if self.current_index is None:
             QMessageBox.information(self, "表示輝度調整", "画像が選択されていません。")
             return
@@ -209,7 +217,14 @@ class ImageViewer(QMainWindow):
         self.brightness_dialog.show()
 
     def reset_brightness_settings(self):
-        """Reset brightness settings to initial values (triggered by Ctrl+R)."""
+        """輝度設定を初期値に戻します（Ctrl+R 等から呼び出されます）。
+
+        動作:
+        - 現在画像のビットシフトを 0 に戻す
+        - 表示配列を base_array に復元する
+        - 輝度ダイアログが開いている場合はダイアログ側のリセット処理に委譲し、
+          ダイアログが閉じている場合はビューア側でパラメータを手動でリセットします。
+        """
         handled_by_dialog = False
 
         # Reset bit shift to 0 and restore base array
@@ -253,15 +268,19 @@ class ImageViewer(QMainWindow):
             self.display_image(self.images[self.current_index]["array"])
 
     def apply_brightness_adjustment(self, arr: np.ndarray) -> np.ndarray:
-        """Apply brightness adjustment to image array.
+        """画像配列に対して輝度補正を適用して新しい配列を返します。
 
-        Formula: yout = gain * (yin - offset) / saturation * 255
+        使用する式:
+            yout = gain * (yin - offset) / saturation * 255
 
-        Args:
-            arr: Input image array
+        パラメータ:
+            arr: 入力画像の NumPy 配列（任意の dtype を受け付けます）
 
-        Returns:
-            Adjusted image array (clipped to 0-255)
+        戻り値:
+            uint8 にクリップ/変換された補正後の配列を返します。
+
+        注意:
+            saturation が 0 の場合はゼロ除算を避けるため元配列をそのまま返します。
         """
         # Avoid division by zero
         if self.brightness_saturation == 0:
@@ -323,7 +342,7 @@ class ImageViewer(QMainWindow):
             except Exception:
                 continue
             img_data = {
-                "path": os.path.abspath(path),
+                "path": str(Path(path).resolve()),
                 "array": arr,
                 "base_array": arr.copy(),
                 "bit_shift": 0,
@@ -439,10 +458,13 @@ class ImageViewer(QMainWindow):
             self.update_selection_status(rect)
 
     def display_image(self, arr):
-        """Display an image array in the viewer with brightness adjustment applied.
+        """指定した画像配列をビューアに表示します。
 
-        Args:
-            arr: NumPy array of the image to display
+        引数で渡された配列に対して現在の輝度パラメータがデフォルトでない場合は
+        apply_brightness_adjustment を経由して補正を行い、QImage に変換して `ImageLabel` に渡します。
+
+        パラメータ:
+            arr: NumPy 配列（H,W[,C]）で表された画像データ
         """
         # Apply brightness adjustment if parameters are not default
         if self.brightness_offset != 0 or self.brightness_gain != 1.0 or self.brightness_saturation != 255:
@@ -581,10 +603,12 @@ class ImageViewer(QMainWindow):
         scroll_area.verticalScrollBar().setValue(new_v_scroll)
 
     def set_zoom(self, scale: float):
-        """Set the zoom scale, preserving the center of the visible viewport.
+        """ズーム倍率を設定し、可視領域の中心位置を維持します。
 
-        Args:
-            scale: New zoom scale factor (1.0 = original size)
+        パラメータ:
+            scale: 新しい倍率（1.0 が原寸）
+
+        このメソッドは表示中の画像がない場合は単に scale を設定して終了します。
         """
         if self.current_index is None:
             self.scale = scale
@@ -606,10 +630,9 @@ class ImageViewer(QMainWindow):
         self._set_scroll_to_keep_image_point_at_position(img_center, center_pos)
 
     def set_zoom_at_status_coords(self, scale: float):
-        """Set the zoom scale, keeping the coordinates shown in status bar fixed.
+        """ステータスバーに表示している座標（マウス位置）をビュー中心に固定してズームします。
 
-        Args:
-            scale: New zoom scale factor (1.0 = original size)
+        マウス位置が未取得（None）の場合は通常の center ベースの `set_zoom` にフォールバックします。
         """
         if self.current_index is None:
             self.scale = scale
@@ -633,15 +656,17 @@ class ImageViewer(QMainWindow):
         self._set_scroll_to_keep_image_point_at_position(self.current_mouse_image_coords, center_pos)
 
     def bit_shift(self, amount):
-        """Apply bit shift and adjust gain accordingly.
+        """ビットシフト（表示の明るさ操作）を行います。
 
-        Left shift (amount < 0): Gain *= 0.5
-        Right shift (amount > 0): Gain *= 2.0
-        Gain is snapped to nearest 0.5^n or 2^n value.
+        説明:
+            - amount が負の場合は左シフト（暗くする）
+            - amount が正の場合は右シフト（明るくする）
+            - シフトに合わせて内部の gain を 2 倍/半分に調整し、
+              近い 2^n 値にスナップします。
 
-        Limits:
-        - Left shift: Maximum 7 bits for uint8 (minimum gain = 2^-7 = 0.0078125)
-        - Right shift: Maximum 10 bits (maximum gain = 2^10 = 1024)
+        制限:
+            - uint8 データは左シフト最大 -7 ビットに制限しています（値の破綻を防ぐため）。
+            - 右シフトは最大 +10 ビットまで許容します。
         """
         if self.current_index is None:
             return
@@ -712,7 +737,10 @@ class ImageViewer(QMainWindow):
         self.display_image(shifted)
 
     def select_all(self):
-        """Select the entire image."""
+        """画像全体を選択状態にします。
+
+        選択が更新された場合は on_selection_changed を経由して関連ダイアログに通知します。
+        """
         if self.current_index is None or not self.images:
             return
         self.image_label.set_selection_full()
@@ -799,7 +827,7 @@ class ImageViewer(QMainWindow):
         p = self.images[self.current_index]["path"]
 
         # Update title bar with filename and index
-        filename = os.path.basename(p)
+        filename = Path(p).name
         title = f"{filename} ({self.current_index+1}/{len(self.images)})"
         self.setWindowTitle(title)
 
@@ -813,7 +841,10 @@ class ImageViewer(QMainWindow):
         self.update_brightness_status()
 
     def update_brightness_status(self):
-        """Update brightness parameters in status bar."""
+        """ステータスバーに現在の輝度パラメータを表示用に整形して設定します。
+
+        表示用の文字列整形は値の大きさに応じて桁数を調整します（小さい値は小数点以下を多く表示）。
+        """
         try:
             # Format offset
             if isinstance(self.brightness_offset, (int, np.integer)):

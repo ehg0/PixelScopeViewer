@@ -9,10 +9,10 @@ This module provides functions for:
 All functions handle edge cases gracefully and are UI-independent.
 """
 
-import os
+from pathlib import Path
 from io import StringIO
 from contextlib import redirect_stdout, redirect_stderr
-from typing import Union
+from typing import Union, Tuple
 import numpy as np
 from PIL import Image
 from PySide6.QtGui import QImage
@@ -21,24 +21,30 @@ from .metadata_utils import is_binary_tag, is_printable_text, decode_bytes
 
 
 def numpy_to_qimage(arr: np.ndarray) -> QImage:
-    """Convert a NumPy array to QImage for Qt display.
+    """Convert a NumPy image array to a Qt QImage suitable for display.
+
+    This utility accepts common image array shapes and returns a copied
+    QImage instance (detached from the original NumPy buffer) so the
+    caller does not need to keep the NumPy array alive.
+
+    Supported input shapes:
+      - (H, W) -> 8-bit grayscale
+      - (H, W, 3) -> RGB (8-bit per channel)
+      - (H, W, 4) -> RGBA (8-bit per channel)
+      - Any other channel count -> converted to grayscale by averaging
 
     Args:
-        arr: NumPy array with shape (H, W) for grayscale or (H, W, C) for color.
-             Values should be in range [0, 255] or will be clipped.
+        arr: Numeric array-like image. Values outside [0,255] are clipped.
 
     Returns:
-        QImage ready for display in Qt widgets.
-        Returns empty QImage if arr is None.
+        QImage: A freshly allocated QImage instance. If ``arr`` is ``None``
+        an empty QImage is returned.
 
     Raises:
-        ValueError: If array has unsupported shape (not 2D or 3D).
+        ValueError: If ``arr`` has less than 2 dimensions.
 
-    Notes:
-        - Grayscale: Format_Grayscale8
-        - RGB: Format_RGB888 (3 channels)
-        - RGBA: Format_RGBA8888 (4 channels)
-        - Other channel counts: converted to grayscale by averaging
+    Example:
+        >>> qimg = numpy_to_qimage(np.zeros((100, 200), dtype=np.uint8))
     """
     if arr is None:
         return QImage()
@@ -61,56 +67,87 @@ def numpy_to_qimage(arr: np.ndarray) -> QImage:
         raise ValueError("Unsupported array shape")
 
 
-def pil_to_numpy(path: str):
-    """Load an image from file path using PIL and convert to NumPy array.
+def pil_to_numpy(path: Union[str, Path, Image.Image]) -> Tuple[np.ndarray, Image.Image]:
+    """Load an image and return a NumPy array together with the PIL Image.
+
+    This helper is a thin wrapper around Pillow's ``Image.open``. It is
+    convenient when callers need both the NumPy pixel data for processing
+    and the original PIL object for metadata extraction.
 
     Args:
-        path: File path to the image.
+        path: Path to the image file (``str`` or ``Path``), or an already
+            opened ``PIL.Image.Image`` instance. If a PIL Image is passed,
+            this function will still return a tuple ``(array, pil_image)``
+            where ``pil_image`` is the same object.
 
     Returns:
-        Tuple of (numpy_array, pil_image):
-            - numpy_array: NumPy array with shape (H, W) or (H, W, C)
-            - pil_image: PIL Image object (for metadata extraction)
+        (array, pil_image):
+            - array: NumPy array representation of the image (dtype depends
+              on the source image).
+            - pil_image: The PIL Image object (opened by this function if a
+              path was given).
 
     Raises:
-        PIL.UnidentifiedImageError: If file cannot be opened as image.
-        FileNotFoundError: If file does not exist.
+        PIL.UnidentifiedImageError: If the file cannot be opened as an image.
+        FileNotFoundError: If a file path is provided but the file does not exist.
+
+    Note:
+        The returned NumPy array shares no required semantics with the
+        QImage conversion helper; callers should copy or cast as needed.
     """
-    img = Image.open(path)
+    if isinstance(path, Image.Image):
+        img = path
+    else:
+        img = Image.open(path)
     arr = np.array(img)
     return arr, img
 
 
-def is_image_file(path: str) -> bool:
-    """Check if a file path has a supported image extension.
+def is_image_file(path: Union[str, Path]) -> bool:
+    """Return True if the given path has a supported image file suffix.
+
+    This is a lightweight check that relies solely on the filename suffix
+    (case-insensitive). It does not attempt to open the file.
 
     Args:
-        path: File path to check.
+        path: File path (string or Path-like).
 
     Returns:
-        True if extension is one of: .png, .jpg, .jpeg, .tif, .tiff, .bmp
-        (case-insensitive).
+        bool: True when suffix is one of (.png, .jpg, .jpeg, .tif, .tiff, .bmp).
     """
-    ext = os.path.splitext(path)[1].lower()
+    path_obj = Path(path)
+    ext = path_obj.suffix.lower()
     return ext in (".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp")
 
 
-def get_image_metadata(path_or_img, pil_image=None) -> dict:
-    """Extract metadata from an image file or PIL Image object using exifread for comprehensive EXIF data.
+def get_image_metadata(path_or_img: Union[str, Path, Image.Image], pil_image: Image.Image = None) -> dict:
+    """Return a dictionary of image metadata.
+
+    The function tries to extract basic image properties using Pillow
+    (format, size, mode) and, when a file path is available, attempts to
+    read comprehensive EXIF tags using the ``exifread`` library.
 
     Args:
-        path_or_img: File path to the image (str) or PIL Image object.
-        pil_image: (Deprecated) PIL Image object. Use path_or_img parameter instead.
+        path_or_img: Either a filesystem path (str/Path) to the image file
+            or a ``PIL.Image.Image`` instance.
+        pil_image: Deprecated alias for passing a PIL Image; provided for
+            backward compatibility.
 
     Returns:
-        Dictionary containing image metadata including:
-        - Basic info: format, size, mode (via PIL for image properties only)
-        - Complete EXIF data (via exifread library)
+        dict: Mapping of metadata keys to values. Basic keys include
+        ``Filepath``, ``Format``, ``Size``, ``Mode`` and ``DataType``. If
+        ``exifread`` is available and a path is provided, EXIF tags are
+        included with spaces replaced by underscores in tag names.
 
-    Notes:
-        Returns empty dict if file cannot be opened or has no metadata.
-        Uses exifread library for complete EXIF extraction.
-        If PIL Image object is passed, only basic info is extracted (no EXIF from file).
+    Behavior:
+        - If ``path_or_img`` is a PIL image, only basic properties are
+          extracted (no disk EXIF parsing).
+        - If the ``exifread`` package is not installed, the returned
+          dictionary will include a ``Warning`` key advising installation.
+
+    Example:
+        >>> md = get_image_metadata('photo.jpg')
+        >>> print(md['Format'], md.get('EXIF_DateTimeDigitized'))
     """
     metadata = {}
 
@@ -129,7 +166,7 @@ def get_image_metadata(path_or_img, pil_image=None) -> dict:
     # Extract basic PIL information
     try:
         with Image.open(path) as img:
-            metadata["Filepath"] = os.path.abspath(path)
+            metadata["Filepath"] = str(Path(path).resolve())
             metadata["Format"] = img.format or "Unknown"
             metadata["Size"] = f"{img.size[0]} x {img.size[1]}"
             metadata["DataType"] = str(np.array(img_obj).dtype)

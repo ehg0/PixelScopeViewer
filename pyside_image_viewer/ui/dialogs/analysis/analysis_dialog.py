@@ -377,7 +377,17 @@ class AnalysisDialog(QDialog):
         image_path: Optional[str] = None,
         pil_image=None,
     ):
-        """Update the dialog with new image data and/or selection rectangle."""
+        """ダイアログの表示内容を新しい画像データや選択矩形で更新します。
+
+        このメソッドは外部（親ビューア）から頻繁に呼ばれる想定で、
+        モデルを更新したあと内部表示を再構築する `update_contents` を呼び出します。
+
+        引数:
+            image_array: 画像または選択領域の NumPy 配列
+            image_rect: 画像座標系での選択矩形（QRect）
+            image_path: 画像ファイルのパス（メタデータ取得に利用）
+            pil_image: PIL.Image オブジェクトが既にある場合はそれを渡すとメタデータ取得が高速になります
+        """
         self.image_array = image_array
         self.image_rect = image_rect
         if image_path is not None:
@@ -387,7 +397,11 @@ class AnalysisDialog(QDialog):
         self.update_contents()
 
     def set_current_tab(self, tab):
-        """Set current tab by name ('Histogram','Profile','Info') or index."""
+        """タブを名前（'Histogram','Profile','Info' の先頭部分一致）またはインデックスで切り替えます。
+
+        引数:
+            tab: タブ名の文字列あるいはインデックス（int）
+        """
         if tab is None:
             return
         if isinstance(tab, int):
@@ -401,6 +415,10 @@ class AnalysisDialog(QDialog):
                 return
 
     def _on_hist_channels(self):
+        """ヒストグラム用のチャネル選択ダイアログを作成して表示します。
+
+        すでに画像データがない場合は何もしません。
+        """
         if self.image_array is None:
             return
         nch = self.image_array.shape[2] if self.image_array.ndim == 3 else 1
@@ -420,6 +438,10 @@ class AnalysisDialog(QDialog):
         dlg.show()  # Show modeless dialog without blocking
 
     def _on_prof_channels(self):
+        """プロファイル用のチャネル選択ダイアログを作成して表示します。
+
+        すでに画像データがない場合は何もしません。
+        """
         if self.image_array is None:
             return
         nch = self.image_array.shape[2] if self.image_array.ndim == 3 else 1
@@ -439,7 +461,12 @@ class AnalysisDialog(QDialog):
         dlg.show()  # Show modeless dialog without blocking
 
     def update_contents(self):
-        """Refresh all tabs with current image data and settings."""
+        """現在の画像データ／設定をもとに全タブの内容を再描画します。
+
+        - 選択領域が存在する場合はその領域のみを扱います
+        - メタデータタブは常に更新されます
+        - pyqtgraph が利用可能な場合はヒストグラム／プロファイルをプロットします
+        """
         arr = self.image_array
         if arr is None:
             self.info_browser.setPlainText("No data")

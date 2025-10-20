@@ -369,8 +369,17 @@ class ImageViewer(QMainWindow):
 
     def update_image_list_menu(self):
         self.img_menu.clear()
-        self.img_menu.addAction(QAction("次の画像", self, shortcut="n", triggered=self.next_image))
-        self.img_menu.addAction(QAction("前の画像", self, shortcut="b", triggered=self.prev_image))
+        next_act = QAction("次の画像", self)
+        next_act.setShortcut("n")
+        next_act.setShortcutContext(Qt.ApplicationShortcut)
+        next_act.triggered.connect(self.next_image)
+        self.img_menu.addAction(next_act)
+
+        prev_act = QAction("前の画像", self)
+        prev_act.setShortcut("b")
+        prev_act.setShortcutContext(Qt.ApplicationShortcut)
+        prev_act.triggered.connect(self.prev_image)
+        self.img_menu.addAction(prev_act)
         self.img_menu.addSeparator()
 
         group = QActionGroup(self)

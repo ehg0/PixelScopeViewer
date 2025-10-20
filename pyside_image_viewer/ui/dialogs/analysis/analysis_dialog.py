@@ -26,7 +26,7 @@ Dependencies:
 from typing import Optional
 import numpy as np
 
-from PySide6.QtCore import QRect
+from PySide6.QtCore import QRect, Qt
 from ....core.image_io import get_image_metadata
 from PySide6.QtWidgets import (
     QDialog,
@@ -41,6 +41,7 @@ from PySide6.QtWidgets import (
     QTableWidget,
     QTableWidgetItem,
     QHeaderView,
+    QSizePolicy,
     QGroupBox,
 )
 from PySide6.QtGui import QGuiApplication
@@ -172,10 +173,10 @@ class AnalysisDialog(QDialog):
         # Profile tab
         prof_tab = QWidget()
         pl = QHBoxLayout(prof_tab)
-        
+
         # Left side: plot and statistics in vertical layout
         prof_left_layout = QVBoxLayout()
-        
+
         if PYQTGRAPH_AVAILABLE:
             self.prof_widget = PlotWidget()
             self.prof_widget.setLabel("left", "Intensity")
@@ -200,23 +201,38 @@ class AnalysisDialog(QDialog):
             prof_left_layout.addWidget(self.prof_widget, 3)
         else:
             self.prof_widget = None
-        
-        # Statistics display
-        self.prof_stats_browser = QTextBrowser()
-        self.prof_stats_browser.setReadOnly(True)
-        self.prof_stats_browser.setMaximumHeight(100)
-        self.prof_stats_browser.setStyleSheet("""
-            QTextBrowser {
-                border: 1px solid #cccccc;
-                border-radius: 3px;
-                padding: 5px;
-                background-color: #f8f9fa;
-                font-family: monospace;
-                font-size: 9pt;
-            }
-        """)
-        prof_left_layout.addWidget(self.prof_stats_browser, 0)
-        
+
+        # Statistics display (table, read-only, selectable cells)
+        # Table layout: rows = channels, columns = [ch, Mean, Std, Median, Min, Max]
+        self.prof_stats_table = QTableWidget()
+        stats_headers = ["ch", "Mean", "Std", "Median", "Min", "Max"]
+        self.prof_stats_table.setColumnCount(len(stats_headers))
+        self.prof_stats_table.setHorizontalHeaderLabels(stats_headers)
+        self.prof_stats_table.setRowCount(0)  # filled per visible channel
+        self.prof_stats_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.prof_stats_table.setSelectionMode(QTableWidget.ExtendedSelection)
+        self.prof_stats_table.setSelectionBehavior(QTableWidget.SelectItems)
+        self.prof_stats_table.setMaximumHeight(120)
+        # Use a fixed total width for the stats table and fixed column widths.
+        # Make the 'ch' column wider for readability, and distribute remaining
+        # width evenly among the numeric columns.
+        total_w = 600
+        ch_w = 120
+        other_w = max(60, (total_w - ch_w) // (self.prof_stats_table.columnCount() - 1))
+        header = self.prof_stats_table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.Fixed)
+        # Set the widths: column 0 is ch, others are equal
+        self.prof_stats_table.setColumnWidth(0, ch_w)
+        for c in range(1, self.prof_stats_table.columnCount()):
+            self.prof_stats_table.setColumnWidth(c, other_w)
+        # Apply fixed table width and sensible font size
+        self.prof_stats_table.setFixedWidth(ch_w + other_w * (self.prof_stats_table.columnCount() - 1) + 2)
+        self.prof_stats_table.setStyleSheet("QTableWidget { font-size: 10pt; }")
+        # Disable horizontal scrollbar and hide vertical index
+        self.prof_stats_table.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.prof_stats_table.verticalHeader().setVisible(False)
+        prof_left_layout.addWidget(self.prof_stats_table, 0)
+
         pl.addLayout(prof_left_layout, 1)
         pv = QVBoxLayout()
         # Add left and right margins to the button area
@@ -305,6 +321,11 @@ class AnalysisDialog(QDialog):
         self.prof_copy_btn.setMinimumWidth(100)  # Set minimum width for better appearance
         self.prof_copy_btn.clicked.connect(self.copy_profile_to_clipboard)
         export_layout.addWidget(self.prof_copy_btn)
+        # Copy statistics button for profile
+        self.prof_copy_stats_btn = QPushButton("Copy stats")
+        self.prof_copy_stats_btn.setMinimumWidth(100)
+        self.prof_copy_stats_btn.clicked.connect(self.copy_prof_stats_to_clipboard)
+        export_layout.addWidget(self.prof_copy_stats_btn)
         pv.addWidget(export_group)
 
         pv.addStretch(1)
@@ -314,10 +335,10 @@ class AnalysisDialog(QDialog):
         # Histogram tab
         hist_tab = QWidget()
         hl = QHBoxLayout(hist_tab)
-        
+
         # Left side: plot and statistics in vertical layout
         hist_left_layout = QVBoxLayout()
-        
+
         if PYQTGRAPH_AVAILABLE:
             self.hist_widget = PlotWidget()
             self.hist_widget.setLabel("left", "Count")
@@ -342,23 +363,34 @@ class AnalysisDialog(QDialog):
             hist_left_layout.addWidget(self.hist_widget, 3)
         else:
             self.hist_widget = None
-        
-        # Statistics display
-        self.hist_stats_browser = QTextBrowser()
-        self.hist_stats_browser.setReadOnly(True)
-        self.hist_stats_browser.setMaximumHeight(100)
-        self.hist_stats_browser.setStyleSheet("""
-            QTextBrowser {
-                border: 1px solid #cccccc;
-                border-radius: 3px;
-                padding: 5px;
-                background-color: #f8f9fa;
-                font-family: monospace;
-                font-size: 9pt;
-            }
-        """)
-        hist_left_layout.addWidget(self.hist_stats_browser, 0)
-        
+
+        # Statistics display (table, read-only, selectable cells)
+        # Table layout: rows = channels, columns = [ch, Mean, Std, Median, Min, Max]
+        self.hist_stats_table = QTableWidget()
+        stats_headers = ["ch", "Mean", "Std", "Median", "Min", "Max"]
+        self.hist_stats_table.setColumnCount(len(stats_headers))
+        self.hist_stats_table.setHorizontalHeaderLabels(stats_headers)
+        self.hist_stats_table.setRowCount(0)
+        self.hist_stats_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.hist_stats_table.setSelectionMode(QTableWidget.ExtendedSelection)
+        self.hist_stats_table.setSelectionBehavior(QTableWidget.SelectItems)
+        self.hist_stats_table.setMaximumHeight(120)
+        # Make header stretch to available width to avoid horizontal scrollbars.
+        h_header = self.hist_stats_table.horizontalHeader()
+        total_w = 600
+        ch_w = 120
+        other_w = max(60, (total_w - ch_w) // (self.hist_stats_table.columnCount() - 1))
+        h_header.setSectionResizeMode(QHeaderView.Fixed)
+        self.hist_stats_table.setColumnWidth(0, ch_w)
+        for c in range(1, self.hist_stats_table.columnCount()):
+            self.hist_stats_table.setColumnWidth(c, other_w)
+        self.hist_stats_table.setFixedWidth(ch_w + other_w * (self.hist_stats_table.columnCount() - 1) + 2)
+        self.hist_stats_table.setStyleSheet("QTableWidget { font-size: 10pt; }")
+        self.hist_stats_table.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        # Hide row index (vertical header)
+        self.hist_stats_table.verticalHeader().setVisible(False)
+        hist_left_layout.addWidget(self.hist_stats_table, 0)
+
         hl.addLayout(hist_left_layout, 1)
 
         vcol = QVBoxLayout()
@@ -416,6 +448,11 @@ class AnalysisDialog(QDialog):
         self.hist_copy_btn.setMinimumWidth(100)  # Set minimum width for better appearance
         self.hist_copy_btn.clicked.connect(self.copy_histogram_to_clipboard)
         export_layout.addWidget(self.hist_copy_btn)
+        # Copy statistics button for histogram
+        self.hist_copy_stats_btn = QPushButton("Copy stats")
+        self.hist_copy_stats_btn.setMinimumWidth(100)
+        self.hist_copy_stats_btn.clicked.connect(self.copy_hist_stats_to_clipboard)
+        export_layout.addWidget(self.hist_copy_stats_btn)
         vcol.addWidget(export_group)
 
         vcol.addStretch(1)
@@ -772,6 +809,73 @@ class AnalysisDialog(QDialog):
         QGuiApplication.clipboard().setText(text)
         QMessageBox.information(self, "Copy", "Profile copied to clipboard.")
 
+    def _table_selection_to_csv(self, table: QTableWidget) -> str:
+        """Convert the selected region of a QTableWidget to CSV text.
+
+        If multiple non-contiguous ranges are selected, the first range is used.
+        """
+        ranges = table.selectedRanges()
+        cols = table.columnCount()
+        header_labels = [
+            table.horizontalHeaderItem(c).text() if table.horizontalHeaderItem(c) is not None else ""
+            for c in range(cols)
+        ]
+
+        if not ranges:
+            # If nothing selected, export whole table including header
+            rows = table.rowCount()
+            out_lines = []
+            out_lines.append(",".join(header_labels))
+            for r in range(rows):
+                row_vals = []
+                for c in range(cols):
+                    item = table.item(r, c)
+                    row_vals.append(item.text() if item is not None else "")
+                out_lines.append(",".join(row_vals))
+            return "\n".join(out_lines)
+
+        r = ranges[0]
+        # Build header for selected columns
+        sel_header = [header_labels[c] for c in range(r.leftColumn(), r.rightColumn() + 1)]
+        out_lines = [",".join(sel_header)]
+        for row in range(r.topRow(), r.bottomRow() + 1):
+            vals = []
+            for col in range(r.leftColumn(), r.rightColumn() + 1):
+                item = table.item(row, col)
+                vals.append(item.text() if item is not None else "")
+            out_lines.append(",".join(vals))
+        return "\n".join(out_lines)
+
+    def _table_to_csv(self, table: QTableWidget) -> str:
+        """Export entire table (with header) to CSV text."""
+        cols = table.columnCount()
+        header_labels = [
+            table.horizontalHeaderItem(c).text() if table.horizontalHeaderItem(c) is not None else ""
+            for c in range(cols)
+        ]
+        rows = table.rowCount()
+        out_lines = [",".join(header_labels)]
+        for r in range(rows):
+            row_vals = [table.item(r, c).text() if table.item(r, c) is not None else "" for c in range(cols)]
+            out_lines.append(",".join(row_vals))
+        return "\n".join(out_lines)
+
+    def copy_hist_stats_to_clipboard(self):
+        if not hasattr(self, "hist_stats_table"):
+            QMessageBox.information(self, "Copy", "No histogram stats to copy.")
+            return
+        text = self._table_to_csv(self.hist_stats_table)
+        QGuiApplication.clipboard().setText(text)
+        QMessageBox.information(self, "Copy", "Histogram stats copied to clipboard.")
+
+    def copy_prof_stats_to_clipboard(self):
+        if not hasattr(self, "prof_stats_table"):
+            QMessageBox.information(self, "Copy", "No profile stats to copy.")
+            return
+        text = self._table_to_csv(self.prof_stats_table)
+        QGuiApplication.clipboard().setText(text)
+        QMessageBox.information(self, "Copy", "Profile stats copied to clipboard.")
+
     def _compute_profile(self, channel_data: np.ndarray) -> np.ndarray:
         """Compute intensity profile for a single channel using optimized numpy operations.
 
@@ -854,86 +958,189 @@ class AnalysisDialog(QDialog):
 
     def _update_histogram_statistics(self, arr: np.ndarray):
         """Calculate and display histogram statistics for each channel.
-        
+
         Args:
             arr: Image array (may be 2D grayscale or 3D color)
         """
-        if not hasattr(self, "hist_stats_browser"):
+        if not hasattr(self, "hist_stats_table"):
             return
-        
-        stats_lines = []
-        
+
+        # We'll populate table with rows per channel and fixed columns: ch, Mean, Std, Median, Min, Max
+        headers = ["ch", "Mean", "Std", "Median", "Min", "Max"]
+        self.hist_stats_table.setColumnCount(len(headers))
+        self.hist_stats_table.setHorizontalHeaderLabels(headers)
+
         if arr.ndim == 3 and arr.shape[2] > 1:
-            # Multi-channel image
             nch = arr.shape[2]
             if not self.channel_checks:
                 self.channel_checks = [True] * nch
-            
-            for c in range(nch):
-                if self.channel_checks[c]:
-                    data = arr[:, :, c].ravel()
-                    stats_lines.append(f"<b>Channel {c}:</b>")
-                    stats_lines.append(
-                        f"  Mean: {np.mean(data):.2f}  "
-                        f"Std: {np.std(data):.2f}  "
-                        f"Min: {np.min(data):.0f}  "
-                        f"Max: {np.max(data):.0f}  "
-                        f"Median: {np.median(data):.2f}"
-                    )
+            # Rows: one per channel (even if hidden we can choose to skip hidden channels)
+            visible_channels = [c for c in range(nch) if self.channel_checks[c]]
+            self.hist_stats_table.setRowCount(len(visible_channels))
+            for row_idx, c in enumerate(visible_channels):
+                data = arr[:, :, c].ravel()
+                mean_v = np.mean(data)
+                median_v = np.median(data)
+                std_v = np.std(data)
+                min_v = np.min(data)
+                max_v = np.max(data)
+
+                # Show Min/Max/Median as integers when original channel data is integer dtype
+                is_int_dtype = np.issubdtype(data.dtype, np.integer)
+
+                ch_item = QTableWidgetItem(str(c))
+                ch_item.setFlags(ch_item.flags() & ~Qt.ItemIsEditable)
+                ch_item.setTextAlignment(Qt.AlignCenter)
+                self.hist_stats_table.setItem(row_idx, 0, ch_item)
+
+                # Format: Mean/Std -> 4 decimal places; Median/Min/Max -> int if original dtype integer else 4 decimals
+                mi = QTableWidgetItem(f"{mean_v:.4f}")
+                mi.setTextAlignment(Qt.AlignCenter)
+                si = QTableWidgetItem(f"{std_v:.4f}")
+                si.setTextAlignment(Qt.AlignCenter)
+                mdi = QTableWidgetItem(f"{int(median_v)}" if is_int_dtype else f"{median_v:.4f}")
+                mdi.setTextAlignment(Qt.AlignCenter)
+                mini = QTableWidgetItem(f"{int(min_v)}" if is_int_dtype else f"{min_v:.4f}")
+                mini.setTextAlignment(Qt.AlignCenter)
+                maxi = QTableWidgetItem(f"{int(max_v)}" if is_int_dtype else f"{max_v:.4f}")
+                maxi.setTextAlignment(Qt.AlignCenter)
+                self.hist_stats_table.setItem(row_idx, 1, mi)
+                self.hist_stats_table.setItem(row_idx, 2, si)
+                self.hist_stats_table.setItem(row_idx, 3, mdi)
+                self.hist_stats_table.setItem(row_idx, 4, mini)
+                self.hist_stats_table.setItem(row_idx, 5, maxi)
+                # Make items read-only
+                for col in range(1, 6):
+                    item = self.hist_stats_table.item(row_idx, col)
+                    if item is not None:
+                        item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+
         else:
-            # Grayscale image
+            # Single channel / grayscale
             gray = arr if arr.ndim == 2 else arr[:, :, 0]
             data = gray.ravel()
-            stats_lines.append("<b>Intensity:</b>")
-            stats_lines.append(
-                f"  Mean: {np.mean(data):.2f}  "
-                f"Std: {np.std(data):.2f}  "
-                f"Min: {np.min(data):.0f}  "
-                f"Max: {np.max(data):.0f}  "
-                f"Median: {np.median(data):.2f}"
-            )
-        
-        self.hist_stats_browser.setHtml("<br>".join(stats_lines))
+            self.hist_stats_table.setRowCount(1)
+            ch_item = QTableWidgetItem("0")
+            ch_item.setFlags(ch_item.flags() & ~Qt.ItemIsEditable)
+            ch_item.setTextAlignment(Qt.AlignCenter)
+            self.hist_stats_table.setItem(0, 0, ch_item)
+            mean_v = np.mean(data)
+            std_v = np.std(data)
+            median_v = np.median(data)
+            min_v = np.min(data)
+            max_v = np.max(data)
+            is_int_dtype = np.issubdtype(gray.dtype, np.integer)
+            mi = QTableWidgetItem(f"{mean_v:.4f}")
+            mi.setTextAlignment(Qt.AlignCenter)
+            si = QTableWidgetItem(f"{std_v:.4f}")
+            si.setTextAlignment(Qt.AlignCenter)
+            mdi = QTableWidgetItem(f"{int(median_v)}" if is_int_dtype else f"{median_v:.4f}")
+            mdi.setTextAlignment(Qt.AlignCenter)
+            mini = QTableWidgetItem(f"{int(min_v)}" if is_int_dtype else f"{min_v:.4f}")
+            mini.setTextAlignment(Qt.AlignCenter)
+            maxi = QTableWidgetItem(f"{int(max_v)}" if is_int_dtype else f"{max_v:.4f}")
+            maxi.setTextAlignment(Qt.AlignCenter)
+            self.hist_stats_table.setItem(0, 1, mi)
+            self.hist_stats_table.setItem(0, 2, si)
+            self.hist_stats_table.setItem(0, 3, mdi)
+            self.hist_stats_table.setItem(0, 4, mini)
+            self.hist_stats_table.setItem(0, 5, maxi)
+            for col in range(1, 6):
+                item = self.hist_stats_table.item(0, col)
+                if item is not None:
+                    item.setFlags(item.flags() & ~Qt.ItemIsEditable)
 
     def _update_profile_statistics(self, arr: np.ndarray):
         """Calculate and display profile statistics for each channel.
-        
+
         Args:
             arr: Image array (may be 2D grayscale or 3D color)
         """
-        if not hasattr(self, "prof_stats_browser"):
+        if not hasattr(self, "prof_stats_table"):
             return
-        
-        stats_lines = []
-        
+
+        # Populate profile stats table with rows per channel and fixed columns ch, Mean, Std, Median, Min, Max
+        headers = ["ch", "Mean", "Std", "Median", "Min", "Max"]
+        self.prof_stats_table.setColumnCount(len(headers))
+        self.prof_stats_table.setHorizontalHeaderLabels(headers)
+
         if arr.ndim == 3 and arr.shape[2] > 1:
-            # Multi-channel image
             nch = arr.shape[2]
             if not self.channel_checks:
                 self.channel_checks = [True] * nch
-            
-            for c in range(nch):
-                if self.channel_checks[c]:
-                    prof = self._compute_profile(arr[:, :, c])
-                    stats_lines.append(f"<b>Channel {c}:</b>")
-                    stats_lines.append(
-                        f"  Mean: {np.mean(prof):.2f}  "
-                        f"Std: {np.std(prof):.2f}  "
-                        f"Min: {np.min(prof):.2f}  "
-                        f"Max: {np.max(prof):.2f}  "
-                        f"Median: {np.median(prof):.2f}"
-                    )
+            visible_channels = [c for c in range(nch) if self.channel_checks[c]]
+            self.prof_stats_table.setRowCount(len(visible_channels))
+            for row_idx, c in enumerate(visible_channels):
+                prof = self._compute_profile(arr[:, :, c])
+                mean_v = np.mean(prof) if prof.size else 0.0
+                median_v = np.median(prof) if prof.size else 0.0
+                std_v = np.std(prof) if prof.size else 0.0
+                min_v = np.min(prof) if prof.size else 0.0
+                max_v = np.max(prof) if prof.size else 0.0
+                is_int_dtype = np.issubdtype(arr[:, :, c].dtype, np.integer)
+
+                ch_item = QTableWidgetItem(str(c))
+                ch_item.setFlags(ch_item.flags() & ~Qt.ItemIsEditable)
+                ch_item.setTextAlignment(Qt.AlignCenter)
+                self.prof_stats_table.setItem(row_idx, 0, ch_item)
+
+                mi = QTableWidgetItem(f"{mean_v:.4f}")
+                mi.setTextAlignment(Qt.AlignCenter)
+                si = QTableWidgetItem(f"{std_v:.4f}")
+                si.setTextAlignment(Qt.AlignCenter)
+                mdi = QTableWidgetItem(f"{int(median_v)}" if is_int_dtype else f"{median_v:.4f}")
+                mdi.setTextAlignment(Qt.AlignCenter)
+                mini = QTableWidgetItem(f"{int(min_v)}" if is_int_dtype else f"{min_v:.4f}")
+                mini.setTextAlignment(Qt.AlignCenter)
+                maxi = QTableWidgetItem(f"{int(max_v)}" if is_int_dtype else f"{max_v:.4f}")
+                maxi.setTextAlignment(Qt.AlignCenter)
+                self.prof_stats_table.setItem(row_idx, 1, mi)
+                self.prof_stats_table.setItem(row_idx, 2, si)
+                self.prof_stats_table.setItem(row_idx, 3, mdi)
+                self.prof_stats_table.setItem(row_idx, 4, mini)
+                self.prof_stats_table.setItem(row_idx, 5, maxi)
+                for col in range(1, 6):
+                    item = self.prof_stats_table.item(row_idx, col)
+                    if item is not None:
+                        item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+
         else:
-            # Grayscale image
             gray_data = arr if arr.ndim == 2 else arr[:, :, 0]
             prof = self._compute_profile(gray_data)
-            stats_lines.append("<b>Intensity:</b>")
-            stats_lines.append(
-                f"  Mean: {np.mean(prof):.2f}  "
-                f"Std: {np.std(prof):.2f}  "
-                f"Min: {np.min(prof):.2f}  "
-                f"Max: {np.max(prof):.2f}  "
-                f"Median: {np.median(prof):.2f}"
-            )
-        
-        self.prof_stats_browser.setHtml("<br>".join(stats_lines))
+            self.prof_stats_table.setRowCount(1)
+            ch_item = QTableWidgetItem("0")
+            ch_item.setFlags(ch_item.flags() & ~Qt.ItemIsEditable)
+            ch_item.setTextAlignment(Qt.AlignCenter)
+            self.prof_stats_table.setItem(0, 0, ch_item)
+            mean_v = np.mean(prof) if prof.size else 0.0
+            std_v = np.std(prof) if prof.size else 0.0
+            mean_v = np.mean(prof) if prof.size else 0.0
+            std_v = np.std(prof) if prof.size else 0.0
+            median_v = np.median(prof) if prof.size else 0.0
+            min_v = np.min(prof) if prof.size else 0.0
+            max_v = np.max(prof) if prof.size else 0.0
+            is_int_dtype = np.issubdtype(gray_data.dtype, np.integer) if prof.size else False
+            self.prof_stats_table.setRowCount(1)
+            ch_item = QTableWidgetItem("0")
+            ch_item.setFlags(ch_item.flags() & ~Qt.ItemIsEditable)
+            ch_item.setTextAlignment(Qt.AlignCenter)
+            self.prof_stats_table.setItem(0, 0, ch_item)
+            mi = QTableWidgetItem(f"{mean_v:.4f}")
+            mi.setTextAlignment(Qt.AlignCenter)
+            si = QTableWidgetItem(f"{std_v:.4f}")
+            si.setTextAlignment(Qt.AlignCenter)
+            mdi = QTableWidgetItem(f"{int(median_v)}" if is_int_dtype else f"{median_v:.4f}")
+            mdi.setTextAlignment(Qt.AlignCenter)
+            mini = QTableWidgetItem(f"{int(min_v)}" if is_int_dtype else f"{min_v:.4f}")
+            mini.setTextAlignment(Qt.AlignCenter)
+            maxi = QTableWidgetItem(f"{int(max_v)}" if is_int_dtype else f"{max_v:.4f}")
+            maxi.setTextAlignment(Qt.AlignCenter)
+            self.prof_stats_table.setItem(0, 1, mi)
+            self.prof_stats_table.setItem(0, 2, si)
+            self.prof_stats_table.setItem(0, 3, mdi)
+            self.prof_stats_table.setItem(0, 4, mini)
+            self.prof_stats_table.setItem(0, 5, maxi)
+            for col in range(1, 6):
+                item = self.prof_stats_table.item(0, col)
+                if item is not None:
+                    item.setFlags(item.flags() & ~Qt.ItemIsEditable)

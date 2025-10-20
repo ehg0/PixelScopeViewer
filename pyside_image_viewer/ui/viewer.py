@@ -180,6 +180,18 @@ class ImageViewer(QMainWindow):
         self.right_bit_shift_action.triggered.connect(lambda: self.bit_shift(1))
         self.addAction(self.right_bit_shift_action)
 
+        self.next_image_action = QAction(self)
+        self.next_image_action.setShortcut("n")
+        self.next_image_action.setShortcutContext(Qt.ApplicationShortcut)
+        self.next_image_action.triggered.connect(self.next_image)
+        self.addAction(self.next_image_action)
+
+        self.prev_image_action = QAction(self)
+        self.prev_image_action.setShortcut("b")
+        self.prev_image_action.setShortcutContext(Qt.ApplicationShortcut)
+        self.prev_image_action.triggered.connect(self.prev_image)
+        self.addAction(self.prev_image_action)
+
     def show_brightness_dialog(self):
         """表示輝度調整ダイアログを表示します。
 

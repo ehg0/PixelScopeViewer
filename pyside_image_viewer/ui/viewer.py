@@ -162,6 +162,19 @@ class ImageViewer(QMainWindow):
         help_menu.addAction(QAction("キーボードショートカット", self, triggered=self.help_dialog.show))
 
         # Add global shortcuts
+        # Next/Prev image as application-level shortcuts so they work even when dialogs are focused
+        self.next_image_action = QAction(self)
+        self.next_image_action.setShortcut("n")
+        self.next_image_action.setShortcutContext(Qt.ApplicationShortcut)
+        self.next_image_action.triggered.connect(self.next_image)
+        self.addAction(self.next_image_action)
+
+        self.prev_image_action = QAction(self)
+        self.prev_image_action.setShortcut("b")
+        self.prev_image_action.setShortcutContext(Qt.ApplicationShortcut)
+        self.prev_image_action.triggered.connect(self.prev_image)
+        self.addAction(self.prev_image_action)
+
         self.reset_brightness_action = QAction(self)
         self.reset_brightness_action.setShortcut("Ctrl+R")
         self.reset_brightness_action.setShortcutContext(Qt.ApplicationShortcut)
@@ -369,8 +382,9 @@ class ImageViewer(QMainWindow):
 
     def update_image_list_menu(self):
         self.img_menu.clear()
-        self.img_menu.addAction(QAction("次の画像", self, shortcut="n", triggered=self.next_image))
-        self.img_menu.addAction(QAction("前の画像", self, shortcut="b", triggered=self.prev_image))
+        # Menu entries for navigation (shortcuts are provided as application-level actions)
+        self.img_menu.addAction(QAction("次の画像", self, triggered=self.next_image))
+        self.img_menu.addAction(QAction("前の画像", self, triggered=self.prev_image))
         self.img_menu.addSeparator()
 
         group = QActionGroup(self)

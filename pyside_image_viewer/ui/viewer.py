@@ -382,14 +382,13 @@ class ImageViewer(QMainWindow):
     def update_image_list_menu(self):
         self.img_menu.clear()
         next_act = QAction("次の画像", self)
-        next_act.setShortcut("n")
-        next_act.setShortcutContext(Qt.ApplicationShortcut)
+        # Shortcut for global navigation is provided by the window-level
+        # QAction created in create_menus (self.next_image_action). Do not
+        # set a duplicate shortcut here to avoid double-triggering.
         next_act.triggered.connect(self.next_image)
         self.img_menu.addAction(next_act)
 
         prev_act = QAction("前の画像", self)
-        prev_act.setShortcut("b")
-        prev_act.setShortcutContext(Qt.ApplicationShortcut)
         prev_act.triggered.connect(self.prev_image)
         self.img_menu.addAction(prev_act)
         self.img_menu.addSeparator()

@@ -2,13 +2,20 @@
 
 This module provides the main AnalysisDialog which displays:
 - Info tab: Selection size and position
-- Histogram tab: Intensity histogram with customizable channels
-- Profile tab: Line profile (horizontal/vertical/diagonal) with absolute/relative modes
+- Histogram tab: Intensity histogram with customizable channels and statistical information
+- Profile tab: Line profile (horizontal/vertical/diagonal) with absolute/relative modes and statistical information
 - Metadata tab: Image metadata in table format with EXIF information
 
 The dialog supports pyqtgraph-based interactive plots with right-click
 context menus for plot configuration. If pyqtgraph is not available, the
 histogram and profile tabs will show empty placeholders.
+
+Statistical information displayed includes:
+- Mean: Average intensity value
+- Std: Standard deviation of intensity values
+- Min: Minimum intensity value
+- Max: Maximum intensity value
+- Median: Median intensity value
 
 Dependencies:
     - pyqtgraph (optional): For fast histogram and profile plotting
@@ -56,18 +63,24 @@ from .widgets import CopyableTableWidget
 class AnalysisDialog(QDialog):
     """Main analysis dialog with tabbed interface for Info, Histogram, and Profile.
 
-    This dialog provides three tabs for analyzing image selections:
+    This dialog provides four tabs for analyzing image selections:
 
-    1. Info Tab:
+    1. Metadata Tab:
+       - Displays comprehensive image metadata including EXIF information
+       - Copyable table format
+
+    2. Info Tab:
        - Displays selection dimensions and position
 
-    2. Histogram Tab:
+    3. Histogram Tab:
        - Shows intensity distribution across all channels
+       - Statistical information: mean, std, min, max, median for visible channels
        - Customizable via "Channels..." button
        - "Copy data" exports histogram as CSV to clipboard
 
-    3. Profile Tab:
+    4. Profile Tab:
        - Shows averaged intensity profile along a direction
+       - Statistical information: mean, std, min, max, median for visible channels
        - Customizable via "Channels..." button
        - "Copy data" exports profile as CSV to clipboard
 
@@ -159,6 +172,10 @@ class AnalysisDialog(QDialog):
         # Profile tab
         prof_tab = QWidget()
         pl = QHBoxLayout(prof_tab)
+        
+        # Left side: plot and statistics in vertical layout
+        prof_left_layout = QVBoxLayout()
+        
         if PYQTGRAPH_AVAILABLE:
             self.prof_widget = PlotWidget()
             self.prof_widget.setLabel("left", "Intensity")
@@ -180,9 +197,27 @@ class AnalysisDialog(QDialog):
             # Ensure axes are in Auto state
             view_box.enableAutoRange(axis=pg.ViewBox.XYAxes, enable=True)
 
-            pl.addWidget(self.prof_widget, 1)
+            prof_left_layout.addWidget(self.prof_widget, 3)
         else:
             self.prof_widget = None
+        
+        # Statistics display
+        self.prof_stats_browser = QTextBrowser()
+        self.prof_stats_browser.setReadOnly(True)
+        self.prof_stats_browser.setMaximumHeight(100)
+        self.prof_stats_browser.setStyleSheet("""
+            QTextBrowser {
+                border: 1px solid #cccccc;
+                border-radius: 3px;
+                padding: 5px;
+                background-color: #f8f9fa;
+                font-family: monospace;
+                font-size: 9pt;
+            }
+        """)
+        prof_left_layout.addWidget(self.prof_stats_browser, 0)
+        
+        pl.addLayout(prof_left_layout, 1)
         pv = QVBoxLayout()
         # Add left and right margins to the button area
         pv.setContentsMargins(10, 10, 10, 10)
@@ -279,6 +314,10 @@ class AnalysisDialog(QDialog):
         # Histogram tab
         hist_tab = QWidget()
         hl = QHBoxLayout(hist_tab)
+        
+        # Left side: plot and statistics in vertical layout
+        hist_left_layout = QVBoxLayout()
+        
         if PYQTGRAPH_AVAILABLE:
             self.hist_widget = PlotWidget()
             self.hist_widget.setLabel("left", "Count")
@@ -300,9 +339,27 @@ class AnalysisDialog(QDialog):
             # Ensure axes are in Auto state
             view_box.enableAutoRange(axis=pg.ViewBox.XYAxes, enable=True)
 
-            hl.addWidget(self.hist_widget, 1)
+            hist_left_layout.addWidget(self.hist_widget, 3)
         else:
             self.hist_widget = None
+        
+        # Statistics display
+        self.hist_stats_browser = QTextBrowser()
+        self.hist_stats_browser.setReadOnly(True)
+        self.hist_stats_browser.setMaximumHeight(100)
+        self.hist_stats_browser.setStyleSheet("""
+            QTextBrowser {
+                border: 1px solid #cccccc;
+                border-radius: 3px;
+                padding: 5px;
+                background-color: #f8f9fa;
+                font-family: monospace;
+                font-size: 9pt;
+            }
+        """)
+        hist_left_layout.addWidget(self.hist_stats_browser, 0)
+        
+        hl.addLayout(hist_left_layout, 1)
 
         vcol = QVBoxLayout()
         # Add left and right margins to the button area
@@ -530,6 +587,9 @@ class AnalysisDialog(QDialog):
         else:
             self.hist_widget.setLogMode(y=False)
 
+        # Update histogram statistics
+        self._update_histogram_statistics(arr)
+
         # Profile
         self.prof_widget.clear()
         self.last_profile_data = {}
@@ -571,6 +631,9 @@ class AnalysisDialog(QDialog):
         self.prof_widget.setTitle(f"Profile ({orientation_label}, {mode_label})", color="#2c3e50", size="12pt")
         self.prof_widget.setLabel("bottom", "Position" if self.x_mode == "relative" else "Absolute Position")
         self.prof_widget.setLabel("left", "Intensity")
+
+        # Update profile statistics
+        self._update_profile_statistics(arr)
 
         # Ensure both widgets are in true "Auto" state for axes
         if PYQTGRAPH_AVAILABLE:
@@ -788,3 +851,89 @@ class AnalysisDialog(QDialog):
             self.x_mode = "relative"
             self.prof_xmode_btn.setText("Relative")
         self.update_contents()
+
+    def _update_histogram_statistics(self, arr: np.ndarray):
+        """Calculate and display histogram statistics for each channel.
+        
+        Args:
+            arr: Image array (may be 2D grayscale or 3D color)
+        """
+        if not hasattr(self, "hist_stats_browser"):
+            return
+        
+        stats_lines = []
+        
+        if arr.ndim == 3 and arr.shape[2] > 1:
+            # Multi-channel image
+            nch = arr.shape[2]
+            if not self.channel_checks:
+                self.channel_checks = [True] * nch
+            
+            for c in range(nch):
+                if self.channel_checks[c]:
+                    data = arr[:, :, c].ravel()
+                    stats_lines.append(f"<b>Channel {c}:</b>")
+                    stats_lines.append(
+                        f"  Mean: {np.mean(data):.2f}  "
+                        f"Std: {np.std(data):.2f}  "
+                        f"Min: {np.min(data):.0f}  "
+                        f"Max: {np.max(data):.0f}  "
+                        f"Median: {np.median(data):.2f}"
+                    )
+        else:
+            # Grayscale image
+            gray = arr if arr.ndim == 2 else arr[:, :, 0]
+            data = gray.ravel()
+            stats_lines.append("<b>Intensity:</b>")
+            stats_lines.append(
+                f"  Mean: {np.mean(data):.2f}  "
+                f"Std: {np.std(data):.2f}  "
+                f"Min: {np.min(data):.0f}  "
+                f"Max: {np.max(data):.0f}  "
+                f"Median: {np.median(data):.2f}"
+            )
+        
+        self.hist_stats_browser.setHtml("<br>".join(stats_lines))
+
+    def _update_profile_statistics(self, arr: np.ndarray):
+        """Calculate and display profile statistics for each channel.
+        
+        Args:
+            arr: Image array (may be 2D grayscale or 3D color)
+        """
+        if not hasattr(self, "prof_stats_browser"):
+            return
+        
+        stats_lines = []
+        
+        if arr.ndim == 3 and arr.shape[2] > 1:
+            # Multi-channel image
+            nch = arr.shape[2]
+            if not self.channel_checks:
+                self.channel_checks = [True] * nch
+            
+            for c in range(nch):
+                if self.channel_checks[c]:
+                    prof = self._compute_profile(arr[:, :, c])
+                    stats_lines.append(f"<b>Channel {c}:</b>")
+                    stats_lines.append(
+                        f"  Mean: {np.mean(prof):.2f}  "
+                        f"Std: {np.std(prof):.2f}  "
+                        f"Min: {np.min(prof):.2f}  "
+                        f"Max: {np.max(prof):.2f}  "
+                        f"Median: {np.median(prof):.2f}"
+                    )
+        else:
+            # Grayscale image
+            gray_data = arr if arr.ndim == 2 else arr[:, :, 0]
+            prof = self._compute_profile(gray_data)
+            stats_lines.append("<b>Intensity:</b>")
+            stats_lines.append(
+                f"  Mean: {np.mean(prof):.2f}  "
+                f"Std: {np.std(prof):.2f}  "
+                f"Min: {np.min(prof):.2f}  "
+                f"Max: {np.max(prof):.2f}  "
+                f"Median: {np.median(prof):.2f}"
+            )
+        
+        self.prof_stats_browser.setHtml("<br>".join(stats_lines))

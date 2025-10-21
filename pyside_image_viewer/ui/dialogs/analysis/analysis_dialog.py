@@ -788,6 +788,10 @@ class AnalysisDialog(QDialog):
             for key, value in sorted(exif_items):
                 value_str = str(value)
                 rows.append((key, value_str))
+                if key == "EXIF_ExposureTime":
+                    # Add a human-readable exposure time
+                    exposure_time = eval(value)
+                    rows.append((" -> (seconds)", f"{exposure_time:.3e}"))
 
             # Populate table
             self.metadata_table.setRowCount(len(rows))

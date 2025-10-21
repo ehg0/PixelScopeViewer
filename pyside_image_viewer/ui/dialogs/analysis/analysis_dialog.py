@@ -597,6 +597,10 @@ class AnalysisDialog(QDialog):
             nch = arr.shape[2]
             if not self.channel_checks:
                 self.channel_checks = [True] * nch
+            # Adjust channel_checks length to match current number of channels
+            elif len(self.channel_checks) < nch:
+                # Extend with True for new channels
+                self.channel_checks.extend([True] * (nch - len(self.channel_checks)))
             for c in range(nch):
                 data = arr[:, :, c].ravel()
                 hist, bins = np.histogram(data, bins=256, range=(0, 255))
@@ -637,6 +641,10 @@ class AnalysisDialog(QDialog):
             nch = arr.shape[2]
             if not self.channel_checks:
                 self.channel_checks = [True] * nch
+            # Adjust channel_checks length to match current number of channels
+            elif len(self.channel_checks) < nch:
+                # Extend with True for new channels
+                self.channel_checks.extend([True] * (nch - len(self.channel_checks)))
             for c in range(nch):
                 prof = self._compute_profile(arr[:, :, c])
                 if self.x_mode == "absolute" and self.image_rect is not None:
@@ -974,6 +982,10 @@ class AnalysisDialog(QDialog):
             nch = arr.shape[2]
             if not self.channel_checks:
                 self.channel_checks = [True] * nch
+            # Adjust channel_checks length to match current number of channels
+            elif len(self.channel_checks) < nch:
+                # Extend with True for new channels
+                self.channel_checks.extend([True] * (nch - len(self.channel_checks)))
             # Rows: one per channel (even if hidden we can choose to skip hidden channels)
             visible_channels = [c for c in range(nch) if self.channel_checks[c]]
             self.hist_stats_table.setRowCount(len(visible_channels))
@@ -1068,6 +1080,10 @@ class AnalysisDialog(QDialog):
             nch = arr.shape[2]
             if not self.channel_checks:
                 self.channel_checks = [True] * nch
+            # Adjust channel_checks length to match current number of channels
+            elif len(self.channel_checks) < nch:
+                # Extend with True for new channels
+                self.channel_checks.extend([True] * (nch - len(self.channel_checks)))
             visible_channels = [c for c in range(nch) if self.channel_checks[c]]
             self.prof_stats_table.setRowCount(len(visible_channels))
             for row_idx, c in enumerate(visible_channels):

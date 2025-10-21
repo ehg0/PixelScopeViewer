@@ -280,6 +280,14 @@ class SelectionManagerMixin:
 
         rect = self.selection_rect
         dist = self._edge_grab_distance
+        
+        # For small selections, reduce the grab distance to ensure there's
+        # always an interior region for right-click move operations.
+        # Use half the minimum dimension, capped at the configured grab distance.
+        min_dimension = min(rect.width(), rect.height())
+        if min_dimension < dist * 2:
+            # Ensure at least 1 pixel interior for very small selections
+            dist = max(1, min_dimension // 3)
 
         # Check corners first (higher priority)
         if abs(pos.x() - rect.left()) <= dist and abs(pos.y() - rect.top()) <= dist:

@@ -42,9 +42,11 @@ from PySide6.QtWidgets import (
     QTableWidgetItem,
     QHeaderView,
     QSizePolicy,
+    QMenu,
     QGroupBox,
 )
 from PySide6.QtGui import QGuiApplication
+from PySide6.QtGui import QAction
 
 try:
     import pyqtgraph as pg
@@ -130,6 +132,13 @@ class AnalysisDialog(QDialog):
         self.last_hist_data = {}
         self.last_profile_data = {}
 
+        # Persisted plot settings for histogram/profile (kept across image switches)
+        # keys: 'hist' and 'prof' with values for grid/log/autorange
+        self.plot_settings = {
+            "hist": {"grid": True, "log": False, "auto_range": True},
+            "prof": {"grid": True, "auto_range": True},
+        }
+
         self._build_ui()
 
         if self.image_array is not None:
@@ -190,13 +199,25 @@ class AnalysisDialog(QDialog):
             self.prof_widget.getAxis("left").setTextPen(pg.mkPen(color="#2c3e50"))
             self.prof_widget.getAxis("bottom").setTextPen(pg.mkPen(color="#2c3e50"))
 
-            # Enable right-click menu and disable drag operations
+            # Use pyqtgraph's default menu
             self.prof_widget.setMenuEnabled(True)
             # Configure ViewBox for analysis use
             view_box = self.prof_widget.getViewBox()
             view_box.setMouseEnabled(x=False, y=False)  # Disable drag/zoom
-            # Ensure axes are in Auto state
-            view_box.enableAutoRange(axis=pg.ViewBox.XYAxes, enable=True)
+            # Don't force auto range here; we will restore saved state or allow defaults
+            # Persist ViewBox state changes (autoRange, mouseMode, invert axes, etc.)
+            try:
+                view_box.sigStateChanged.connect(lambda vb, w="prof": self._save_viewbox_state(vb, w))
+                # initial save
+                self._save_viewbox_state(view_box, "prof")
+            except Exception:
+                pass
+
+            # Also connect PlotItem controls (grid/log) to persist their states
+            try:
+                self._connect_plotitem_controls(self.prof_widget.getPlotItem(), "prof")
+            except Exception:
+                pass
 
             prof_left_layout.addWidget(self.prof_widget, 3)
         else:
@@ -352,13 +373,25 @@ class AnalysisDialog(QDialog):
             self.hist_widget.getAxis("left").setTextPen(pg.mkPen(color="#2c3e50"))
             self.hist_widget.getAxis("bottom").setTextPen(pg.mkPen(color="#2c3e50"))
 
-            # Enable right-click menu and disable drag operations
+            # Use pyqtgraph's default menu
             self.hist_widget.setMenuEnabled(True)
             # Configure ViewBox for analysis use
             view_box = self.hist_widget.getViewBox()
             view_box.setMouseEnabled(x=False, y=False)  # Disable drag/zoom
-            # Ensure axes are in Auto state
-            view_box.enableAutoRange(axis=pg.ViewBox.XYAxes, enable=True)
+            # Don't force auto range here; we will restore saved state or allow defaults
+            # Persist ViewBox state changes (autoRange, mouseMode, invert axes, etc.)
+            try:
+                view_box.sigStateChanged.connect(lambda vb, w="hist": self._save_viewbox_state(vb, w))
+                # initial save
+                self._save_viewbox_state(view_box, "hist")
+            except Exception:
+                pass
+
+            # Also connect PlotItem controls (grid/log) to persist their states
+            try:
+                self._connect_plotitem_controls(self.hist_widget.getPlotItem(), "hist")
+            except Exception:
+                pass
 
             hist_left_layout.addWidget(self.hist_widget, 3)
         else:
@@ -597,6 +630,10 @@ class AnalysisDialog(QDialog):
             nch = arr.shape[2]
             if not self.channel_checks:
                 self.channel_checks = [True] * nch
+            # Adjust channel_checks length to match current number of channels
+            elif len(self.channel_checks) < nch:
+                # Extend with True for new channels
+                self.channel_checks.extend([True] * (nch - len(self.channel_checks)))
             for c in range(nch):
                 data = arr[:, :, c].ravel()
                 hist, bins = np.histogram(data, bins=256, range=(0, 255))
@@ -605,7 +642,12 @@ class AnalysisDialog(QDialog):
                 if self.channel_checks[c]:
                     # Line only, no symbols
                     pen = pg.mkPen(color=colors[c] if c < len(colors) else "#7f8c8d", width=2)
-                    self.hist_widget.plot(xs, hist, pen=pen, name=f"C{c}")
+                    y = hist
+                    # Apply log transform if requested
+                    if self.plot_settings.get("hist", {}).get("log", False):
+                        with np.errstate(divide="ignore"):
+                            y = np.log10(hist.astype(float) + 1.0)
+                    self.hist_widget.plot(xs, y, pen=pen, name=f"C{c}")
         else:
             gray = arr if arr.ndim == 2 else arr[:, :, 0]
             hist, bins = np.histogram(gray.ravel(), bins=256, range=(0, 255))
@@ -613,16 +655,17 @@ class AnalysisDialog(QDialog):
             self.last_hist_data["I"] = (xs, hist)
             # Line only, no symbols
             pen = pg.mkPen(color="#333333", width=2)
-            self.hist_widget.plot(xs, hist, pen=pen, name="Intensity")
+            y = hist
+            if self.plot_settings.get("hist", {}).get("log", False):
+                with np.errstate(divide="ignore"):
+                    y = np.log10(hist.astype(float) + 1.0)
+            self.hist_widget.plot(xs, y, pen=pen, name="Intensity")
 
         # Set title with improved styling
         self.hist_widget.setTitle("Intensity Histogram", color="#2c3e50", size="12pt")
 
-        # Apply log scale if needed
-        if hasattr(self, "hist_yscale") and self.hist_yscale == "log":
-            self.hist_widget.setLogMode(y=True)
-        else:
-            self.hist_widget.setLogMode(y=False)
+        # Note: histogram log display is implemented via data transform (log10(hist+1)).
+        # The legacy setLogMode calls have been removed to avoid axis complications.
 
         # Update histogram statistics
         self._update_histogram_statistics(arr)
@@ -637,6 +680,10 @@ class AnalysisDialog(QDialog):
             nch = arr.shape[2]
             if not self.channel_checks:
                 self.channel_checks = [True] * nch
+            # Adjust channel_checks length to match current number of channels
+            elif len(self.channel_checks) < nch:
+                # Extend with True for new channels
+                self.channel_checks.extend([True] * (nch - len(self.channel_checks)))
             for c in range(nch):
                 prof = self._compute_profile(arr[:, :, c])
                 if self.x_mode == "absolute" and self.image_rect is not None:
@@ -671,18 +718,23 @@ class AnalysisDialog(QDialog):
 
         # Update profile statistics
         self._update_profile_statistics(arr)
-
-        # Ensure both widgets are in true "Auto" state for axes
+        # Ensure both widgets are in true "Auto" state for axes, unless we have a saved ViewBox state
         if PYQTGRAPH_AVAILABLE:
-            # Set histogram to auto range state (order is important)
-            hist_vb = self.hist_widget.getViewBox()
-            hist_vb.autoRange()  # First fit to current data
-            hist_vb.enableAutoRange(axis=pg.ViewBox.XYAxes)  # Then enable auto for future
+            try:
+                # Only perform autoRange if we don't already have a saved state for the viewboxes
+                if not hasattr(self, "viewbox_full_hist"):
+                    hist_vb = self.hist_widget.getViewBox()
+                    hist_vb.autoRange()  # First fit to current data
+                    hist_vb.enableAutoRange(axis=pg.ViewBox.XYAxes)  # Then enable auto for future
+                if not hasattr(self, "viewbox_full_prof"):
+                    prof_vb = self.prof_widget.getViewBox()
+                    prof_vb.autoRange()  # First fit to current data
+                    prof_vb.enableAutoRange(axis=pg.ViewBox.XYAxes)  # Then enable auto for future
+            except Exception:
+                pass
 
-            # Set profile to auto range state (order is important)
-            prof_vb = self.prof_widget.getViewBox()
-            prof_vb.autoRange()  # First fit to current data
-            prof_vb.enableAutoRange(axis=pg.ViewBox.XYAxes)  # Then enable auto for future
+        # Re-apply any persisted plot settings (grid/log/auto-range, ViewBox state)
+        self._apply_plot_settings()
 
         # Update button texts to reflect current state
         if hasattr(self, "prof_orientation_btn"):
@@ -736,6 +788,10 @@ class AnalysisDialog(QDialog):
             for key, value in sorted(exif_items):
                 value_str = str(value)
                 rows.append((key, value_str))
+                if key == "EXIF_ExposureTime":
+                    # Add a human-readable exposure time
+                    exposure_time = eval(value)
+                    rows.append((" -> (seconds)", f"{exposure_time:.3e}"))
 
             # Populate table
             self.metadata_table.setRowCount(len(rows))
@@ -974,6 +1030,10 @@ class AnalysisDialog(QDialog):
             nch = arr.shape[2]
             if not self.channel_checks:
                 self.channel_checks = [True] * nch
+            # Adjust channel_checks length to match current number of channels
+            elif len(self.channel_checks) < nch:
+                # Extend with True for new channels
+                self.channel_checks.extend([True] * (nch - len(self.channel_checks)))
             # Rows: one per channel (even if hidden we can choose to skip hidden channels)
             visible_channels = [c for c in range(nch) if self.channel_checks[c]]
             self.hist_stats_table.setRowCount(len(visible_channels))
@@ -1068,6 +1128,10 @@ class AnalysisDialog(QDialog):
             nch = arr.shape[2]
             if not self.channel_checks:
                 self.channel_checks = [True] * nch
+            # Adjust channel_checks length to match current number of channels
+            elif len(self.channel_checks) < nch:
+                # Extend with True for new channels
+                self.channel_checks.extend([True] * (nch - len(self.channel_checks)))
             visible_channels = [c for c in range(nch) if self.channel_checks[c]]
             self.prof_stats_table.setRowCount(len(visible_channels))
             for row_idx, c in enumerate(visible_channels):
@@ -1144,3 +1208,198 @@ class AnalysisDialog(QDialog):
                 item = self.prof_stats_table.item(0, col)
                 if item is not None:
                     item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+
+    def _show_plot_context_menu(self, widget, which: str, pos):
+        """Show pyqtgraph's default context menu for the PlotItem/ViewBox.
+
+        We intentionally do not add custom actions here. Instead we display the
+        PlotItem's `ctrlMenu` (which contains Transforms/Downsample/... and other
+        default groups) and the ViewBox's menu if present. We also attempt a one-
+        time sync of our `plot_settings` with the default menu controls so that
+        those settings are persisted across image switches.
+        """
+        # Prefer PlotItem's ctrlMenu
+        try:
+            plot_item = widget.getPlotItem()
+        except Exception:
+            plot_item = None
+
+        menus = []
+        if plot_item is not None:
+            try:
+                m = plot_item.getMenu()
+            except Exception:
+                m = None
+            if m is not None:
+                menus.append(m)
+
+        # Also include ViewBox menu if available
+        try:
+            vb = widget.getViewBox()
+            if hasattr(vb, "menu") and vb.menu is not None:
+                menus.append(vb.menu)
+        except Exception:
+            vb = None
+
+        # If no menus found, fallback to empty QMenu
+        if not menus:
+            menu = QMenu(widget)
+            try:
+                gpos = widget.mapToGlobal(pos)
+            except Exception:
+                gpos = widget.mapToGlobal(widget.rect().center())
+            menu.exec_(gpos)
+            return
+
+        # Prefer to show PlotItem.ctrlMenu directly so QWidgetActions render
+        # correctly. Show ViewBox menu as well (if present) after the PlotItem
+        # menu so the user sees the full set of default options.
+        try:
+            gpos = widget.mapToGlobal(pos)
+        except Exception:
+            gpos = widget.mapToGlobal(widget.rect().center())
+
+        try:
+            if plot_item is not None and hasattr(plot_item, "ctrlMenu") and plot_item.ctrlMenu is not None:
+                plot_item.ctrlMenu.exec_(gpos)
+        except Exception:
+            pass
+
+        # Show ViewBox menu (e.g., View All, X AXIS, Y AXIS, Mouse Mode) if present
+        try:
+            if vb is not None and hasattr(vb, "menu") and vb.menu is not None:
+                # show slightly offset so the menus don't overlap exactly
+                from PySide6.QtCore import QPoint
+
+                try:
+                    vb.menu.exec_(gpos + QPoint(8, 8))
+                except Exception:
+                    vb.menu.exec_(gpos)
+        except Exception:
+            pass
+
+    def _on_external_grid_toggled(self, checked: bool):
+        # When user toggles grid via the default pyqtgraph menu, update our store
+        val = bool(checked)
+        try:
+            self.plot_settings["hist"]["grid"] = val
+            self.plot_settings["prof"]["grid"] = val
+        except Exception:
+            pass
+
+    def _on_external_log_toggled(self, checked: bool):
+        # When user toggles Log Y via pyqtgraph menu, update store and replot
+        try:
+            self.plot_settings["hist"]["log"] = bool(checked)
+            # Re-draw histogram to reflect log transform
+            self.update_contents()
+        except Exception:
+            pass
+
+    def _connect_plotitem_controls(self, plot_item, which: str):
+        """Connect signals from PlotItem.ctrl controls to persist changes.
+
+        which: 'hist' or 'prof'
+        """
+        if not hasattr(plot_item, "ctrl"):
+            return
+        c = plot_item.ctrl
+        try:
+            # initial sync
+            gval = False
+            try:
+                gval = bool(c.xGridCheck.isChecked() or c.yGridCheck.isChecked())
+            except Exception:
+                pass
+            self.plot_settings[which]["grid"] = gval
+        except Exception:
+            pass
+
+        # connect if available
+        try:
+            if hasattr(c, "xGridCheck"):
+                c.xGridCheck.toggled.connect(lambda checked: self._on_external_grid_toggled(checked))
+            if hasattr(c, "yGridCheck"):
+                c.yGridCheck.toggled.connect(lambda checked: self._on_external_grid_toggled(checked))
+        except Exception:
+            pass
+
+        if which == "hist":
+            try:
+                if hasattr(c, "logYCheck"):
+                    # initial sync
+                    try:
+                        self.plot_settings["hist"]["log"] = bool(c.logYCheck.isChecked())
+                    except Exception:
+                        pass
+                    c.logYCheck.toggled.connect(lambda checked: self._on_external_log_toggled(checked))
+            except Exception:
+                pass
+
+    def _apply_plot_settings(self):
+        """Apply persisted plot settings to hist_widget and prof_widget if present."""
+        if PYQTGRAPH_AVAILABLE:
+            if hasattr(self, "hist_widget") and self.hist_widget is not None:
+                s = self.plot_settings.get("hist", {})
+                self.hist_widget.showGrid(x=s.get("grid", True), y=s.get("grid", True))
+                # View range/auto-range will be controlled via saved full ViewBox state
+
+            if hasattr(self, "prof_widget") and self.prof_widget is not None:
+                s = self.plot_settings.get("prof", {})
+                self.prof_widget.showGrid(x=s.get("grid", True), y=s.get("grid", True))
+                # View range/auto-range will be controlled via saved full ViewBox state
+
+        # Restore saved ViewBox states (mouse mode, invert axes, view range, etc.) using full state
+        try:
+            for which in ("hist", "prof"):
+                full_key = f"viewbox_full_{which}"
+                if hasattr(self, full_key):
+                    full_state = getattr(self, full_key)
+                    widget = getattr(self, f"{which}_widget", None)
+                    if widget is None:
+                        continue
+                    try:
+                        vb = widget.getViewBox()
+                    except Exception:
+                        continue
+                    try:
+                        vb.setState(full_state)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+    def _save_viewbox_state(self, vb, which: str):
+        """Save relevant ViewBox state into an attribute for later restoration."""
+        try:
+            # Save full state for robust restoration
+            try:
+                full_state = vb.getState(copy=True)
+                setattr(self, f"viewbox_full_{which}", full_state)
+            except Exception:
+                pass
+            st = {}
+            # mouseMode
+            try:
+                st["mouseMode"] = vb.state.get("mouseMode", None)
+            except Exception:
+                pass
+            # invert flags
+            try:
+                st["invertX"] = vb.state.get("xInverted", False)
+                st["invertY"] = vb.state.get("yInverted", False)
+            except Exception:
+                pass
+            # mouseEnabled
+            try:
+                st["mouseEnabled"] = vb.state.get("mouseEnabled", [True, True])
+            except Exception:
+                pass
+            # autoRange
+            try:
+                st["autoRange"] = vb.state.get("autoRange", [True, True])
+            except Exception:
+                pass
+            setattr(self, f"viewbox_{which}", st)
+        except Exception:
+            pass

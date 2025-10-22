@@ -21,18 +21,20 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QWidget,
     QVBoxLayout,
+    QHBoxLayout,
     QScrollArea,
     QStatusBar,
     QLabel,
     QFileDialog,
     QMessageBox,
     QDialog,
+    QDockWidget,
 )
 from PySide6.QtGui import QPixmap, QPainter, QIcon, QGuiApplication, QAction, QActionGroup
-from PySide6.QtCore import Qt, QRect, QEvent
+from PySide6.QtCore import Qt, QRect, QEvent, Signal
 
 from ..core.image_io import numpy_to_qimage, pil_to_numpy, is_image_file
-from .widgets import ImageLabel
+from .widgets import ImageLabel, NavigatorWidget, DisplayInfoWidget, ROIInfoWidget
 from .dialogs import HelpDialog, DiffDialog, AnalysisDialog, BrightnessDialog
 
 
@@ -73,6 +75,11 @@ class ImageViewer(QMainWindow):
         scale: Current zoom scale factor
     """
 
+    # Signals for widget updates
+    scale_changed = Signal()
+    image_changed = Signal()
+    roi_changed = Signal()
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle("PySide6 Image Viewer")
@@ -98,7 +105,7 @@ class ImageViewer(QMainWindow):
 
         central = QWidget(self)
         self.setCentralWidget(central)
-        layout = QVBoxLayout(central)
+        h_layout = QHBoxLayout(central)
 
         self.current_roi_rect: Optional[QRect] = None
 
@@ -106,8 +113,30 @@ class ImageViewer(QMainWindow):
         self.scroll_area.setWidgetResizable(True)
         self.image_label = ImageLabel(self, self)
         self.scroll_area.setWidget(self.image_label)
-        layout.addWidget(self.scroll_area)
+        h_layout.addWidget(self.scroll_area)
         self.image_label.installEventFilter(self)
+
+        # Right docks
+        # Navigator dock
+        self.navigator_dock = QDockWidget("Navigator")
+        self.navigator_dock.setFeatures(QDockWidget.DockWidgetFloatable | QDockWidget.DockWidgetMovable)
+        navigator_widget = NavigatorWidget(self)
+        self.navigator_dock.setWidget(navigator_widget)
+        self.addDockWidget(Qt.RightDockWidgetArea, self.navigator_dock)
+
+        # Display info dock
+        self.display_info_dock = QDockWidget("Display Area Info")
+        self.display_info_dock.setFeatures(QDockWidget.DockWidgetFloatable | QDockWidget.DockWidgetMovable)
+        display_info_widget = DisplayInfoWidget(self)
+        self.display_info_dock.setWidget(display_info_widget)
+        self.addDockWidget(Qt.RightDockWidgetArea, self.display_info_dock)
+
+        # ROI info dock
+        self.roi_info_dock = QDockWidget("ROI Area Info")
+        self.roi_info_dock.setFeatures(QDockWidget.DockWidgetFloatable | QDockWidget.DockWidgetMovable)
+        roi_info_widget = ROIInfoWidget(self)
+        self.roi_info_dock.setWidget(roi_info_widget)
+        self.addDockWidget(Qt.RightDockWidgetArea, self.roi_info_dock)
 
         self.status = QStatusBar()
         self.setStatusBar(self.status)
@@ -452,6 +481,7 @@ class ImageViewer(QMainWindow):
 
         arr = img["array"]
         self.display_image(arr)
+        self.image_changed.emit()
         self.update_image_list_menu()
 
         # Update brightness dialog if it's open
@@ -673,6 +703,8 @@ class ImageViewer(QMainWindow):
         # Keep center point at viewport center
         self._set_scroll_to_keep_image_point_at_position(img_center, center_pos)
 
+        self.scale_changed.emit()
+
     def set_zoom_at_status_coords(self, scale: float):
         """ステータスバーに表示している座標（マウス位置）をビュー中心に固定してズームします。
 
@@ -699,6 +731,8 @@ class ImageViewer(QMainWindow):
         # Place the status coordinates at the center of the viewport
         self._set_scroll_to_keep_image_point_at_position(self.current_mouse_image_coords, center_pos)
 
+        self.scale_changed.emit()
+
     def set_zoom_at_coords(self, scale: float, image_coords: tuple[float, float]):
         """指定した画像座標をビューポート中心に維持してズーム倍率を設定します。
 
@@ -723,6 +757,8 @@ class ImageViewer(QMainWindow):
 
         # Place the image_coords at the center of the viewport
         self._set_scroll_to_keep_image_point_at_position(image_coords, center_pos)
+
+        self.scale_changed.emit()
 
     def fit_to_window(self):
         """画像をウィンドウにフィットさせるズーム倍率を設定します。
@@ -885,6 +921,8 @@ class ImageViewer(QMainWindow):
                         # ignore dialog-specific errors and continue notifying others
                         pass
 
+        self.roi_changed.emit()
+
     def copy_roi_to_clipboard(self):
         sel = self.current_roi_rect
         if not sel or self.current_index is None:
@@ -987,6 +1025,17 @@ class ImageViewer(QMainWindow):
             self.status_brightness.setText("")
 
     def update_roi_status(self, rect=None):
+        # Prefer the canonical image-coordinate ROI for consistent display
+        if self.current_roi_rect is not None and not self.current_roi_rect.isNull():
+            x0 = self.current_roi_rect.x()
+            y0 = self.current_roi_rect.y()
+            w = self.current_roi_rect.width()
+            h = self.current_roi_rect.height()
+            x1 = x0 + w - 1
+            y1 = y0 + h - 1
+            self.status_roi.setText(f"({x0}, {y0}) - ({x1}, {y1}), w: {w}, h: {h}")
+            return
+        # Fallback: derive from provided label-rect when current ROI is missing
         if rect is None or rect.isNull():
             self.status_roi.setText("")
             return
@@ -998,6 +1047,45 @@ class ImageViewer(QMainWindow):
         w = x1 - x0 + 1
         h = y1 - y0 + 1
         self.status_roi.setText(f"({x0}, {y0}) - ({x1}, {y1}), w: {w}, h: {h}")
+
+    def set_roi_from_image_rect(self, rect_img: QRect):
+        """Set ROI using image coordinates and update label, status, and listeners.
+
+        This avoids lossy roundtrip via label coordinates when zoomed, ensuring
+        spin box edits map 1:1 to the internal ROI regardless of scale.
+        """
+        try:
+            self.current_roi_rect = rect_img
+            # Project to label/widget coordinates for display
+            s = self.scale if hasattr(self, "scale") else 1.0
+            rect_label = QRect(
+                int(rect_img.x() * s),
+                int(rect_img.y() * s),
+                int(rect_img.width() * s),
+                int(rect_img.height() * s),
+            )
+            self.image_label.roi_rect = rect_label
+            self.image_label.update()
+            # Update status based on canonical image ROI
+            self.update_roi_status()
+
+            # Notify any open modeless AnalysisDialogs
+            if self._analysis_dialogs:
+                img = self.images[self.current_index] if self.current_index is not None else None
+                if img:
+                    arr = img.get("base_array", img.get("array"))
+                    img_path = img.get("path")
+                    pil_img = img.get("pil_image")
+                    for dlg in list(self._analysis_dialogs):
+                        try:
+                            dlg.set_image_and_rect(arr, self.current_roi_rect, img_path, pil_img)
+                        except Exception:
+                            pass
+            # Emit ROI changed for dependent widgets (e.g., ROIInfo)
+            self.roi_changed.emit()
+        except Exception:
+            # Best effort; avoid crashing on edge cases
+            self.roi_changed.emit()
 
     def keyPressEvent(self, e):
         if e.key() == Qt.Key_Escape:

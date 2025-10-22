@@ -6,7 +6,7 @@ for displaying and navigating images with analysis tools.
 Features:
 - Multi-image loading and navigation
 - Zoom in/out with keyboard shortcuts and Ctrl+mouse wheel
-- Pixel-aligned selection with keyboard editing
+- Pixel-aligned ROI with keyboard editing
 - Bit-shift operations for raw/scientific images
 - Analysis dialogs (histogram, profile, info)
 - Difference image creation
@@ -43,27 +43,27 @@ class ImageViewer(QMainWindow):
     - Loading and displaying images (single or multiple files)
     - Navigating between images with keyboard shortcuts (n/b)
     - Zooming with +/- keys and mouse wheel
-    - Creating and editing pixel-aligned selections
+    - Creating and editing pixel-aligned ROIs
     - Bit-shifting for viewing raw/scientific data (</> keys)
     - Analysis tools (histogram, profile plots)
     - Creating difference images
 
     Keyboard Shortcuts:
         - Ctrl+A: Select entire image
-        - Ctrl+C: Copy selection to clipboard
+        - Ctrl+C: Copy ROI to clipboard
         - n: Next image
         - b: Previous image
         - +: Zoom in (2x)
         - -: Zoom out (0.5x)
         - <: Left bit shift (darker)
         - >: Right bit shift (brighter)
-        - ESC: Clear selection
+        - ESC: Clear ROI
 
     Mouse Controls:
         - Ctrl + Mouse wheel: Zoom in/out (binary steps: 2x/0.5x, centered on status bar coordinates)
-        - Left-drag: Create new selection rectangle
-        - Right-drag: Move existing selection
-        - Left-drag on edges/corners: Resize selection
+        - Left-drag: Create new ROI rectangle
+        - Right-drag: Move existing ROI
+        - Left-drag on edges/corners: Resize ROI
 
     Attributes:
         images: List of loaded image dictionaries with keys:
@@ -94,7 +94,7 @@ class ImageViewer(QMainWindow):
         self.setCentralWidget(central)
         layout = QVBoxLayout(central)
 
-        self.current_selection_rect: Optional[QRect] = None
+        self.current_roi_rect: Optional[QRect] = None
 
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
@@ -107,11 +107,11 @@ class ImageViewer(QMainWindow):
         self.setStatusBar(self.status)
         self.statusBar().setStyleSheet("font-size: 11pt;")
         self.status_pixel = QLabel()
-        self.status_selection = QLabel()
+        self.status_roi = QLabel()
         self.status_brightness = QLabel()  # Changed from status_shift to status_brightness
         self.status_scale = QLabel()
         self.status.addPermanentWidget(self.status_pixel, 2)
-        self.status.addPermanentWidget(self.status_selection, 3)
+        self.status.addPermanentWidget(self.status_roi, 3)
         self.status.addPermanentWidget(self.status_brightness, 2)  # Display brightness params
         self.status.addPermanentWidget(self.status_scale, 1)
 
@@ -130,9 +130,7 @@ class ImageViewer(QMainWindow):
         file_menu.addAction(QAction("読み込み...", self, shortcut="Ctrl+O", triggered=self.open_files))
         file_menu.addSeparator()
         file_menu.addAction(QAction("画像全体を選択", self, shortcut="Ctrl+A", triggered=self.select_all))
-        file_menu.addAction(
-            QAction("選択範囲をコピー", self, shortcut="Ctrl+C", triggered=self.copy_selection_to_clipboard)
-        )
+        file_menu.addAction(QAction("選択範囲をコピー", self, shortcut="Ctrl+C", triggered=self.copy_roi_to_clipboard))
         file_menu.addSeparator()
         file_menu.addAction(QAction("閉じる", self, shortcut="Ctrl+W", triggered=self.close_current_image))
         file_menu.addAction(QAction("すべて閉じる", self, shortcut="Ctrl+Shift+W", triggered=self.close_all_images))
@@ -308,13 +306,13 @@ class ImageViewer(QMainWindow):
         return np.clip(adjusted, 0, 255).astype(np.uint8)
 
     def show_analysis_dialog(self, tab: Optional[str] = None):
-        # open analysis dialog for current image and current selection
+        # open analysis dialog for current image and current ROI
         if self.current_index is None:
             QMessageBox.information(self, "解析", "画像が選択されていません。")
             return
         img = self.images[self.current_index]
         arr = img.get("base_array", img.get("array"))
-        sel = self.current_selection_rect
+        sel = self.current_roi_rect
         img_path = img.get("path")
         pil_img = img.get("pil_image")  # Get cached PIL image
         dlg = AnalysisDialog(self, image_array=arr, image_rect=sel, image_path=img_path, pil_image=pil_img)
@@ -459,17 +457,30 @@ class ImageViewer(QMainWindow):
         except Exception:
             pass
 
-        if self.current_selection_rect:
+        if self.current_roi_rect:
             s = self.scale
             rect = QRect(
-                int(self.current_selection_rect.x() * s),
-                int(self.current_selection_rect.y() * s),
-                int(self.current_selection_rect.width() * s),
-                int(self.current_selection_rect.height() * s),
+                int(self.current_roi_rect.x() * s),
+                int(self.current_roi_rect.y() * s),
+                int(self.current_roi_rect.width() * s),
+                int(self.current_roi_rect.height() * s),
             )
-            self.image_label.selection_rect = rect
+            self.image_label.roi_rect = rect
             self.image_label.update()
-            self.update_selection_status(rect)
+            self.update_roi_status(rect)
+
+        # notify any open modeless AnalysisDialogs so they can refresh for new image
+        if self._analysis_dialogs:
+            img = self.images[self.current_index] if self.current_index is not None else None
+            if img:
+                arr = img.get("base_array", img.get("array"))
+                img_path = img.get("path")
+                pil_img = img.get("pil_image")
+                for dlg in list(self._analysis_dialogs):
+                    try:
+                        dlg.set_image_and_rect(arr, self.current_roi_rect, img_path, pil_img)
+                    except Exception:
+                        pass
 
     def display_image(self, arr):
         """指定した画像配列をビューアに表示します。
@@ -751,27 +762,27 @@ class ImageViewer(QMainWindow):
         self.display_image(shifted)
 
     def select_all(self):
-        """画像全体を選択状態にします。
+        """画像全体をROI状態にします。
 
-        選択が更新された場合は on_selection_changed を経由して関連ダイアログに通知します。
+        選択が更新された場合は on_roi_changed を経由して関連ダイアログに通知します。
         """
         if self.current_index is None or not self.images:
             return
-        self.image_label.set_selection_full()
-        # Notify that selection changed (same as manual selection)
-        if self.image_label.selection_rect:
-            self.on_selection_changed(self.image_label.selection_rect)
+        self.image_label.set_roi_full()
+        # Notify that ROI changed (same as manual ROI)
+        if self.image_label.roi_rect:
+            self.on_roi_changed(self.image_label.roi_rect)
 
-    def on_selection_changed(self, rect: QRect):
+    def on_roi_changed(self, rect: QRect):
         s = self.scale
-        self.current_selection_rect = QRect(
+        self.current_roi_rect = QRect(
             int(rect.x() / s),
             int(rect.y() / s),
             int(rect.width() / s),
             int(rect.height() / s),
         )
-        self.update_selection_status(rect)
-        # notify any open modeless AnalysisDialogs so they can refresh for new selection
+        self.update_roi_status(rect)
+        # notify any open modeless AnalysisDialogs so they can refresh for new ROI
         if self._analysis_dialogs:
             # Get current image data
             img = self.images[self.current_index] if self.current_index is not None else None
@@ -781,13 +792,13 @@ class ImageViewer(QMainWindow):
                 pil_img = img.get("pil_image")
                 for dlg in list(self._analysis_dialogs):
                     try:
-                        dlg.set_image_and_rect(arr, self.current_selection_rect, img_path, pil_img)
+                        dlg.set_image_and_rect(arr, self.current_roi_rect, img_path, pil_img)
                     except Exception:
                         # ignore dialog-specific errors and continue notifying others
                         pass
 
-    def copy_selection_to_clipboard(self):
-        sel = self.current_selection_rect
+    def copy_roi_to_clipboard(self):
+        sel = self.current_roi_rect
         if not sel or self.current_index is None:
             QMessageBox.information(self, "コピー", "選択領域がありません。")
             return
@@ -887,9 +898,9 @@ class ImageViewer(QMainWindow):
         except Exception as e:
             self.status_brightness.setText("")
 
-    def update_selection_status(self, rect=None):
+    def update_roi_status(self, rect=None):
         if rect is None or rect.isNull():
-            self.status_selection.setText("")
+            self.status_roi.setText("")
             return
         s = self.scale if hasattr(self, "scale") else 1.0
         x0 = int(rect.left() / s)
@@ -898,12 +909,12 @@ class ImageViewer(QMainWindow):
         y1 = int(rect.bottom() / s)
         w = x1 - x0 + 1
         h = y1 - y0 + 1
-        self.status_selection.setText(f"({x0}, {y0}) - ({x1}, {y1}), w: {w}, h: {h}")
+        self.status_roi.setText(f"({x0}, {y0}) - ({x1}, {y1}), w: {w}, h: {h}")
 
     def keyPressEvent(self, e):
         if e.key() == Qt.Key_Escape:
-            self.image_label.selection_rect = None
+            self.image_label.roi_rect = None
             self.image_label.update()
-            self.status_selection.setText("")
+            self.status_roi.setText("")
             return
         super().keyPressEvent(e)

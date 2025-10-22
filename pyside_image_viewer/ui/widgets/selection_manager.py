@@ -1,6 +1,6 @@
-"""Selection management mixin for image widgets.
+"""ROI management mixin for image widgets.
 
-This module provides selection creation, moving, and resizing functionality.
+This module provides ROI creation, moving, and resizing functionality.
 """
 
 from typing import Optional
@@ -8,21 +8,21 @@ from PySide6.QtGui import QPainter, QPen, QColor
 from PySide6.QtCore import Qt, QRect, QPoint
 
 
-class SelectionManagerMixin:
-    """Mixin for selection rectangle management.
+class RoiManagerMixin:
+    """Mixin for ROI rectangle management.
 
     This mixin adds:
-    - Left-drag: Create new selection rectangle (pixel-aligned)
-    - Right-drag: Move existing selection
-    - Left-drag on edges/corners: Resize selection
+    - Left-drag: Create new ROI rectangle (pixel-aligned)
+    - Right-drag: Move existing ROI
+    - Left-drag on edges/corners: Resize ROI
 
     Features:
     - 8 grab points (4 corners + 4 edges) for resizing
     - Cursor shape feedback during hover
-    - Pixel-aligned selection
+    - Pixel-aligned ROI
 
     Required attributes from base class:
-    - showing, viewer, selection_rect, scale
+    - showing, viewer, roi_rect, scale
     - _orig_pixmap, _qimage
     - _widget_to_image_point, _image_to_widget_x, _image_to_widget_y
     - _widget_rect_to_image
@@ -30,7 +30,7 @@ class SelectionManagerMixin:
 
     def __init_selection_manager__(self):
         """Initialize selection manager state."""
-        self.selection_rect: Optional[QRect] = None
+        self.roi_rect: Optional[QRect] = None
         self.dragging = False
         self._moving = False
         self._resizing = False
@@ -55,7 +55,7 @@ class SelectionManagerMixin:
         bottom_ex = self._image_to_widget_y(img_rect.top() + img_rect.height())
         w = max(1, right_ex - left)
         h = max(1, bottom_ex - top)
-        self.selection_rect = QRect(left, top, w, h)
+        self.roi_rect = QRect(left, top, w, h)
 
     def _handle_resize_operation(self, cur_img):
         """Handle selection resizing operation.
@@ -147,7 +147,7 @@ class SelectionManagerMixin:
                 self._resizing = True
                 self._resize_edge = edge
                 self._resize_start_img = self._widget_to_image_point(self.start_point)
-                self._resize_orig_img_rect = self.get_selection_in_image_coords()
+                self._resize_orig_img_rect = self.get_roi_in_image_coords()
                 self.dragging = True
             else:
                 # Start selection creation
@@ -158,21 +158,21 @@ class SelectionManagerMixin:
                 if self._start_img is not None:
                     sx = self._image_to_widget_x(self._start_img[0])
                     sy = self._image_to_widget_y(self._start_img[1])
-                    self.selection_rect = QRect(sx, sy, 1, 1)
+                    self.roi_rect = QRect(sx, sy, 1, 1)
                 self.dragging = True
         elif ev.button() == Qt.RightButton:
             # Start moving only if clicked inside selection (but not on edge)
-            if self.selection_rect and self.selection_rect.contains(self.start_point) and not edge:
+            if self.roi_rect and self.roi_rect.contains(self.start_point) and not edge:
                 self._moving = True
                 self._resizing = False
                 self._move_start_img = self._widget_to_image_point(self.start_point)
-                self._move_orig_img_rect = self.get_selection_in_image_coords()
+                self._move_orig_img_rect = self.get_roi_in_image_coords()
                 self.dragging = True
 
     def mouseMoveEvent(self, ev):
         """Handle mouse move for selection operations."""
         # Update cursor when hovering over selection edges
-        if self.showing and not self.dragging and self.selection_rect:
+        if self.showing and not self.dragging and self.roi_rect:
             edge = self._get_resize_edge(ev.position().toPoint())
             self._update_cursor_for_edge(edge)
 
@@ -191,7 +191,7 @@ class SelectionManagerMixin:
                 self._handle_create_operation(cur_img)
 
             self.update()
-            self._notify_selection_changed()
+            self._notify_roi_changed()
 
         # Notify parent of mouse move
         if hasattr(self.parent(), "on_mouse_move"):
@@ -218,7 +218,7 @@ class SelectionManagerMixin:
                 self._resize_orig_img_rect = None
                 self.dragging = False
                 self.update()
-                self._notify_selection_changed()
+                self._notify_roi_changed()
             else:
                 # Finish creating new selection
                 self.dragging = False
@@ -226,7 +226,7 @@ class SelectionManagerMixin:
                 if self._start_img is not None and end_img is not None:
                     self._handle_create_operation(end_img)
                 self.update()
-                self._notify_selection_changed()
+                self._notify_roi_changed()
         elif ev.button() == Qt.RightButton and self._moving:
             # Finish moving
             self._moving = False
@@ -234,36 +234,36 @@ class SelectionManagerMixin:
             self._move_orig_img_rect = None
             self.dragging = False
             self.update()
-            self._notify_selection_changed()
+            self._notify_roi_changed()
 
-    def paint_selection(self, painter: QPainter):
+    def paint_roi(self, painter: QPainter):
         """Paint the selection rectangle.
 
         Args:
             painter: QPainter to use for painting
         """
-        if self.selection_rect and not self.selection_rect.isNull():
+        if self.roi_rect and not self.roi_rect.isNull():
             pen = QPen(QColor(0, 0, 255), 1, Qt.DashLine)
             painter.setPen(pen)
-            painter.drawRect(self.selection_rect)
+            painter.drawRect(self.roi_rect)
 
-    def get_selection_in_image_coords(self) -> Optional[QRect]:
+    def get_roi_in_image_coords(self) -> Optional[QRect]:
         """Get the current selection rectangle in image coordinates.
 
         Returns:
             QRect in image pixel coordinates, or None if no selection.
         """
-        if not self.selection_rect or self.selection_rect.isNull():
+        if not self.roi_rect or self.roi_rect.isNull():
             return None
-        return self._widget_rect_to_image(self.selection_rect)
+        return self._widget_rect_to_image(self.roi_rect)
 
-    def set_selection_full(self):
+    def set_roi_full(self):
         """Set selection to full image."""
         if not self.showing:
             return
         disp_w = int(self._orig_pixmap.width() * self.scale) if not self._orig_pixmap.isNull() else 0
         disp_h = int(self._orig_pixmap.height() * self.scale) if not self._orig_pixmap.isNull() else 0
-        self.selection_rect = QRect(0, 0, max(1, disp_w), max(1, disp_h))
+        self.roi_rect = QRect(0, 0, max(1, disp_w), max(1, disp_h))
         self.update()
 
     def _get_resize_edge(self, pos: QPoint) -> Optional[str]:
@@ -275,12 +275,12 @@ class SelectionManagerMixin:
         Returns:
             Edge identifier: 'tl', 'tr', 'bl', 'br', 'left', 'right', 'top', 'bottom', or None
         """
-        if not self.selection_rect or self.selection_rect.isNull():
+        if not self.roi_rect or self.roi_rect.isNull():
             return None
 
-        rect = self.selection_rect
+        rect = self.roi_rect
         dist = self._edge_grab_distance
-        
+
         # For small selections, reduce the grab distance to ensure there's
         # always an interior region for right-click move operations.
         # Use half the minimum dimension, capped at the configured grab distance.
@@ -328,7 +328,7 @@ class SelectionManagerMixin:
         else:
             self.setCursor(Qt.ArrowCursor)
 
-    def _notify_selection_changed(self):
+    def _notify_roi_changed(self):
         """Notify viewer of selection change during drag operations."""
-        if self.viewer and self.selection_rect and not self.selection_rect.isNull():
-            self.viewer.on_selection_changed(self.selection_rect)
+        if self.viewer and self.roi_rect and not self.roi_rect.isNull():
+            self.viewer.on_roi_changed(self.roi_rect)

@@ -1,20 +1,20 @@
-"""Keyboard-based selection editing functionality.
+"""Keyboard-based ROI editing functionality.
 
-This module provides arrow key editing for selection rectangles.
+This module provides arrow key editing for ROI rectangles.
 """
 
 from PySide6.QtCore import Qt, QRect
 
 
-class SelectionEditorMixin:
-    """Mixin for keyboard-based selection editing.
+class RoiEditorMixin:
+    """Mixin for keyboard-based ROI editing.
 
     This mixin adds:
-    - Arrow keys: Move selection by 1 image pixel
-    - Shift+Arrow keys: Move selection by 10 image pixels
+    - Arrow keys: Move ROI by 1 image pixel
+    - Shift+Arrow keys: Move ROI by 10 image pixels
 
     Required attributes from base class:
-    - selection_rect, viewer, scale
+    - roi_rect, viewer, scale
     - _orig_pixmap
     """
 
@@ -29,7 +29,7 @@ class SelectionEditorMixin:
         All movements operate in image coordinates and are converted to display coordinates,
         then clipped to image boundaries.
         """
-        if not self.selection_rect or self.selection_rect.isNull():
+        if not self.roi_rect or self.roi_rect.isNull():
             super().keyPressEvent(e)
             return
 
@@ -40,7 +40,7 @@ class SelectionEditorMixin:
         if delta == 0:
             delta = 1  # Ensure at least 1 pixel movement in display coordinates
 
-        new_rect = QRect(self.selection_rect)
+        new_rect = QRect(self.roi_rect)
 
         if e.key() == Qt.Key_Left:
             new_rect.translate(-delta, 0)
@@ -68,9 +68,9 @@ class SelectionEditorMixin:
         if new_rect.bottom() >= disp_h:
             new_rect.moveBottom(disp_h - 1)
 
-        self.selection_rect = new_rect
+        self.roi_rect = new_rect
         self.update()
 
         # Notify viewer of selection change
         if self.viewer:
-            self.viewer.on_selection_changed(self.selection_rect)
+            self.viewer.on_roi_changed(self.roi_rect)

@@ -1,4 +1,4 @@
-"""Integrated image display widget with selection support.
+"""Integrated image display widget with ROI support.
 
 This module combines all widget functionality into a single ImageLabel class.
 """
@@ -8,26 +8,26 @@ from PySide6.QtGui import QPixmap, QPainter, QImage, QWheelEvent
 from PySide6.QtCore import Qt, QRect
 
 from .base_image_label import BaseImageLabel
-from .selection_manager import SelectionManagerMixin
-from .selection_editor import SelectionEditorMixin
+from .selection_manager import RoiManagerMixin
+from .selection_editor import RoiEditorMixin
 
 
-class ImageLabel(SelectionManagerMixin, SelectionEditorMixin, BaseImageLabel):
-    """Image display widget with pixel-aligned selection and drag support.
+class ImageLabel(RoiManagerMixin, RoiEditorMixin, BaseImageLabel):
+    """Image display widget with pixel-aligned ROI and drag support.
 
     Features:
-    - Left-drag: Create new selection rectangle (pixel-aligned)
-    - Right-drag: Move existing selection (press inside selection to start)
-    - Left-drag on edges/corners: Resize selection (8 grab points)
-    - Arrow keys: Move selection by 1 image pixel
-    - Shift+Arrow keys: Move selection by 10 image pixels
+    - Left-drag: Create new ROI rectangle (pixel-aligned)
+    - Right-drag: Move existing ROI (press inside ROI to start)
+    - Left-drag on edges/corners: Resize ROI (8 grab points)
+    - Arrow keys: Move ROI by 1 image pixel
+    - Shift+Arrow keys: Move ROI by 10 image pixels
 
-    The selection is always snapped to pixel boundaries based on the current
+    The ROI is always snapped to pixel boundaries based on the current
     zoom level. Visual feedback is provided during dragging.
 
     Attributes:
         viewer: Parent ImageViewer instance
-        selection_rect: Current selection rectangle in widget coordinates (QRect)
+        roi_rect: Current ROI rectangle in widget coordinates (QRect)
         scale: Current zoom scale factor
     """
 
@@ -53,13 +53,8 @@ class ImageLabel(SelectionManagerMixin, SelectionEditorMixin, BaseImageLabel):
         """
         # preserve previous selection in image coords (if any)
         prev_sel_img = None
-        if (
-            self.selection_rect
-            and not self.selection_rect.isNull()
-            and self._qimage is not None
-            and not self._qimage.isNull()
-        ):
-            prev = self.get_selection_in_image_coords()
+        if self.roi_rect and not self.roi_rect.isNull() and self._qimage is not None and not self._qimage.isNull():
+            prev = self.get_roi_in_image_coords()
             if prev is not None:
                 prev_sel_img = prev
 
@@ -68,15 +63,15 @@ class ImageLabel(SelectionManagerMixin, SelectionEditorMixin, BaseImageLabel):
 
         # Restore previous selection rect at new scale if there was one
         if prev_sel_img is not None:
-            self.selection_rect = self._image_rect_to_widget(prev_sel_img)
+            self.roi_rect = self._image_rect_to_widget(prev_sel_img)
         else:
-            self.selection_rect = None
+            self.roi_rect = None
         self.update()
 
     def clear(self):
         """Clear the displayed image and selection."""
         super().clear()
-        self.selection_rect = None
+        self.roi_rect = None
 
     def paintEvent(self, event):
         """Paint the image and selection rectangle.
@@ -94,7 +89,7 @@ class ImageLabel(SelectionManagerMixin, SelectionEditorMixin, BaseImageLabel):
             painter.restore()
 
         # Paint selection (from selection manager)
-        self.paint_selection(painter)
+        self.paint_roi(painter)
 
     def wheelEvent(self, event: QWheelEvent):
         """Handle mouse wheel events for zooming with binary steps.

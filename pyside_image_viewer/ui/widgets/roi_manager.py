@@ -28,7 +28,7 @@ class RoiManagerMixin:
     - _widget_rect_to_image
     """
 
-    def __init_selection_manager__(self):
+    def __init_roi_manager__(self):
         """Initialize selection manager state."""
         self.roi_rect: Optional[QRect] = None
         self.dragging = False

@@ -8,8 +8,8 @@ from PySide6.QtGui import QPixmap, QPainter, QImage, QWheelEvent
 from PySide6.QtCore import Qt, QRect
 
 from .base_image_label import BaseImageLabel
-from .selection_manager import RoiManagerMixin
-from .selection_editor import RoiEditorMixin
+from .roi_manager import RoiManagerMixin
+from .roi_editor import RoiEditorMixin
 
 
 class ImageLabel(RoiManagerMixin, RoiEditorMixin, BaseImageLabel):
@@ -39,7 +39,7 @@ class ImageLabel(RoiManagerMixin, RoiEditorMixin, BaseImageLabel):
             parent: Optional Qt parent widget
         """
         super().__init__(viewer, parent)
-        self.__init_selection_manager__()
+        self.__init_roi_manager__()
 
     def set_image(self, qimg: QImage, scale: float = 1.0):
         """Set the image to display with optional scaling.

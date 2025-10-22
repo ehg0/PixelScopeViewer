@@ -129,8 +129,10 @@ class ImageViewer(QMainWindow):
         file_menu = menubar.addMenu("ファイル")
         file_menu.addAction(QAction("読み込み...", self, shortcut="Ctrl+O", triggered=self.open_files))
         file_menu.addSeparator()
-        file_menu.addAction(QAction("画像全体を選択", self, shortcut="Ctrl+A", triggered=self.select_all))
-        file_menu.addAction(QAction("選択範囲をコピー", self, shortcut="Ctrl+C", triggered=self.copy_roi_to_clipboard))
+        file_menu.addAction(QAction("画像全体をROI", self, shortcut="Ctrl+A", triggered=self.select_all))
+        file_menu.addAction(
+            QAction("ROI領域の画像をコピー", self, shortcut="Ctrl+C", triggered=self.copy_roi_to_clipboard)
+        )
         file_menu.addSeparator()
         file_menu.addAction(QAction("閉じる", self, shortcut="Ctrl+W", triggered=self.close_current_image))
         file_menu.addAction(QAction("すべて閉じる", self, shortcut="Ctrl+Shift+W", triggered=self.close_all_images))
@@ -800,7 +802,7 @@ class ImageViewer(QMainWindow):
     def copy_roi_to_clipboard(self):
         sel = self.current_roi_rect
         if not sel or self.current_index is None:
-            QMessageBox.information(self, "コピー", "選択領域がありません。")
+            QMessageBox.information(self, "コピー", "ROI領域がありません。")
             return
 
         arr = self.images[self.current_index]["array"]

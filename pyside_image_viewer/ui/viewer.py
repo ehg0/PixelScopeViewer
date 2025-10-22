@@ -49,7 +49,7 @@ class ImageViewer(QMainWindow):
     - Creating difference images
 
     Keyboard Shortcuts:
-        - Ctrl+A: Select entire image
+        - Ctrl+A: Select entire image as ROI
         - Ctrl+C: Copy ROI to clipboard
         - n: Next image
         - b: Previous image
@@ -58,6 +58,7 @@ class ImageViewer(QMainWindow):
         - <: Left bit shift (darker)
         - >: Right bit shift (brighter)
         - ESC: Clear ROI
+        - f: Toggle fit to window / original zoom (previous zoom level)
 
     Mouse Controls:
         - Ctrl + Mouse wheel: Zoom in/out (binary steps: 2x/0.5x, centered on status bar coordinates)
@@ -81,6 +82,11 @@ class ImageViewer(QMainWindow):
         self.images = []
         self.current_index = None
         self.scale = 1.0
+
+        # Zoom toggle state
+        self.fit_zoom_scale = None
+        self.original_zoom_scale = 1.0
+        self.original_center_coords = None
 
         # Track current mouse position in image coordinates for zoom centering
         self.current_mouse_image_coords = None
@@ -192,6 +198,12 @@ class ImageViewer(QMainWindow):
         self.right_bit_shift_action.setShortcutContext(Qt.ApplicationShortcut)
         self.right_bit_shift_action.triggered.connect(lambda: self.bit_shift(1))
         self.addAction(self.right_bit_shift_action)
+
+        self.fit_toggle_action = QAction(self)
+        self.fit_toggle_action.setShortcut("f")
+        self.fit_toggle_action.setShortcutContext(Qt.ApplicationShortcut)
+        self.fit_toggle_action.triggered.connect(self.toggle_fit_zoom)
+        self.addAction(self.fit_toggle_action)
 
     def show_brightness_dialog(self):
         """表示輝度調整ダイアログを表示します。
@@ -425,6 +437,11 @@ class ImageViewer(QMainWindow):
             self.image_label.clear()
             self.update_status()
             return
+
+        # Reset zoom toggle state when switching images
+        self.fit_zoom_scale = None
+        self.original_zoom_scale = 1.0
+        self.original_center_coords = None
 
         # Reset bit shift when switching images and restore base array
         img = self.images[self.current_index]
@@ -681,6 +698,75 @@ class ImageViewer(QMainWindow):
 
         # Place the status coordinates at the center of the viewport
         self._set_scroll_to_keep_image_point_at_position(self.current_mouse_image_coords, center_pos)
+
+    def set_zoom_at_coords(self, scale: float, image_coords: tuple[float, float]):
+        """指定した画像座標をビューポート中心に維持してズーム倍率を設定します。
+
+        パラメータ:
+            scale: 新しい倍率（1.0 が原寸）
+            image_coords: (x, y) 維持する画像座標
+
+        このメソッドは表示中の画像がない場合は単に scale を設定して終了します。
+        """
+        if self.current_index is None:
+            self.scale = scale
+            return
+
+        # Apply new zoom
+        self._apply_zoom_and_update_display(scale)
+
+        # Get viewport center for positioning
+        scroll_area = self.scroll_area
+        viewport_width = scroll_area.viewport().width()
+        viewport_height = scroll_area.viewport().height()
+        center_pos = (viewport_width / 2.0, viewport_height / 2.0)
+
+        # Place the image_coords at the center of the viewport
+        self._set_scroll_to_keep_image_point_at_position(image_coords, center_pos)
+
+    def fit_to_window(self):
+        """画像をウィンドウにフィットさせるズーム倍率を設定します。
+
+        画像のアスペクト比を維持して、ウィンドウのサイズに合わせてスケールを計算し、
+        最も近いバイナリ倍率（2の累乗）にスナップします。
+        """
+        if self.current_index is None:
+            return
+        img = self.images[self.current_index]["array"]
+        h, w = img.shape[:2]
+        viewport = self.scroll_area.viewport()
+        vh = viewport.height()
+        wh = viewport.width()
+        scale_h = vh / h
+        scale_w = wh / w
+        fit_scale = min(scale_h, scale_w)
+        # Clamp to valid zoom range
+        fit_scale = max(0.125, min(128.0, fit_scale))
+        # Snap to nearest power of 2
+        power = round(np.log2(fit_scale))
+        snapped_scale = 2.0**power
+        self.set_zoom(snapped_scale)
+
+    def toggle_fit_zoom(self):
+        """Fitと直前の拡大率をトグルします。
+
+        現在のスケールがfitスケールに近い場合は直前の拡大率に戻し、
+        そうでなければ現在のスケールを記憶してfitにします。
+        """
+        if self.current_index is None:
+            return
+        if self.fit_zoom_scale is not None and abs(self.scale - self.fit_zoom_scale) < 1e-6:
+            # Currently at fit zoom, go back to original zoom, maintaining the original center
+            if self.original_center_coords is not None:
+                self.set_zoom_at_coords(self.original_zoom_scale, self.original_center_coords)
+            else:
+                self.set_zoom(self.original_zoom_scale)
+        else:
+            # Not at fit zoom, remember current center and scale as original, go to fit
+            self.original_zoom_scale = self.scale
+            self.original_center_coords = self._calculate_viewport_center_in_image_coords()
+            self.fit_to_window()
+            self.fit_zoom_scale = self.scale
 
     def bit_shift(self, amount):
         """ビットシフト（表示の明るさ操作）を行います。

@@ -73,6 +73,7 @@ python main.py
 | `<` | 左ビットシフト (暗く) |
 | `>` | 右ビットシフト (明るく) |
 | `ESC` | ROI解除 |
+| `f` | Fit / 直前の拡大率をトグル |
 | `Ctrl+R` | 表示輝度をリセット (Offset/Gain/Saturation を初期値に戻す) |
 
 ### 解析機能

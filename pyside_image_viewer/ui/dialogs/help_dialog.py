@@ -41,6 +41,7 @@ class HelpDialog(QDialog):
 - 左ビットシフト : <
 - 右ビットシフト : >
 - ROI解除 : ESC
+- Fit / 直前の拡大率をトグル : f
 """
         text.setPlainText(content)
         layout = QVBoxLayout(self)

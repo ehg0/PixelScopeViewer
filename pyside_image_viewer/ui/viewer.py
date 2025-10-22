@@ -6,7 +6,7 @@ for displaying and navigating images with analysis tools.
 Features:
 - Multi-image loading and navigation
 - Zoom in/out with keyboard shortcuts and Ctrl+mouse wheel
-- Pixel-aligned selection with keyboard editing
+- Pixel-aligned ROI with keyboard editing
 - Bit-shift operations for raw/scientific images
 - Analysis dialogs (histogram, profile, info)
 - Difference image creation
@@ -21,18 +21,20 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QWidget,
     QVBoxLayout,
+    QHBoxLayout,
     QScrollArea,
     QStatusBar,
     QLabel,
     QFileDialog,
     QMessageBox,
     QDialog,
+    QDockWidget,
 )
 from PySide6.QtGui import QPixmap, QPainter, QIcon, QGuiApplication, QAction, QActionGroup
-from PySide6.QtCore import Qt, QRect, QEvent
+from PySide6.QtCore import Qt, QRect, QEvent, Signal
 
 from ..core.image_io import numpy_to_qimage, pil_to_numpy, is_image_file
-from .widgets import ImageLabel
+from .widgets import ImageLabel, NavigatorWidget, DisplayInfoWidget, ROIInfoWidget
 from .dialogs import HelpDialog, DiffDialog, AnalysisDialog, BrightnessDialog
 
 
@@ -43,27 +45,28 @@ class ImageViewer(QMainWindow):
     - Loading and displaying images (single or multiple files)
     - Navigating between images with keyboard shortcuts (n/b)
     - Zooming with +/- keys and mouse wheel
-    - Creating and editing pixel-aligned selections
+    - Creating and editing pixel-aligned ROIs
     - Bit-shifting for viewing raw/scientific data (</> keys)
     - Analysis tools (histogram, profile plots)
     - Creating difference images
 
     Keyboard Shortcuts:
-        - Ctrl+A: Select entire image
-        - Ctrl+C: Copy selection to clipboard
+        - Ctrl+A: Select entire image as ROI
+        - Ctrl+C: Copy ROI to clipboard
         - n: Next image
         - b: Previous image
         - +: Zoom in (2x)
         - -: Zoom out (0.5x)
         - <: Left bit shift (darker)
         - >: Right bit shift (brighter)
-        - ESC: Clear selection
+        - ESC: Clear ROI
+        - f: Toggle fit to window / original zoom (previous zoom level)
 
     Mouse Controls:
         - Ctrl + Mouse wheel: Zoom in/out (binary steps: 2x/0.5x, centered on status bar coordinates)
-        - Left-drag: Create new selection rectangle
-        - Right-drag: Move existing selection
-        - Left-drag on edges/corners: Resize selection
+        - Left-drag: Create new ROI rectangle
+        - Right-drag: Move existing ROI
+        - Left-drag on edges/corners: Resize ROI
 
     Attributes:
         images: List of loaded image dictionaries with keys:
@@ -71,6 +74,11 @@ class ImageViewer(QMainWindow):
         current_index: Index of currently displayed image
         scale: Current zoom scale factor
     """
+
+    # Signals for widget updates
+    scale_changed = Signal()
+    image_changed = Signal()
+    roi_changed = Signal()
 
     def __init__(self):
         super().__init__()
@@ -82,6 +90,11 @@ class ImageViewer(QMainWindow):
         self.current_index = None
         self.scale = 1.0
 
+        # Zoom toggle state
+        self.fit_zoom_scale = None
+        self.original_zoom_scale = 1.0
+        self.original_center_coords = None
+
         # Track current mouse position in image coordinates for zoom centering
         self.current_mouse_image_coords = None
 
@@ -92,26 +105,48 @@ class ImageViewer(QMainWindow):
 
         central = QWidget(self)
         self.setCentralWidget(central)
-        layout = QVBoxLayout(central)
+        h_layout = QHBoxLayout(central)
 
-        self.current_selection_rect: Optional[QRect] = None
+        self.current_roi_rect: Optional[QRect] = None
 
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
         self.image_label = ImageLabel(self, self)
         self.scroll_area.setWidget(self.image_label)
-        layout.addWidget(self.scroll_area)
+        h_layout.addWidget(self.scroll_area)
         self.image_label.installEventFilter(self)
+
+        # Right docks
+        # Navigator dock
+        self.navigator_dock = QDockWidget("Navigator")
+        self.navigator_dock.setFeatures(QDockWidget.DockWidgetFloatable | QDockWidget.DockWidgetMovable)
+        navigator_widget = NavigatorWidget(self)
+        self.navigator_dock.setWidget(navigator_widget)
+        self.addDockWidget(Qt.RightDockWidgetArea, self.navigator_dock)
+
+        # Display info dock
+        self.display_info_dock = QDockWidget("Display Area Info")
+        self.display_info_dock.setFeatures(QDockWidget.DockWidgetFloatable | QDockWidget.DockWidgetMovable)
+        display_info_widget = DisplayInfoWidget(self)
+        self.display_info_dock.setWidget(display_info_widget)
+        self.addDockWidget(Qt.RightDockWidgetArea, self.display_info_dock)
+
+        # ROI info dock
+        self.roi_info_dock = QDockWidget("ROI Area Info")
+        self.roi_info_dock.setFeatures(QDockWidget.DockWidgetFloatable | QDockWidget.DockWidgetMovable)
+        roi_info_widget = ROIInfoWidget(self)
+        self.roi_info_dock.setWidget(roi_info_widget)
+        self.addDockWidget(Qt.RightDockWidgetArea, self.roi_info_dock)
 
         self.status = QStatusBar()
         self.setStatusBar(self.status)
         self.statusBar().setStyleSheet("font-size: 11pt;")
         self.status_pixel = QLabel()
-        self.status_selection = QLabel()
+        self.status_roi = QLabel()
         self.status_brightness = QLabel()  # Changed from status_shift to status_brightness
         self.status_scale = QLabel()
         self.status.addPermanentWidget(self.status_pixel, 2)
-        self.status.addPermanentWidget(self.status_selection, 3)
+        self.status.addPermanentWidget(self.status_roi, 3)
         self.status.addPermanentWidget(self.status_brightness, 2)  # Display brightness params
         self.status.addPermanentWidget(self.status_scale, 1)
 
@@ -129,9 +164,9 @@ class ImageViewer(QMainWindow):
         file_menu = menubar.addMenu("ファイル")
         file_menu.addAction(QAction("読み込み...", self, shortcut="Ctrl+O", triggered=self.open_files))
         file_menu.addSeparator()
-        file_menu.addAction(QAction("画像全体を選択", self, shortcut="Ctrl+A", triggered=self.select_all))
+        file_menu.addAction(QAction("画像全体をROI", self, shortcut="Ctrl+A", triggered=self.select_all))
         file_menu.addAction(
-            QAction("選択範囲をコピー", self, shortcut="Ctrl+C", triggered=self.copy_selection_to_clipboard)
+            QAction("ROI領域の画像をコピー", self, shortcut="Ctrl+C", triggered=self.copy_roi_to_clipboard)
         )
         file_menu.addSeparator()
         file_menu.addAction(QAction("閉じる", self, shortcut="Ctrl+W", triggered=self.close_current_image))
@@ -192,6 +227,12 @@ class ImageViewer(QMainWindow):
         self.right_bit_shift_action.setShortcutContext(Qt.ApplicationShortcut)
         self.right_bit_shift_action.triggered.connect(lambda: self.bit_shift(1))
         self.addAction(self.right_bit_shift_action)
+
+        self.fit_toggle_action = QAction(self)
+        self.fit_toggle_action.setShortcut("f")
+        self.fit_toggle_action.setShortcutContext(Qt.ApplicationShortcut)
+        self.fit_toggle_action.triggered.connect(self.toggle_fit_zoom)
+        self.addAction(self.fit_toggle_action)
 
     def show_brightness_dialog(self):
         """表示輝度調整ダイアログを表示します。
@@ -308,13 +349,13 @@ class ImageViewer(QMainWindow):
         return np.clip(adjusted, 0, 255).astype(np.uint8)
 
     def show_analysis_dialog(self, tab: Optional[str] = None):
-        # open analysis dialog for current image and current selection
+        # open analysis dialog for current image and current ROI
         if self.current_index is None:
             QMessageBox.information(self, "解析", "画像が選択されていません。")
             return
         img = self.images[self.current_index]
         arr = img.get("base_array", img.get("array"))
-        sel = self.current_selection_rect
+        sel = self.current_roi_rect
         img_path = img.get("path")
         pil_img = img.get("pil_image")  # Get cached PIL image
         dlg = AnalysisDialog(self, image_array=arr, image_rect=sel, image_path=img_path, pil_image=pil_img)
@@ -426,6 +467,11 @@ class ImageViewer(QMainWindow):
             self.update_status()
             return
 
+        # Reset zoom toggle state when switching images
+        self.fit_zoom_scale = None
+        self.original_zoom_scale = 1.0
+        self.original_center_coords = None
+
         # Reset bit shift when switching images and restore base array
         img = self.images[self.current_index]
         if "bit_shift" not in img or img["bit_shift"] != 0:
@@ -435,6 +481,7 @@ class ImageViewer(QMainWindow):
 
         arr = img["array"]
         self.display_image(arr)
+        self.image_changed.emit()
         self.update_image_list_menu()
 
         # Update brightness dialog if it's open
@@ -459,17 +506,30 @@ class ImageViewer(QMainWindow):
         except Exception:
             pass
 
-        if self.current_selection_rect:
+        if self.current_roi_rect:
             s = self.scale
             rect = QRect(
-                int(self.current_selection_rect.x() * s),
-                int(self.current_selection_rect.y() * s),
-                int(self.current_selection_rect.width() * s),
-                int(self.current_selection_rect.height() * s),
+                int(self.current_roi_rect.x() * s),
+                int(self.current_roi_rect.y() * s),
+                int(self.current_roi_rect.width() * s),
+                int(self.current_roi_rect.height() * s),
             )
-            self.image_label.selection_rect = rect
+            self.image_label.roi_rect = rect
             self.image_label.update()
-            self.update_selection_status(rect)
+            self.update_roi_status(rect)
+
+        # notify any open modeless AnalysisDialogs so they can refresh for new image
+        if self._analysis_dialogs:
+            img = self.images[self.current_index] if self.current_index is not None else None
+            if img:
+                arr = img.get("base_array", img.get("array"))
+                img_path = img.get("path")
+                pil_img = img.get("pil_image")
+                for dlg in list(self._analysis_dialogs):
+                    try:
+                        dlg.set_image_and_rect(arr, self.current_roi_rect, img_path, pil_img)
+                    except Exception:
+                        pass
 
     def display_image(self, arr):
         """指定した画像配列をビューアに表示します。
@@ -643,6 +703,8 @@ class ImageViewer(QMainWindow):
         # Keep center point at viewport center
         self._set_scroll_to_keep_image_point_at_position(img_center, center_pos)
 
+        self.scale_changed.emit()
+
     def set_zoom_at_status_coords(self, scale: float):
         """ステータスバーに表示している座標（マウス位置）をビュー中心に固定してズームします。
 
@@ -668,6 +730,79 @@ class ImageViewer(QMainWindow):
 
         # Place the status coordinates at the center of the viewport
         self._set_scroll_to_keep_image_point_at_position(self.current_mouse_image_coords, center_pos)
+
+        self.scale_changed.emit()
+
+    def set_zoom_at_coords(self, scale: float, image_coords: tuple[float, float]):
+        """指定した画像座標をビューポート中心に維持してズーム倍率を設定します。
+
+        パラメータ:
+            scale: 新しい倍率（1.0 が原寸）
+            image_coords: (x, y) 維持する画像座標
+
+        このメソッドは表示中の画像がない場合は単に scale を設定して終了します。
+        """
+        if self.current_index is None:
+            self.scale = scale
+            return
+
+        # Apply new zoom
+        self._apply_zoom_and_update_display(scale)
+
+        # Get viewport center for positioning
+        scroll_area = self.scroll_area
+        viewport_width = scroll_area.viewport().width()
+        viewport_height = scroll_area.viewport().height()
+        center_pos = (viewport_width / 2.0, viewport_height / 2.0)
+
+        # Place the image_coords at the center of the viewport
+        self._set_scroll_to_keep_image_point_at_position(image_coords, center_pos)
+
+        self.scale_changed.emit()
+
+    def fit_to_window(self):
+        """画像をウィンドウにフィットさせるズーム倍率を設定します。
+
+        画像のアスペクト比を維持して、ウィンドウのサイズに合わせてスケールを計算し、
+        最も近いバイナリ倍率（2の累乗）にスナップします。
+        """
+        if self.current_index is None:
+            return
+        img = self.images[self.current_index]["array"]
+        h, w = img.shape[:2]
+        viewport = self.scroll_area.viewport()
+        vh = viewport.height()
+        wh = viewport.width()
+        scale_h = vh / h
+        scale_w = wh / w
+        fit_scale = min(scale_h, scale_w)
+        # Clamp to valid zoom range
+        fit_scale = max(0.125, min(128.0, fit_scale))
+        # Snap to nearest power of 2
+        power = round(np.log2(fit_scale))
+        snapped_scale = 2.0**power
+        self.set_zoom(snapped_scale)
+
+    def toggle_fit_zoom(self):
+        """Fitと直前の拡大率をトグルします。
+
+        現在のスケールがfitスケールに近い場合は直前の拡大率に戻し、
+        そうでなければ現在のスケールを記憶してfitにします。
+        """
+        if self.current_index is None:
+            return
+        if self.fit_zoom_scale is not None and abs(self.scale - self.fit_zoom_scale) < 1e-6:
+            # Currently at fit zoom, go back to original zoom, maintaining the original center
+            if self.original_center_coords is not None:
+                self.set_zoom_at_coords(self.original_zoom_scale, self.original_center_coords)
+            else:
+                self.set_zoom(self.original_zoom_scale)
+        else:
+            # Not at fit zoom, remember current center and scale as original, go to fit
+            self.original_zoom_scale = self.scale
+            self.original_center_coords = self._calculate_viewport_center_in_image_coords()
+            self.fit_to_window()
+            self.fit_zoom_scale = self.scale
 
     def bit_shift(self, amount):
         """ビットシフト（表示の明るさ操作）を行います。
@@ -751,27 +886,27 @@ class ImageViewer(QMainWindow):
         self.display_image(shifted)
 
     def select_all(self):
-        """画像全体を選択状態にします。
+        """画像全体をROI状態にします。
 
-        選択が更新された場合は on_selection_changed を経由して関連ダイアログに通知します。
+        選択が更新された場合は on_roi_changed を経由して関連ダイアログに通知します。
         """
         if self.current_index is None or not self.images:
             return
-        self.image_label.set_selection_full()
-        # Notify that selection changed (same as manual selection)
-        if self.image_label.selection_rect:
-            self.on_selection_changed(self.image_label.selection_rect)
+        self.image_label.set_roi_full()
+        # Notify that ROI changed (same as manual ROI)
+        if self.image_label.roi_rect:
+            self.on_roi_changed(self.image_label.roi_rect)
 
-    def on_selection_changed(self, rect: QRect):
+    def on_roi_changed(self, rect: QRect):
         s = self.scale
-        self.current_selection_rect = QRect(
+        self.current_roi_rect = QRect(
             int(rect.x() / s),
             int(rect.y() / s),
             int(rect.width() / s),
             int(rect.height() / s),
         )
-        self.update_selection_status(rect)
-        # notify any open modeless AnalysisDialogs so they can refresh for new selection
+        self.update_roi_status(rect)
+        # notify any open modeless AnalysisDialogs so they can refresh for new ROI
         if self._analysis_dialogs:
             # Get current image data
             img = self.images[self.current_index] if self.current_index is not None else None
@@ -781,15 +916,17 @@ class ImageViewer(QMainWindow):
                 pil_img = img.get("pil_image")
                 for dlg in list(self._analysis_dialogs):
                     try:
-                        dlg.set_image_and_rect(arr, self.current_selection_rect, img_path, pil_img)
+                        dlg.set_image_and_rect(arr, self.current_roi_rect, img_path, pil_img)
                     except Exception:
                         # ignore dialog-specific errors and continue notifying others
                         pass
 
-    def copy_selection_to_clipboard(self):
-        sel = self.current_selection_rect
+        self.roi_changed.emit()
+
+    def copy_roi_to_clipboard(self):
+        sel = self.current_roi_rect
         if not sel or self.current_index is None:
-            QMessageBox.information(self, "コピー", "選択領域がありません。")
+            QMessageBox.information(self, "コピー", "ROI領域がありません。")
             return
 
         arr = self.images[self.current_index]["array"]
@@ -887,9 +1024,20 @@ class ImageViewer(QMainWindow):
         except Exception as e:
             self.status_brightness.setText("")
 
-    def update_selection_status(self, rect=None):
+    def update_roi_status(self, rect=None):
+        # Prefer the canonical image-coordinate ROI for consistent display
+        if self.current_roi_rect is not None and not self.current_roi_rect.isNull():
+            x0 = self.current_roi_rect.x()
+            y0 = self.current_roi_rect.y()
+            w = self.current_roi_rect.width()
+            h = self.current_roi_rect.height()
+            x1 = x0 + w - 1
+            y1 = y0 + h - 1
+            self.status_roi.setText(f"({x0}, {y0}) - ({x1}, {y1}), w: {w}, h: {h}")
+            return
+        # Fallback: derive from provided label-rect when current ROI is missing
         if rect is None or rect.isNull():
-            self.status_selection.setText("")
+            self.status_roi.setText("")
             return
         s = self.scale if hasattr(self, "scale") else 1.0
         x0 = int(rect.left() / s)
@@ -898,12 +1046,51 @@ class ImageViewer(QMainWindow):
         y1 = int(rect.bottom() / s)
         w = x1 - x0 + 1
         h = y1 - y0 + 1
-        self.status_selection.setText(f"({x0}, {y0}) - ({x1}, {y1}), w: {w}, h: {h}")
+        self.status_roi.setText(f"({x0}, {y0}) - ({x1}, {y1}), w: {w}, h: {h}")
+
+    def set_roi_from_image_rect(self, rect_img: QRect):
+        """Set ROI using image coordinates and update label, status, and listeners.
+
+        This avoids lossy roundtrip via label coordinates when zoomed, ensuring
+        spin box edits map 1:1 to the internal ROI regardless of scale.
+        """
+        try:
+            self.current_roi_rect = rect_img
+            # Project to label/widget coordinates for display
+            s = self.scale if hasattr(self, "scale") else 1.0
+            rect_label = QRect(
+                int(rect_img.x() * s),
+                int(rect_img.y() * s),
+                int(rect_img.width() * s),
+                int(rect_img.height() * s),
+            )
+            self.image_label.roi_rect = rect_label
+            self.image_label.update()
+            # Update status based on canonical image ROI
+            self.update_roi_status()
+
+            # Notify any open modeless AnalysisDialogs
+            if self._analysis_dialogs:
+                img = self.images[self.current_index] if self.current_index is not None else None
+                if img:
+                    arr = img.get("base_array", img.get("array"))
+                    img_path = img.get("path")
+                    pil_img = img.get("pil_image")
+                    for dlg in list(self._analysis_dialogs):
+                        try:
+                            dlg.set_image_and_rect(arr, self.current_roi_rect, img_path, pil_img)
+                        except Exception:
+                            pass
+            # Emit ROI changed for dependent widgets (e.g., ROIInfo)
+            self.roi_changed.emit()
+        except Exception:
+            # Best effort; avoid crashing on edge cases
+            self.roi_changed.emit()
 
     def keyPressEvent(self, e):
         if e.key() == Qt.Key_Escape:
-            self.image_label.selection_rect = None
+            self.image_label.roi_rect = None
             self.image_label.update()
-            self.status_selection.setText("")
+            self.status_roi.setText("")
             return
         super().keyPressEvent(e)

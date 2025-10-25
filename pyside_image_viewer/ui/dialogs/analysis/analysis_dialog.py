@@ -1420,3 +1420,22 @@ class AnalysisDialog(QDialog):
             setattr(self, f"viewbox_{which}", st)
         except Exception:
             pass
+
+    def keyPressEvent(self, event):
+        """Override ESC key to prevent closing dialog.
+        
+        ESC key will clear focus from spinbox/input fields without closing the dialog.
+        """
+        from PySide6.QtWidgets import QSpinBox, QDoubleSpinBox, QLineEdit
+        
+        if event.key() == Qt.Key_Escape:
+            # If focus is on an input widget, clear focus to finish editing
+            focused_widget = self.focusWidget()
+            if focused_widget and isinstance(focused_widget, (QSpinBox, QDoubleSpinBox, QLineEdit)):
+                focused_widget.clearFocus()
+                event.accept()
+                return
+            # Otherwise, don't close dialog - just ignore
+            event.ignore()
+            return
+        super().keyPressEvent(event)

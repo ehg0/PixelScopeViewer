@@ -126,20 +126,21 @@ class ImageViewer(QMainWindow):
 
         # Info dock with tabs
         from PySide6.QtWidgets import QTabWidget
+
         self.info_dock = QDockWidget("Info")
         self.info_dock.setFeatures(QDockWidget.DockWidgetFloatable | QDockWidget.DockWidgetMovable)
-        
+
         # Create tab widget
         self.info_tabs = QTabWidget()
-        
+
         # Display info tab
         display_info_widget = DisplayInfoWidget(self)
         self.info_tabs.addTab(display_info_widget, "Display Area")
-        
+
         # ROI info tab
         roi_info_widget = ROIInfoWidget(self)
         self.info_tabs.addTab(roi_info_widget, "ROI Area")
-        
+
         self.info_dock.setWidget(self.info_tabs)
         self.addDockWidget(Qt.RightDockWidgetArea, self.info_dock)
 

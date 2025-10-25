@@ -1,7 +1,6 @@
 """Analysis dialog with tabbed interface for image analysis.
 
 This module provides the main AnalysisDialog which displays:
-- Info tab: Selection size and position
 - Histogram tab: Intensity histogram with customizable channels and statistical information
 - Profile tab: Line profile (horizontal/vertical/diagonal) with absolute/relative modes and statistical information
 - Metadata tab: Image metadata in table format with EXIF information
@@ -64,18 +63,15 @@ from .widgets import CopyableTableWidget
 
 
 class AnalysisDialog(QDialog):
-    """Main analysis dialog with tabbed interface for Info, Histogram, and Profile.
+    """Main analysis dialog with tabbed interface for Metadata, Histogram, and Profile.
 
-    This dialog provides four tabs for analyzing image selections:
+    This dialog provides three tabs for analyzing image selections:
 
     1. Metadata Tab:
        - Displays comprehensive image metadata including EXIF information
        - Copyable table format
 
-    2. Info Tab:
-       - Displays selection dimensions and position
-
-    3. Histogram Tab:
+    2. Histogram Tab:
        - Shows intensity distribution across all channels
        - Statistical information: mean, std, min, max, median for visible channels
        - Customizable via "Channels..." button
@@ -170,14 +166,6 @@ class AnalysisDialog(QDialog):
         ml.addWidget(self.metadata_copy_btn)
 
         self.tabs.addTab(metadata_tab, "Metadata")
-
-        # Info tab
-        info_tab = QWidget()
-        il = QVBoxLayout(info_tab)
-        self.info_browser = QTextBrowser()
-        self.info_browser.setReadOnly(True)
-        il.addWidget(self.info_browser)
-        self.tabs.addTab(info_tab, "Info")
 
         # Profile tab
         prof_tab = QWidget()
@@ -596,7 +584,6 @@ class AnalysisDialog(QDialog):
         """
         arr = self.image_array
         if arr is None:
-            self.info_browser.setPlainText("No data")
             self._update_metadata()
             return
         if self.image_rect is not None:
@@ -607,12 +594,6 @@ class AnalysisDialog(QDialog):
                 int(self.image_rect.height()),
             )
             arr = arr[y : y + h, x : x + w]
-
-        h, w = arr.shape[:2]
-        info_lines = [f"Selection size: {w} x {h}"]
-        if self.image_rect is not None:
-            info_lines.append(f"Start: ({int(self.image_rect.x())}, {int(self.image_rect.y())})")
-        self.info_browser.setPlainText("\n".join(info_lines))
 
         # Update metadata tab (always update when image changes)
         self._update_metadata()

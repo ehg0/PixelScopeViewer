@@ -124,19 +124,24 @@ class ImageViewer(QMainWindow):
         self.navigator_dock.setWidget(navigator_widget)
         self.addDockWidget(Qt.RightDockWidgetArea, self.navigator_dock)
 
-        # Display info dock
-        self.display_info_dock = QDockWidget("Display Area Info")
-        self.display_info_dock.setFeatures(QDockWidget.DockWidgetFloatable | QDockWidget.DockWidgetMovable)
+        # Info dock with tabs
+        from PySide6.QtWidgets import QTabWidget
+        self.info_dock = QDockWidget("Info")
+        self.info_dock.setFeatures(QDockWidget.DockWidgetFloatable | QDockWidget.DockWidgetMovable)
+        
+        # Create tab widget
+        self.info_tabs = QTabWidget()
+        
+        # Display info tab
         display_info_widget = DisplayInfoWidget(self)
-        self.display_info_dock.setWidget(display_info_widget)
-        self.addDockWidget(Qt.RightDockWidgetArea, self.display_info_dock)
-
-        # ROI info dock
-        self.roi_info_dock = QDockWidget("ROI Area Info")
-        self.roi_info_dock.setFeatures(QDockWidget.DockWidgetFloatable | QDockWidget.DockWidgetMovable)
+        self.info_tabs.addTab(display_info_widget, "Display Area")
+        
+        # ROI info tab
         roi_info_widget = ROIInfoWidget(self)
-        self.roi_info_dock.setWidget(roi_info_widget)
-        self.addDockWidget(Qt.RightDockWidgetArea, self.roi_info_dock)
+        self.info_tabs.addTab(roi_info_widget, "ROI Area")
+        
+        self.info_dock.setWidget(self.info_tabs)
+        self.addDockWidget(Qt.RightDockWidgetArea, self.info_dock)
 
         self.status = QStatusBar()
         self.setStatusBar(self.status)

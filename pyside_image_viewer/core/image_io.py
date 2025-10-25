@@ -61,6 +61,8 @@ def numpy_to_qimage(arr: np.ndarray) -> QImage:
     elif a.ndim == 3:
         h, w, c = a.shape
         disp = np.clip(a, 0, 255).astype(np.uint8)
+        # Ensure array is C-contiguous for QImage
+        disp = np.ascontiguousarray(disp)
         if c == 3:
             return QImage(disp.data, w, h, 3 * w, QImage.Format_RGB888).copy()
         elif c == 4:

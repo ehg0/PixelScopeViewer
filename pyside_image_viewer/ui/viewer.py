@@ -103,6 +103,10 @@ class ImageViewer(QMainWindow):
         self.brightness_gain = 1.0
         self.brightness_saturation = 255
 
+        # Channel selection parameters
+        self.channel_checks = []
+        self.channel_colors = []
+
         central = QWidget(self)
         self.setCentralWidget(central)
         h_layout = QHBoxLayout(central)
@@ -182,14 +186,16 @@ class ImageViewer(QMainWindow):
         self.update_image_list_menu()
 
         view_menu = menubar.addMenu("表示")
-        view_menu.addAction(QAction("表示輝度調整", self, triggered=self.show_brightness_dialog))
+        # メニュー項目にショートカットの視覚的表記を追加（triggered(bool)のboolを無視するためlambdaでラップ）
+        view_menu.addAction(QAction("表示設定 (V)", self, triggered=lambda: self.show_brightness_dialog()))
         view_menu.addSeparator()
         view_menu.addAction(QAction("拡大", self, triggered=lambda: self.set_zoom(min(self.scale * 2, 128.0))))
         view_menu.addAction(QAction("縮小", self, triggered=lambda: self.set_zoom(max(self.scale / 2, 0.125))))
 
         analysis = menubar.addMenu("解析")
+        # 解析ダイアログを開くショートカットの視覚的表記を追加
+        analysis.addAction(QAction("解析ダイアログ (A)", self, triggered=lambda: self.show_analysis_dialog()))
         analysis.addAction(QAction("メタデータ", self, triggered=lambda: self.show_analysis_dialog(tab="Metadata")))
-        analysis.addSeparator()
         analysis.addAction(QAction("プロファイル", self, triggered=lambda: self.show_analysis_dialog(tab="Profile")))
         analysis.addAction(QAction("ヒストグラム", self, triggered=lambda: self.show_analysis_dialog(tab="Histogram")))
         analysis.addSeparator()
@@ -249,8 +255,26 @@ class ImageViewer(QMainWindow):
         self.zoom_out_action.triggered.connect(lambda: self.set_zoom(max(self.scale / 2, 0.125)))
         self.addAction(self.zoom_out_action)
 
+        # Single-key shortcuts
+        # V: 表示設定（Display/View）
+        self.show_display_settings_action = QAction(self)
+        self.show_display_settings_action.setShortcut("V")
+        self.show_display_settings_action.setShortcutContext(Qt.ApplicationShortcut)
+        # QAction.triggered(bool) の引数を無視する
+        self.show_display_settings_action.triggered.connect(lambda checked=False: self.show_brightness_dialog())
+        self.addAction(self.show_display_settings_action)
+
+        # A: 解析ダイアログ（Analysis）
+        self.show_analysis_action = QAction(self)
+        self.show_analysis_action.setShortcut("A")
+        self.show_analysis_action.setShortcutContext(Qt.ApplicationShortcut)
+        # QAction.triggered(bool) の bool が show_analysis_dialog(tab) に誤って渡り
+        # タブが 0/1 に切り替わるのを防ぐため、引数を捨てるラッパーで接続
+        self.show_analysis_action.triggered.connect(lambda checked=False: self.show_analysis_dialog())
+        self.addAction(self.show_analysis_action)
+
     def show_brightness_dialog(self):
-        """表示輝度調整ダイアログを表示します。
+        """表示設定ダイアログを表示します。
 
         現在選択中の画像が存在しない場合は情報ダイアログを表示して終了します。
 
@@ -260,7 +284,7 @@ class ImageViewer(QMainWindow):
         例外やエラーは GUI 内でユーザ向けに通知されます。
         """
         if self.current_index is None:
-            QMessageBox.information(self, "表示輝度調整", "画像が選択されていません。")
+            QMessageBox.information(self, "表示設定", "画像が選択されていません。")
             return
 
         img = self.images[self.current_index]
@@ -269,21 +293,52 @@ class ImageViewer(QMainWindow):
 
         # Create dialog if it doesn't exist
         if self.brightness_dialog is None:
-            self.brightness_dialog = BrightnessDialog(self, arr, img_path)
+            self.brightness_dialog = BrightnessDialog(
+                self,
+                arr,
+                img_path,
+                initial_brightness=(self.brightness_offset, self.brightness_gain, self.brightness_saturation),
+                initial_channels=self.channel_checks,
+                initial_colors=self.channel_colors,
+            )
             self.brightness_dialog.brightness_changed.connect(self.on_brightness_changed)
+            self.brightness_dialog.channels_changed.connect(self.on_channels_changed)
+            self.brightness_dialog.channel_colors_changed.connect(self.on_channel_colors_changed)
             # Initialize status bar with current parameters
-            params = self.brightness_dialog.get_parameters()
+            params = self.brightness_dialog.get_brightness()
             self.brightness_offset = params[0]
             self.brightness_gain = params[1]
             self.brightness_saturation = params[2]
             self.update_brightness_status()
         else:
             # Update dialog for new image
-            self.brightness_dialog.update_for_new_image(arr, img_path)
+            self.brightness_dialog.update_for_new_image(arr, img_path, channel_checks=self.channel_checks)
             # Note: update_for_new_image will emit brightness_changed signal
             # which will update the status bar through on_brightness_changed
 
+        # 表示中のダイアログは show() を再実行しない（位置が変わるのを防ぐ）
+        if self.brightness_dialog.isVisible():
+            try:
+                self.brightness_dialog.raise_()
+                self.brightness_dialog.activateWindow()
+            except Exception:
+                pass
+            return
+
+        # 非表示（前回閉じた等）の場合のみ再表示し、可能なら保存ジオメトリを復元
+        try:
+            from .dialogs.brightness_dialog import BrightnessDialog as _BD
+
+            if getattr(_BD, "_saved_geometry", None):
+                self.brightness_dialog.restoreGeometry(_BD._saved_geometry)
+        except Exception:
+            pass
         self.brightness_dialog.show()
+        try:
+            self.brightness_dialog.raise_()
+            self.brightness_dialog.activateWindow()
+        except Exception:
+            pass
 
     def reset_brightness_settings(self):
         """輝度設定を初期値に戻します（Ctrl+R 等から呼び出されます）。
@@ -336,6 +391,30 @@ class ImageViewer(QMainWindow):
         if self.current_index is not None:
             self.display_image(self.images[self.current_index]["array"])
 
+    def on_channels_changed(self, channels):
+        """Handle channel selection changes.
+
+        Args:
+            channels: List of bools for channel visibility
+        """
+        self.channel_checks = channels
+
+        # Refresh display with new channel selection
+        if self.current_index is not None:
+            self.display_image(self.images[self.current_index]["array"])
+
+    def on_channel_colors_changed(self, colors):
+        """Handle channel color changes.
+
+        Args:
+            colors: List of QColor objects for channel colors
+        """
+        self.channel_colors = colors
+
+        # Refresh display with new channel colors
+        if self.current_index is not None:
+            self.display_image(self.images[self.current_index]["array"])
+
     def apply_brightness_adjustment(self, arr: np.ndarray) -> np.ndarray:
         """画像配列に対して輝度補正を適用して新しい配列を返します。
 
@@ -364,6 +443,9 @@ class ImageViewer(QMainWindow):
         return np.clip(adjusted, 0, 255).astype(np.uint8)
 
     def show_analysis_dialog(self, tab: Optional[str] = None):
+        # QAction.triggered(bool) の誤渡し対策（bool は int 扱いでタブ番号に解釈され得るため無視）
+        if isinstance(tab, bool):
+            tab = None
         # open analysis dialog for current image and current ROI
         if self.current_index is None:
             QMessageBox.information(self, "解析", "画像が選択されていません。")
@@ -508,18 +590,67 @@ class ImageViewer(QMainWindow):
             if "base_array" in img:
                 img["array"] = img["base_array"].copy()
 
+        # Initialize channel checks and colors for new image
+        arr = img["array"]
+        if arr.ndim >= 3:
+            n_channels = arr.shape[2]
+
+            # Preserve existing channel checks and colors, extending or truncating as needed
+            if not self.channel_checks:
+                # First time initialization
+                self.channel_checks = [True] * n_channels
+            else:
+                # Extend or truncate to match current channel count
+                if len(self.channel_checks) < n_channels:
+                    # Extend with True for new channels
+                    self.channel_checks.extend([True] * (n_channels - len(self.channel_checks)))
+                elif len(self.channel_checks) > n_channels:
+                    # Truncate to current channel count
+                    self.channel_checks = self.channel_checks[:n_channels]
+
+            if not self.channel_colors:
+                # First time initialization with default colors
+                if n_channels == 3:
+                    from PySide6.QtGui import QColor
+
+                    self.channel_colors = [QColor(255, 0, 0), QColor(0, 255, 0), QColor(0, 0, 255)]  # R, G, B
+                else:
+                    from PySide6.QtGui import QColor
+
+                    self.channel_colors = [QColor(255, 255, 255)] * n_channels  # White for all channels
+            else:
+                # Preserve existing colors, extending or truncating as needed
+                if len(self.channel_colors) < n_channels:
+                    # Extend with white for new channels
+                    from PySide6.QtGui import QColor
+
+                    self.channel_colors.extend([QColor(255, 255, 255)] * (n_channels - len(self.channel_colors)))
+                elif len(self.channel_colors) > n_channels:
+                    # Truncate to current channel count
+                    self.channel_colors = self.channel_colors[:n_channels]
+        else:
+            # For grayscale images, preserve the settings but don't use them
+            # This way, when switching back to color images, the settings are restored
+            pass
+
         arr = img["array"]
         self.display_image(arr)
         self.image_changed.emit()
         self.update_image_list_menu()
 
-        # Update brightness dialog if it's open
-        if self.brightness_dialog is not None and self.brightness_dialog.isVisible():
+        # Update brightness dialog if it exists (even if not visible)
+        if self.brightness_dialog is not None:
             img = self.images[self.current_index]
             arr_for_brightness = img.get("base_array", img.get("array"))
             img_path = img.get("path", None)
             # Keep current brightness settings when switching images
-            self.brightness_dialog.update_for_new_image(arr_for_brightness, img_path, keep_settings=True)
+            self.brightness_dialog.update_for_new_image(
+                arr_for_brightness,
+                img_path,
+                keep_settings=True,
+                channel_checks=self.channel_checks,
+                channel_colors=self.channel_colors,
+            )
 
         # notify open analysis dialogs about new image
         try:
@@ -568,11 +699,64 @@ class ImageViewer(QMainWindow):
         apply_brightness_adjustment を経由して補正を行い、QImage に変換して `ImageLabel` に渡します。
 
         パラメータ:
-            arr: NumPy 配列（H,W[,C]）で表された画像データ
+            arr: NumPy 配列(H,W[,C])で表された画像データ
         """
-        # Apply brightness adjustment if parameters are not default
+        # Apply brightness adjustment first if parameters are not default
         if self.brightness_offset != 0 or self.brightness_gain != 1.0 or self.brightness_saturation != 255:
             arr = self.apply_brightness_adjustment(arr)
+
+        # Apply channel selection and color synthesis if specified
+        if arr.ndim >= 3 and self.channel_checks:
+            # Ensure channel_checks and channel_colors match the number of channels
+            n_channels = arr.shape[2]
+            if len(self.channel_checks) < n_channels:
+                self.channel_checks.extend([True] * (n_channels - len(self.channel_checks)))
+            if len(self.channel_colors) < n_channels:
+                from PySide6.QtGui import QColor
+
+                # Extend with white for additional channels
+                self.channel_colors.extend([QColor(255, 255, 255)] * (n_channels - len(self.channel_colors)))
+            elif len(self.channel_colors) > n_channels:
+                self.channel_colors = self.channel_colors[:n_channels]
+
+            # Check if any channels are selected
+            selected_channels = [i for i, checked in enumerate(self.channel_checks) if checked]
+            if not selected_channels:
+                # If no channels selected, show black image
+                arr = np.zeros((arr.shape[0], arr.shape[1], 3), dtype=np.uint8)
+            else:
+                # Create color composite image
+                composite = np.zeros((arr.shape[0], arr.shape[1], 3), dtype=np.float32)
+
+                for i, channel_idx in enumerate(selected_channels):
+                    if channel_idx < len(self.channel_colors):
+                        color = self.channel_colors[channel_idx]
+                        # Normalize color values to 0-1 range
+                        r = color.red() / 255.0
+                        g = color.green() / 255.0
+                        b = color.blue() / 255.0
+
+                        # Get channel data and normalize to 0-1 range
+                        channel_data = arr[:, :, channel_idx].astype(np.float32)
+
+                        # Normalize to 0-255 range (assuming arr is already uint8 from brightness adjustment)
+                        if arr.dtype == np.uint8:
+                            channel_data = channel_data / 255.0
+                        else:
+                            # For non-uint8, normalize appropriately
+                            if np.issubdtype(arr.dtype, np.floating):
+                                channel_data = np.clip(channel_data, 0, 1)
+                            elif np.issubdtype(arr.dtype, np.integer):
+                                max_val = np.iinfo(arr.dtype).max
+                                channel_data = channel_data / max_val
+
+                        composite[:, :, 0] += channel_data * r
+                        composite[:, :, 1] += channel_data * g
+                        composite[:, :, 2] += channel_data * b
+
+                # Clip to valid range and convert to uint8
+                composite = np.clip(composite, 0, 1)
+                arr = (composite * 255).astype(np.uint8)
 
         qimg = numpy_to_qimage(arr)
         self.image_label.set_image(qimg, self.scale)

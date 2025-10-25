@@ -162,7 +162,7 @@ class ImageViewer(QMainWindow):
         self.create_menus()
         self.setAcceptDrops(True)
         # keep references to modeless dialogs so they don't get GC'd
-        self._analysis_dialogs = []
+        self._analysis_dialog = None
 
     def create_menus(self):
         menubar = self.menuBar()
@@ -368,6 +368,18 @@ class ImageViewer(QMainWindow):
         if self.current_index is None:
             QMessageBox.information(self, "解析", "画像が選択されていません。")
             return
+
+        # If dialog already exists, bring it to front
+        if self._analysis_dialog is not None:
+            self._analysis_dialog.raise_()
+            self._analysis_dialog.activateWindow()
+            if tab is not None:
+                try:
+                    self._analysis_dialog.set_current_tab(tab)
+                except Exception:
+                    pass
+            return
+
         img = self.images[self.current_index]
         arr = img.get("base_array", img.get("array"))
         sel = self.current_roi_rect
@@ -376,8 +388,8 @@ class ImageViewer(QMainWindow):
         dlg = AnalysisDialog(self, image_array=arr, image_rect=sel, image_path=img_path, pil_image=pil_img)
         dlg.show()
         # keep a reference until the dialog is closed
-        self._analysis_dialogs.append(dlg)
-        dlg.finished.connect(lambda _: self._analysis_dialogs.remove(dlg) if dlg in self._analysis_dialogs else None)
+        self._analysis_dialog = dlg
+        dlg.finished.connect(lambda: setattr(self, "_analysis_dialog", None))
         # if a tab was requested, set it
         if tab is not None:
             try:
@@ -515,9 +527,11 @@ class ImageViewer(QMainWindow):
             arr_for_analysis = img.get("base_array", img.get("array"))
             img_path = img.get("path", None)
             pil_img = img.get("pil_image")
-            for dlg in list(self._analysis_dialogs):
+            if self._analysis_dialog:
                 try:
-                    dlg.set_image_and_rect(arr_for_analysis, self.current_selection_rect, img_path, pil_img)
+                    self._analysis_dialog.set_image_and_rect(
+                        arr_for_analysis, self.current_selection_rect, img_path, pil_img
+                    )
                 except Exception:
                     pass
         except Exception:
@@ -536,17 +550,16 @@ class ImageViewer(QMainWindow):
             self.update_roi_status(rect)
 
         # notify any open modeless AnalysisDialogs so they can refresh for new image
-        if self._analysis_dialogs:
+        if self._analysis_dialog:
             img = self.images[self.current_index] if self.current_index is not None else None
             if img:
                 arr = img.get("base_array", img.get("array"))
                 img_path = img.get("path")
                 pil_img = img.get("pil_image")
-                for dlg in list(self._analysis_dialogs):
-                    try:
-                        dlg.set_image_and_rect(arr, self.current_roi_rect, img_path, pil_img)
-                    except Exception:
-                        pass
+                try:
+                    self._analysis_dialog.set_image_and_rect(arr, self.current_roi_rect, img_path, pil_img)
+                except Exception:
+                    pass
 
     def display_image(self, arr):
         """指定した画像配列をビューアに表示します。
@@ -601,9 +614,9 @@ class ImageViewer(QMainWindow):
         except Exception:
             pass
         # notify analysis dialogs that there's no image now
-        for dlg in list(self._analysis_dialogs):
+        if self._analysis_dialog:
             try:
-                dlg.set_image_and_rect(None, None)
+                self._analysis_dialog.set_image_and_rect(None, None)
             except Exception:
                 pass
 
@@ -924,19 +937,18 @@ class ImageViewer(QMainWindow):
         )
         self.update_roi_status(rect)
         # notify any open modeless AnalysisDialogs so they can refresh for new ROI
-        if self._analysis_dialogs:
+        if self._analysis_dialog:
             # Get current image data
             img = self.images[self.current_index] if self.current_index is not None else None
             if img:
                 arr = img.get("base_array", img.get("array"))
                 img_path = img.get("path")
                 pil_img = img.get("pil_image")
-                for dlg in list(self._analysis_dialogs):
-                    try:
-                        dlg.set_image_and_rect(arr, self.current_roi_rect, img_path, pil_img)
-                    except Exception:
-                        # ignore dialog-specific errors and continue notifying others
-                        pass
+                try:
+                    self._analysis_dialog.set_image_and_rect(arr, self.current_roi_rect, img_path, pil_img)
+                except Exception:
+                    # ignore dialog-specific errors and continue notifying others
+                    pass
 
         self.roi_changed.emit()
 
@@ -1087,17 +1099,16 @@ class ImageViewer(QMainWindow):
             self.update_roi_status()
 
             # Notify any open modeless AnalysisDialogs
-            if self._analysis_dialogs:
+            if self._analysis_dialog:
                 img = self.images[self.current_index] if self.current_index is not None else None
                 if img:
                     arr = img.get("base_array", img.get("array"))
                     img_path = img.get("path")
                     pil_img = img.get("pil_image")
-                    for dlg in list(self._analysis_dialogs):
-                        try:
-                            dlg.set_image_and_rect(arr, self.current_roi_rect, img_path, pil_img)
-                        except Exception:
-                            pass
+                    try:
+                        self._analysis_dialog.set_image_and_rect(arr, self.current_roi_rect, img_path, pil_img)
+                    except Exception:
+                        pass
             # Emit ROI changed for dependent widgets (e.g., ROIInfo)
             self.roi_changed.emit()
         except Exception:

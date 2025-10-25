@@ -114,7 +114,7 @@ class BrightnessTab(QWidget):
 
         # Data type selector
         dtype_layout = QHBoxLayout()
-        dtype_label = QLabel("???? (Data Type):")
+        dtype_label = QLabel("データ型 (Data Type):")
         dtype_label.setStyleSheet("font-weight: bold; font-size: 10pt;")
         self.dtype_combo = QComboBox()
         self.dtype_combo.addItems(["float", "uint8", "uint16"])
@@ -227,7 +227,7 @@ class BrightnessTab(QWidget):
         self.gain_slider.valueChanged.connect(self._on_gain_slider_changed)
 
         self.gain_spinbox = QDoubleSpinBox()
-        self.gain_spinbox.setDecimals(2)  # 小数点第2位まで表示
+        self.gain_spinbox.setDecimals(5)  # 小数点第5位まで表示（小さい値も正確に表示）
         self.gain_spinbox.setSingleStep(0.01)
         self.gain_spinbox.setReadOnly(False)
         self.gain_spinbox.setKeyboardTracking(True)  # Enable real-time tracking
@@ -607,15 +607,13 @@ class BrightnessTab(QWidget):
 
     def update_for_new_image(self, image_array=None, image_path=None, keep_settings=True):
         """新しい画像に合わせてダイアログのパラメータ範囲／表示を更新します。"""
-        # Save current parameters to old dtype BEFORE changing anything
-        if keep_settings:
-            old_dtype = self.current_dtype
-            old_params = (
-                self.offset_spinbox.value(),
-                self.gain_spinbox.value(),
-                self.saturation_spinbox.value(),
-            )
-            self.dtype_params[old_dtype] = old_params
+        # Store current dtype and parameters before changing anything
+        old_dtype = self.current_dtype
+        old_params = (
+            self.offset_spinbox.value(),
+            self.gain_spinbox.value(),
+            self.saturation_spinbox.value(),
+        )
 
         self.image_array = image_array
         self.image_path = image_path
@@ -626,6 +624,10 @@ class BrightnessTab(QWidget):
         # Determine new initial values based on new image (this changes self.current_dtype)
         self._determine_initial_values()
         self._gain_slider_min, self._gain_slider_max = self.gain_range
+
+        # Save old parameters to old dtype AFTER determining new dtype
+        if keep_settings:
+            self.dtype_params[old_dtype] = old_params
 
         # Update dtype combo to match detected image dtype
         if hasattr(self, "dtype_combo"):

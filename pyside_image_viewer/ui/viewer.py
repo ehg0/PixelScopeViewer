@@ -70,7 +70,7 @@ class ImageViewer(QMainWindow):
 
     Attributes:
         images: List of loaded image dictionaries with keys:
-                'path', 'array', 'base_array', 'bit_shift'
+                'path', 'array', 'base_array'
         current_index: Index of currently displayed image
         scale: Current zoom scale factor
     """
@@ -224,17 +224,17 @@ class ImageViewer(QMainWindow):
         self.reset_brightness_action.triggered.connect(self.reset_brightness_settings)
         self.addAction(self.reset_brightness_action)
 
-        self.left_bit_shift_action = QAction(self)
-        self.left_bit_shift_action.setShortcut("<")
-        self.left_bit_shift_action.setShortcutContext(Qt.ApplicationShortcut)
-        self.left_bit_shift_action.triggered.connect(lambda: self.adjust_gain_step(-1))
-        self.addAction(self.left_bit_shift_action)
+        self.left_gain_adjust_action = QAction(self)
+        self.left_gain_adjust_action.setShortcut("<")
+        self.left_gain_adjust_action.setShortcutContext(Qt.ApplicationShortcut)
+        self.left_gain_adjust_action.triggered.connect(lambda: self.adjust_gain_step(-1))
+        self.addAction(self.left_gain_adjust_action)
 
-        self.right_bit_shift_action = QAction(self)
-        self.right_bit_shift_action.setShortcut(">")
-        self.right_bit_shift_action.setShortcutContext(Qt.ApplicationShortcut)
-        self.right_bit_shift_action.triggered.connect(lambda: self.adjust_gain_step(1))
-        self.addAction(self.right_bit_shift_action)
+        self.right_gain_adjust_action = QAction(self)
+        self.right_gain_adjust_action.setShortcut(">")
+        self.right_gain_adjust_action.setShortcutContext(Qt.ApplicationShortcut)
+        self.right_gain_adjust_action.triggered.connect(lambda: self.adjust_gain_step(1))
+        self.addAction(self.right_gain_adjust_action)
 
         self.fit_toggle_action = QAction(self)
         self.fit_toggle_action.setShortcut("f")

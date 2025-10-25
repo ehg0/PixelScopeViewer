@@ -86,7 +86,7 @@ class NavigatorWidget(QGroupBox):
 
         # Draw rectangle on pixmap
         painter = QPainter(scaled_pixmap)
-        pen = QPen(QColor(255, 0, 0), 2)
+        pen = QPen(QColor(255, 68, 68, 255), 2)  # Red color for viewport border
         painter.setPen(pen)
         painter.drawRect(thumb_x, thumb_y, thumb_w, thumb_h)
         painter.end()

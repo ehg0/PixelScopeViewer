@@ -747,13 +747,13 @@ class BrightnessTab(QWidget):
 
         # Forward < and > keys to parent
         if key == Qt.Key_Less or key == Qt.Key_Comma:  # < key
-            if self.parent():
-                self.parent().left_bit_shift_action.trigger()
+            if self.parent() and hasattr(self.parent(), "left_gain_adjust_action"):
+                self.parent().left_gain_adjust_action.trigger()
                 event.accept()
                 return
         elif key == Qt.Key_Greater or key == Qt.Key_Period:  # > key
-            if self.parent():
-                self.parent().right_bit_shift_action.trigger()
+            if self.parent() and hasattr(self.parent(), "right_gain_adjust_action"):
+                self.parent().right_gain_adjust_action.trigger()
                 event.accept()
                 return
         elif key == Qt.Key_R and modifiers == Qt.ControlModifier:  # Ctrl+R

@@ -70,7 +70,7 @@ class ImageViewer(QMainWindow):
 
     Attributes:
         images: List of loaded image dictionaries with keys:
-                'path', 'array', 'base_array'
+                'path', 'array', 'base_array', 'pil_image'
         current_index: Index of currently displayed image
         scale: Current zoom scale factor
     """
@@ -647,13 +647,13 @@ class ImageViewer(QMainWindow):
         try:
             if np.issubdtype(arr.dtype, np.floating):
                 # Float: prefer saturation=1.0 if previously at uint defaults
-                if self.brightness_saturation in (None, 255):
+                if self.brightness_saturation == 255:
                     self.brightness_saturation = 1.0
                     self.update_brightness_status()
             else:
                 # Integer types
-                # If coming from float (saturation=1.0) or unset, restore an integer-friendly default
-                if self.brightness_saturation in (None, 1.0):
+                # If coming from float (saturation=1.0), restore an integer-friendly default
+                if self.brightness_saturation == 1.0:
                     try:
                         max_val = np.iinfo(arr.dtype).max
                     except Exception:
@@ -864,7 +864,7 @@ class ImageViewer(QMainWindow):
         except Exception:
             QMessageBox.information(self, "差分", "差分の作成に失敗しました。画像サイズや型を確認してください。")
             return
-        img_data = {"path": f"diff:{a_idx+1}-{b_idx+1}", "array": diff, "base_array": diff.copy()}
+        img_data = {"path": f"diff:{a_idx+1}-{b_idx+1}", "array": diff, "base_array": diff.copy(), "pil_image": None}
         self.images.append(img_data)
         # switch to the new image
         self.current_index = len(self.images) - 1

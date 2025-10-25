@@ -1,4 +1,4 @@
-"""Brightness adjustment dialog for controlling display intensity.
+"""Brightness and channel adjustment dialog for controlling display intensity and channel visibility.
 
 This module provides a dialog for adjusting image display brightness with:
 - Offset: Shifts intensity baseline (can be negative)
@@ -8,7 +8,7 @@ This module provides a dialog for adjusting image display brightness with:
 Formula: yout = gain * (yin - offset) / saturation * 255
 
 The dialog adapts to image data type and provides both sliders and spinboxes
-for precise control.
+for precise control. Also includes channel visibility selection.
 """
 
 import os
@@ -23,35 +23,24 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QPushButton,
     QGroupBox,
+    QTabWidget,
+    QWidget,
+    QCheckBox,
+    QDialogButtonBox,
+    QComboBox,
+    QColorDialog,
 )
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QColor, QPixmap, QIcon
 
 
-class BrightnessDialog(QDialog):
-    """Dialog for adjusting display brightness parameters.
-
-    Signals:
-        brightness_changed: Emitted when any parameter changes (offset, gain, saturation)
-
-    The dialog automatically detects image data type and sets appropriate
-    parameter ranges and initial values.
-    """
+class BrightnessTab(QWidget):
+    """Tab for adjusting display brightness parameters."""
 
     brightness_changed = Signal(float, float, float)  # offset, gain, saturation
 
     def __init__(self, parent=None, image_array=None, image_path=None):
-        """Initialize brightness adjustment dialog.
-
-        Args:
-            parent: Parent widget
-            image_array: NumPy array of current image
-            image_path: Path to current image file
-        """
         super().__init__(parent)
-        self.setWindowTitle("表示輝度調整")
-        self.resize(450, 420)  # Optimized for new design
-        self.setStyleSheet("QDialog { background-color: #fafafa; }")
-
         self.image_array = image_array
         self.image_path = image_path
 
@@ -307,19 +296,12 @@ class BrightnessDialog(QDialog):
         formula_label.setStyleSheet("font-style: italic; font-size: 10pt")
         main_layout.addWidget(formula_label)
 
-        # Buttons
-        button_layout = QHBoxLayout()
-        button_layout.setSpacing(10)
-
+        # Reset button
         self.reset_button = QPushButton("Reset (Ctrl+R)")
         self.reset_button.clicked.connect(self._on_reset_clicked)
-        button_layout.addWidget(self.reset_button)
+        main_layout.addWidget(self.reset_button)
 
-        self.close_button = QPushButton("Close")
-        self.close_button.clicked.connect(self.accept)
-        button_layout.addWidget(self.close_button)
-
-        main_layout.addLayout(button_layout)
+        main_layout.addStretch()
 
     def _on_offset_slider_changed(self, value):
         """Handle offset slider change."""
@@ -419,15 +401,7 @@ class BrightnessDialog(QDialog):
         self.brightness_changed.emit(offset, gain, saturation)
 
     def set_gain(self, gain_value):
-        """プログラム的にゲイン値を設定します（例: ビットシフトによる更新）。
-
-        引数:
-            gain_value: 設定する新しいゲイン値（float）。
-
-        説明:
-            スライダーとスピンボックス両方を更新します。スライダーは UI 上の視覚範囲に制限されますが、
-            スピンボックスは拡張レンジを許容しているためビットシフト等の極端な値も扱えます。
-        """
+        """プログラム的にゲイン値を設定します（例: ビットシフトによる更新）。"""
         # Allow values outside slider range for bit shift operations.
         # Spinbox is clamped to an extended range while the slider stays within its UI bounds.
         self.gain_slider.blockSignals(True)
@@ -455,10 +429,7 @@ class BrightnessDialog(QDialog):
         self._emit_brightness_changed()
 
     def reset_parameters(self):
-        """パラメータを初期値に戻し、変更をリスナに通知します。
-
-        主に外部（例: 親ビューア）から呼び出されることを想定しています。
-        """
+        """パラメータを初期値に戻し、変更をリスナに通知します。"""
         self._reset_to_initial()
         self._emit_brightness_changed()
 
@@ -496,11 +467,7 @@ class BrightnessDialog(QDialog):
         self.saturation_spinbox.blockSignals(False)
 
     def get_parameters(self):
-        """現在の輝度補正パラメータを取得します。
-
-        戻り値:
-            tuple: (offset, gain, saturation)
-        """
+        """現在の輝度補正パラメータを取得します。"""
         return (
             self.offset_spinbox.value(),
             self.gain_spinbox.value(),
@@ -508,17 +475,7 @@ class BrightnessDialog(QDialog):
         )
 
     def update_for_new_image(self, image_array=None, image_path=None, keep_settings=True):
-        """新しい画像に合わせてダイアログのパラメータ範囲／表示を更新します。
-
-        引数:
-            image_array: 新しい画像の NumPy 配列
-            image_path: 新しい画像のファイルパス
-            keep_settings: True の場合は既存の値を可能な限り保持し、False の場合は初期値にリセットします。
-
-        注意:
-            画像のデータ型が変化した場合は内部ウィジェットの再作成が必要になる可能性がありますが、
-            現状は範囲のみを更新して既存ウィジェットを再利用します。
-        """
+        """新しい画像に合わせてダイアログのパラメータ範囲／表示を更新します。"""
         # Store current values if we want to keep them
         if keep_settings:
             current_offset = self.offset_spinbox.value()
@@ -639,3 +596,371 @@ class BrightnessDialog(QDialog):
 
         # Call parent implementation for other keys
         super().keyPressEvent(event)
+
+
+class ChannelTab(QWidget):
+    """Tab for selecting visible channels."""
+
+    channels_changed = Signal(list)  # list of bools for channel visibility
+    channel_colors_changed = Signal(list)  # list of colors for channels
+
+    def __init__(self, parent=None, image_array=None, image_path=None, initial_channels=None, initial_colors=None):
+        super().__init__(parent)
+        self.image_array = image_array
+        self.checkboxes = []
+        self.color_buttons = []
+        self.channel_colors = []
+
+        self._setup_ui(initial_channels, initial_colors)
+
+    def _setup_ui(self, initial_channels=None, initial_colors=None):
+        layout = QVBoxLayout(self)
+        layout.setSpacing(20)
+        layout.setContentsMargins(25, 25, 25, 25)
+
+        # Channel selection
+        channel_group = QGroupBox("表示チャンネル (Visible Channels)")
+        channel_layout = QVBoxLayout(channel_group)
+
+        self.checkboxes = []
+        self.color_buttons = []
+        self.channel_colors = []
+
+        if self.image_array is not None and self.image_array.ndim >= 3:
+            n_channels = self.image_array.shape[2]
+
+            # Set default colors for 3-channel images
+            if n_channels == 3 and initial_colors is None:
+                initial_colors = [QColor(255, 0, 0), QColor(0, 255, 0), QColor(0, 0, 255)]  # R, G, B
+            elif initial_colors is None:
+                initial_colors = [QColor(255, 255, 255)] * n_channels  # White for other channel counts
+
+            for i in range(n_channels):
+                # Create horizontal layout for each channel
+                channel_row = QHBoxLayout()
+
+                # Checkbox
+                cb = QCheckBox(f"チャンネル {i} (Channel {i})")
+                # Set checked state based on initial_channels
+                if initial_channels and i < len(initial_channels):
+                    cb.setChecked(initial_channels[i])
+                else:
+                    cb.setChecked(True)  # Default to checked
+                cb.stateChanged.connect(self._on_channel_changed)
+                self.checkboxes.append(cb)
+                channel_row.addWidget(cb)
+
+                # Color selection button
+                color = initial_colors[i] if i < len(initial_colors) else QColor(255, 255, 255)
+                self.channel_colors.append(color)
+
+                color_button = QPushButton()
+                color_button.setFixedSize(60, 24)
+                color_button.setToolTip("クリックして色を選択 (Click to select color)")
+                self._update_color_button(color_button, color)
+                color_button.clicked.connect(lambda checked, idx=i: self._select_color(idx))
+                self.color_buttons.append(color_button)
+                channel_row.addWidget(color_button)
+
+                channel_row.addStretch()
+                channel_layout.addLayout(channel_row)
+        else:
+            label = QLabel("チャンネル選択なし (グレースケール画像)")
+            label.setStyleSheet("color: #888;")
+            channel_layout.addWidget(label)
+
+        layout.addWidget(channel_group)
+
+        # Select All / Deselect All buttons
+        button_layout = QHBoxLayout()
+        button_layout.setSpacing(10)
+        self.select_all_btn = QPushButton("すべて選択 (Select All)")
+        self.select_all_btn.clicked.connect(self.select_all)
+        button_layout.addWidget(self.select_all_btn)
+
+        self.deselect_all_btn = QPushButton("すべて解除 (Deselect All)")
+        self.deselect_all_btn.clicked.connect(self.deselect_all)
+        button_layout.addWidget(self.deselect_all_btn)
+
+        layout.addLayout(button_layout)
+        layout.addStretch()
+
+    def _on_channel_changed(self):
+        self._emit_change()
+
+    def _select_color(self, channel_idx):
+        """Open color picker dialog for the specified channel."""
+        current_color = self.channel_colors[channel_idx]
+        color = QColorDialog.getColor(current_color, self, f"チャンネル {channel_idx} の色を選択")
+
+        if color.isValid():
+            self.channel_colors[channel_idx] = color
+            self._update_color_button(self.color_buttons[channel_idx], color)
+            self._emit_color_change()
+
+    def _update_color_button(self, button, color):
+        """Update button appearance with the selected color."""
+        # Create a colored icon
+        pixmap = QPixmap(48, 16)
+        pixmap.fill(color)
+        button.setIcon(QIcon(pixmap))
+        button.setStyleSheet(f"background-color: {color.name()}; border: 1px solid #999;")
+        button.setText("")
+
+    def _emit_change(self):
+        states = [cb.isChecked() for cb in self.checkboxes]
+        self.channels_changed.emit(states)
+
+    def _emit_color_change(self):
+        self.channel_colors_changed.emit(self.channel_colors)
+
+    def select_all(self):
+        for cb in self.checkboxes:
+            cb.setChecked(True)
+
+    def deselect_all(self):
+        for cb in self.checkboxes:
+            cb.setChecked(False)
+
+    def get_channel_states(self):
+        return [cb.isChecked() for cb in self.checkboxes]
+
+    def set_channel_states(self, states):
+        for i, state in enumerate(states):
+            if i < len(self.checkboxes):
+                self.checkboxes[i].setChecked(state)
+
+    def get_channel_colors(self):
+        return self.channel_colors.copy()
+
+    def set_channel_colors(self, colors):
+        for i, color in enumerate(colors):
+            if i < len(self.channel_colors):
+                self.channel_colors[i] = color
+                if i < len(self.color_buttons):
+                    self._update_color_button(self.color_buttons[i], color)
+
+    def update_for_new_image(self, image_array=None, channel_checks=None, channel_colors=None):
+        """Update channel selection for new image."""
+        self.image_array = image_array
+
+        # Get the channel group layout
+        channel_group = self.findChild(QGroupBox, "表示チャンネル (Visible Channels)")
+        if not channel_group:
+            # If not found, try to find it in the layout
+            for child in self.children():
+                if isinstance(child, QGroupBox) and "チャンネル" in child.title():
+                    channel_group = child
+                    break
+
+        if channel_group:
+            channel_layout = channel_group.layout()
+
+            # Clear existing checkboxes and color buttons
+            for cb in self.checkboxes:
+                cb.setParent(None)
+                cb.deleteLater()
+            self.checkboxes.clear()
+
+            for button in self.color_buttons:
+                button.setParent(None)
+                button.deleteLater()
+            self.color_buttons.clear()
+            self.channel_colors.clear()
+
+            # Clear layout
+            while channel_layout.count():
+                item = channel_layout.takeAt(0)
+                widget = item.widget()
+                if widget:
+                    widget.setParent(None)
+                    widget.deleteLater()
+                elif item.layout():
+                    # Clear sub-layout recursively
+                    sub_layout = item.layout()
+                    while sub_layout.count():
+                        sub_item = sub_layout.takeAt(0)
+                        sub_widget = sub_item.widget()
+                        if sub_widget:
+                            sub_widget.setParent(None)
+                            sub_widget.deleteLater()
+                    sub_layout.setParent(None)
+                    sub_layout.deleteLater()
+
+            # Rebuild channel selection
+            if self.image_array is not None and self.image_array.ndim >= 3:
+                n_channels = self.image_array.shape[2]
+
+                # Set default colors for 3-channel images
+                if n_channels == 3 and channel_colors is None:
+                    channel_colors = [QColor(255, 0, 0), QColor(0, 255, 0), QColor(0, 0, 255)]  # R, G, B
+                elif channel_colors is None:
+                    channel_colors = [QColor(255, 255, 255)] * n_channels
+
+                for i in range(n_channels):
+                    # Create horizontal layout for each channel
+                    channel_row = QHBoxLayout()
+
+                    # Checkbox
+                    cb = QCheckBox(f"チャンネル {i} (Channel {i})")
+                    # Set checked state based on channel_checks
+                    if channel_checks and i < len(channel_checks):
+                        cb.setChecked(channel_checks[i])
+                    else:
+                        cb.setChecked(True)  # Default to checked
+                    cb.stateChanged.connect(self._on_channel_changed)
+                    self.checkboxes.append(cb)
+                    channel_row.addWidget(cb)
+
+                    # Color selection button
+                    color = channel_colors[i] if i < len(channel_colors) else QColor(255, 255, 255)
+                    self.channel_colors.append(color)
+
+                    color_button = QPushButton()
+                    color_button.setFixedSize(60, 24)
+                    color_button.setToolTip("クリックして色を選択 (Click to select color)")
+                    self._update_color_button(color_button, color)
+                    color_button.clicked.connect(lambda checked, idx=i: self._select_color(idx))
+                    self.color_buttons.append(color_button)
+                    channel_row.addWidget(color_button)
+
+                    channel_row.addStretch()
+                    channel_layout.addLayout(channel_row)
+            else:
+                label = QLabel("チャンネル選択なし (グレースケール画像)")
+                label.setStyleSheet("color: #888;")
+                channel_layout.addWidget(label)
+
+
+class BrightnessDialog(QDialog):
+    """Dialog for adjusting display brightness parameters and channel visibility.
+
+    Signals:
+        brightness_changed: Emitted when brightness parameters change (offset, gain, saturation)
+        channels_changed: Emitted when channel visibility changes
+
+    The dialog automatically detects image data type and sets appropriate
+    parameter ranges and initial values.
+    """
+
+    brightness_changed = Signal(float, float, float)  # offset, gain, saturation
+    channels_changed = Signal(list)  # list of bools for channel visibility
+    channel_colors_changed = Signal(list)  # list of colors for channels
+
+    # Persist window geometry across openings so it doesn't jump based on cursor/OS heuristics
+    _saved_geometry = None
+
+    def __init__(
+        self,
+        parent=None,
+        image_array=None,
+        image_path=None,
+        initial_brightness=(0.0, 1.0, 255.0),
+        initial_channels=None,
+        initial_colors=None,
+    ):
+        """Initialize brightness and channel adjustment dialog.
+
+        Args:
+            parent: Parent widget
+            image_array: NumPy array of current image
+            image_path: Path to current image file
+            initial_brightness: Tuple of (offset, gain, saturation)
+            initial_channels: List of bools for channel visibility
+            initial_colors: List of QColor objects for channel colors
+        """
+        super().__init__(parent)
+        self.setWindowTitle("表示設定 (Display Settings)")
+        self.resize(500, 600)
+        self.setStyleSheet("QDialog { background-color: #fafafa; }")
+
+        self.image_array = image_array
+        self.image_path = image_path
+
+        # Create tab widget
+        self.tabs = QTabWidget()
+
+        # Brightness tab
+        self.brightness_tab = BrightnessTab(self, image_array, image_path)
+        self.tabs.addTab(self.brightness_tab, "輝度調整 (Brightness)")
+
+        # Channel tab
+        self.channel_tab = ChannelTab(self, image_array, image_path, initial_channels, initial_colors)
+        self.tabs.addTab(self.channel_tab, "チャンネル (Channels)")
+
+        # Connect signals
+        self.brightness_tab.brightness_changed.connect(self.brightness_changed)
+        self.channel_tab.channels_changed.connect(self.channels_changed)
+        self.channel_tab.channel_colors_changed.connect(self.channel_colors_changed)
+
+        # Layout
+        layout = QVBoxLayout(self)
+        layout.addWidget(self.tabs)
+
+        # Note: OK/Cancel buttons are intentionally omitted for a modeless, live-updating dialog
+
+        # Restore last window geometry if available to avoid cursor-dependent positioning
+        try:
+            if BrightnessDialog._saved_geometry:
+                self.restoreGeometry(BrightnessDialog._saved_geometry)
+        except Exception:
+            pass
+
+        # Set initial values
+        if initial_brightness:
+            self.set_brightness(*initial_brightness)
+        if initial_channels:
+            self.set_channels(initial_channels)
+        if initial_colors:
+            self.set_channel_colors(initial_colors)
+
+    def set_brightness(self, offset, gain, saturation):
+        """Set brightness parameters."""
+        self.brightness_tab.offset_spinbox.setValue(offset)
+        self.brightness_tab.gain_spinbox.setValue(gain)
+        self.brightness_tab.saturation_spinbox.setValue(saturation)
+
+    def set_channels(self, channels):
+        """Set channel visibility."""
+        self.channel_tab.set_channel_states(channels)
+
+    def get_brightness(self):
+        """Get current brightness parameters."""
+        return self.brightness_tab.get_parameters()
+
+    def get_channels(self):
+        """Get current channel visibility."""
+        return self.channel_tab.get_channel_states()
+
+    def get_channel_colors(self):
+        """Get current channel colors."""
+        return self.channel_tab.get_channel_colors()
+
+    def set_channel_colors(self, colors):
+        """Set channel colors."""
+        self.channel_tab.set_channel_colors(colors)
+
+    def update_for_new_image(
+        self, image_array=None, image_path=None, keep_settings=True, channel_checks=None, channel_colors=None
+    ):
+        """Update dialog for new image."""
+        self.image_array = image_array
+        self.image_path = image_path
+        self.brightness_tab.update_for_new_image(image_array, image_path, keep_settings)
+        self.channel_tab.update_for_new_image(image_array, channel_checks, channel_colors)
+
+    def moveEvent(self, event):
+        # Save geometry whenever the dialog is moved
+        try:
+            BrightnessDialog._saved_geometry = self.saveGeometry()
+        except Exception:
+            pass
+        super().moveEvent(event)
+
+    def resizeEvent(self, event):
+        # Save geometry whenever the dialog is resized
+        try:
+            BrightnessDialog._saved_geometry = self.saveGeometry()
+        except Exception:
+            pass
+        super().resizeEvent(event)

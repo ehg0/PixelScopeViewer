@@ -103,6 +103,9 @@ class AnalysisDialog(QDialog):
         is not available, those tabs will be empty.
     """
 
+    # Persist window geometry across openings so it doesn't jump based on cursor/OS heuristics
+    _saved_geometry = None
+
     def __init__(
         self,
         parent=None,
@@ -136,6 +139,13 @@ class AnalysisDialog(QDialog):
         }
 
         self._build_ui()
+
+        # Restore last window geometry if available to avoid cursor-dependent positioning
+        try:
+            if AnalysisDialog._saved_geometry:
+                self.restoreGeometry(AnalysisDialog._saved_geometry)
+        except Exception:
+            pass
 
         if self.image_array is not None:
             self.update_contents()
@@ -480,10 +490,23 @@ class AnalysisDialog(QDialog):
         hl.addLayout(vcol)
         self.tabs.addTab(hist_tab, "Histogram")
 
-        box = QDialogButtonBox(QDialogButtonBox.Close)
-        box.rejected.connect(self.reject)
-        box.accepted.connect(self.accept)
-        main.addWidget(box)
+    # Note: Close button is intentionally omitted for a modeless dialog
+
+    def moveEvent(self, event):
+        # Save geometry whenever the dialog is moved
+        try:
+            AnalysisDialog._saved_geometry = self.saveGeometry()
+        except Exception:
+            pass
+        super().moveEvent(event)
+
+    def resizeEvent(self, event):
+        # Save geometry whenever the dialog is resized
+        try:
+            AnalysisDialog._saved_geometry = self.saveGeometry()
+        except Exception:
+            pass
+        super().resizeEvent(event)
 
     def set_image_and_rect(
         self,

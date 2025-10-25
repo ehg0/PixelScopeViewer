@@ -20,6 +20,7 @@ class ROIInfoWidget(QGroupBox):
         self.table.setColumnCount(2)
         self.table.setHorizontalHeaderLabels(["Property", "Value"])
         self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.horizontalHeader().setVisible(False)  # Hide header
         self.table.setRowCount(7)
         # Compact table and editors
         font = self.table.font()
@@ -28,8 +29,9 @@ class ROIInfoWidget(QGroupBox):
         except Exception:
             pass
         self.table.setFont(font)
-        self.table.verticalHeader().setDefaultSectionSize(22)
+        self.table.verticalHeader().setDefaultSectionSize(18)  # Smaller row height
         self.table.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.table.verticalHeader().setVisible(False)  # Hide row header
 
         # Set properties
         properties = ["X Start", "Y Start", "X End", "Y End", "Width", "Height", "Pixel Count"]
@@ -59,6 +61,7 @@ class ROIInfoWidget(QGroupBox):
             self.table.setCellWidget(row, 1, widget)
 
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)  # Remove margins to pack tightly
         layout.addWidget(self.table)
 
         # Fix table height to avoid vertical scrolling
@@ -204,7 +207,7 @@ class ROIInfoWidget(QGroupBox):
 
             # Update pixel count
             pixel_count = w * h if 0 <= x < img_w and 0 <= y < img_h else 0
-            item = QTableWidgetItem(str(pixel_count))
+            item = QTableWidgetItem(f"{pixel_count:,}")
             item.setFlags(item.flags() & ~Qt.ItemIsEditable)
             self.table.setItem(6, 1, item)
         finally:

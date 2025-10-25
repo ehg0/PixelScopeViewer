@@ -19,7 +19,8 @@ class DisplayInfoWidget(QGroupBox):
         self.table.setColumnCount(2)
         self.table.setHorizontalHeaderLabels(["Property", "Value"])
         self.table.horizontalHeader().setStretchLastSection(True)
-        self.table.setRowCount(6)
+        self.table.horizontalHeader().setVisible(False)  # Hide header
+        self.table.setRowCount(7)
         # Compact table: smaller font/rows and no vertical scrollbar
         font = self.table.font()
         try:
@@ -27,17 +28,19 @@ class DisplayInfoWidget(QGroupBox):
         except Exception:
             pass
         self.table.setFont(font)
-        self.table.verticalHeader().setDefaultSectionSize(22)
+        self.table.verticalHeader().setDefaultSectionSize(18)  # Smaller row height
         self.table.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.table.verticalHeader().setVisible(False)  # Hide row header
 
         # Set properties
-        properties = ["X Start", "Y Start", "X End", "Y End", "Width", "Height"]
+        properties = ["X Start", "Y Start", "X End", "Y End", "Width", "Height", "Pixel Count"]
         for i, prop in enumerate(properties):
             item = QTableWidgetItem(prop)
             item.setFlags(item.flags() & ~Qt.ItemIsEditable)
             self.table.setItem(i, 0, item)
 
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)  # Remove margins to pack tightly
         layout.addWidget(self.table)
 
         # Fix table height to avoid vertical scrolling
@@ -76,7 +79,7 @@ class DisplayInfoWidget(QGroupBox):
     def update_info(self):
         """Update the display information."""
         if self.viewer.current_index is None or not self.viewer.images:
-            for i in range(6):
+            for i in range(7):
                 self.table.setItem(i, 1, QTableWidgetItem(""))
             return
 
@@ -93,10 +96,18 @@ class DisplayInfoWidget(QGroupBox):
         y_start = int(v_scroll / scale)
         x_end = int((h_scroll + viewport_width) / scale)
         y_end = int((v_scroll + viewport_height) / scale)
+
+        # Get image size and clamp coordinates
+        img = self.viewer.images[self.viewer.current_index]["array"]
+        img_h, img_w = img.shape[:2]
+        x_end = min(x_end, img_w - 1)
+        y_end = min(y_end, img_h - 1)
+
         width = x_end - x_start + 1
         height = y_end - y_start + 1
+        pixel_count = width * height
 
-        values = [str(x_start), str(y_start), str(x_end), str(y_end), str(width), str(height)]
+        values = [str(x_start), str(y_start), str(x_end), str(y_end), str(width), str(height), f"{pixel_count:,}"]
         for i, value in enumerate(values):
             item = QTableWidgetItem(value)
             item.setFlags(item.flags() & ~Qt.ItemIsEditable)

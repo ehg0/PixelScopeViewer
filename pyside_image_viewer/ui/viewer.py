@@ -371,7 +371,9 @@ class ImageViewer(QMainWindow):
                 pass
 
     def open_files(self):
-        files, _ = QFileDialog.getOpenFileNames(self, "画像を開く", "", "Images (*.png *.jpg *.tif *.bmp *.jpeg)")
+        files, _ = QFileDialog.getOpenFileNames(
+            self, "画像を開く", "", "Images (*.png *.jpg *.tif *.bmp *.jpeg *.exr *.npy)"
+        )
         new_count = self._add_images(files)
         self._finalize_image_addition(new_count)
 

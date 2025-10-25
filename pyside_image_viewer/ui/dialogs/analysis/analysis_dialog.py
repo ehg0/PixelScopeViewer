@@ -626,6 +626,17 @@ class AnalysisDialog(QDialog):
         # Improved color palette for better visibility of 3 channels
         colors = ["#ff0000", "#00cc00", "#0066ff", "#333333"]  # Bright Red, Green, Blue, Dark gray
 
+        # Determine appropriate histogram bins based on data type
+        if np.issubdtype(arr.dtype, np.floating):
+            # For float data, use 256 bins
+            bins = 256
+        else:
+            # For integer data, use bins that create integer intervals
+            # Calculate range and set bins to cover the full range with integer steps
+            data_min = arr.min()
+            data_max = arr.max()
+            bins = max(1, int(data_max - data_min) + 1)
+
         if arr.ndim == 3 and arr.shape[2] > 1:
             nch = arr.shape[2]
             if not self.channel_checks:
@@ -636,8 +647,8 @@ class AnalysisDialog(QDialog):
                 self.channel_checks.extend([True] * (nch - len(self.channel_checks)))
             for c in range(nch):
                 data = arr[:, :, c].ravel()
-                hist, bins = np.histogram(data, bins=256, range=(0, 255))
-                xs = (bins[:-1] + bins[1:]) / 2.0
+                hist, bins_edges = np.histogram(data, bins=bins)
+                xs = (bins_edges[:-1] + bins_edges[1:]) / 2.0
                 self.last_hist_data[f"C{c}"] = (xs, hist)
                 if self.channel_checks[c]:
                     # Line only, no symbols
@@ -650,8 +661,8 @@ class AnalysisDialog(QDialog):
                     self.hist_widget.plot(xs, y, pen=pen, name=f"C{c}")
         else:
             gray = arr if arr.ndim == 2 else arr[:, :, 0]
-            hist, bins = np.histogram(gray.ravel(), bins=256, range=(0, 255))
-            xs = (bins[:-1] + bins[1:]) / 2.0
+            hist, bins_edges = np.histogram(gray.ravel(), bins=bins)
+            xs = (bins_edges[:-1] + bins_edges[1:]) / 2.0
             self.last_hist_data["I"] = (xs, hist)
             # Line only, no symbols
             pen = pg.mkPen(color="#333333", width=2)
@@ -660,6 +671,8 @@ class AnalysisDialog(QDialog):
                 with np.errstate(divide="ignore"):
                     y = np.log10(hist.astype(float) + 1.0)
             self.hist_widget.plot(xs, y, pen=pen, name="Intensity")
+
+        # Let pyqtgraph automatically determine the X-axis range for better handling of edge cases
 
         # Set title with improved styling
         self.hist_widget.setTitle("Intensity Histogram", color="#2c3e50", size="12pt")

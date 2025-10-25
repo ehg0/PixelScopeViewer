@@ -13,6 +13,8 @@ from pathlib import Path
 from io import StringIO
 from contextlib import redirect_stdout, redirect_stderr
 from typing import Union, Tuple
+import os
+import sys
 import numpy as np
 from PIL import Image
 from PySide6.QtGui import QImage
@@ -49,6 +51,9 @@ def numpy_to_qimage(arr: np.ndarray) -> QImage:
     if arr is None:
         return QImage()
     a = np.asarray(arr)
+    # Scale float images from [0,1] to [0,255]
+    if np.issubdtype(a.dtype, np.floating):
+        a = a * 255.0
     if a.ndim == 2:
         disp = np.clip(a, 0, 255).astype(np.uint8)
         h, w = disp.shape
@@ -85,7 +90,7 @@ def pil_to_numpy(path: Union[str, Path, Image.Image]) -> Tuple[np.ndarray, Image
             - array: NumPy array representation of the image (dtype depends
               on the source image).
             - pil_image: The PIL Image object (opened by this function if a
-              path was given).
+              path was given). For EXR and NPY files, pil_image will be None.
 
     Raises:
         PIL.UnidentifiedImageError: If the file cannot be opened as an image.
@@ -97,10 +102,26 @@ def pil_to_numpy(path: Union[str, Path, Image.Image]) -> Tuple[np.ndarray, Image
     """
     if isinstance(path, Image.Image):
         img = path
+        arr = np.array(img)
+        return arr, img
     else:
-        img = Image.open(path)
-    arr = np.array(img)
-    return arr, img
+        path_obj = Path(path)
+        ext = path_obj.suffix.lower()
+        if ext == ".exr":
+            import OpenImageIO as oiio
+
+            img = oiio.ImageInput.open(str(path))
+            spec = img.spec()
+            arr = img.read_image()
+            img.close()
+            return arr, None
+        elif ext == ".npy":
+            arr = np.load(path)
+            return arr, None
+        else:
+            img = Image.open(path)
+            arr = np.array(img)
+            return arr, img
 
 
 def is_image_file(path: Union[str, Path]) -> bool:
@@ -113,11 +134,11 @@ def is_image_file(path: Union[str, Path]) -> bool:
         path: File path (string or Path-like).
 
     Returns:
-        bool: True when suffix is one of (.png, .jpg, .jpeg, .tif, .tiff, .bmp).
+        bool: True when suffix is one of (.png, .jpg, .jpeg, .tif, .tiff, .bmp, .exr, .npy).
     """
     path_obj = Path(path)
     ext = path_obj.suffix.lower()
-    return ext in (".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp")
+    return ext in (".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".exr", ".npy")
 
 
 def get_image_metadata(path_or_img: Union[str, Path, Image.Image], pil_image: Image.Image = None) -> dict:
@@ -163,21 +184,57 @@ def get_image_metadata(path_or_img: Union[str, Path, Image.Image], pil_image: Im
         img_obj = path_or_img
         path = getattr(path_or_img, "filename", None)
 
-    # Extract basic PIL information
-    try:
-        with Image.open(path) as img:
-            metadata["Filepath"] = str(Path(path).resolve())
-            metadata["Format"] = img.format or "Unknown"
-            metadata["Size"] = f"{img.size[0]} x {img.size[1]}"
-            metadata["DataType"] = str(np.array(img_obj).dtype)
-            metadata["Mode"] = img.mode
-    except Exception as e:
-        metadata["Error (PIL)"] = str(e)
+    # Extract basic information based on file type
+    if path:
+        path_obj = Path(path)
+        ext = path_obj.suffix.lower()
+        if ext in (".exr", ".npy"):
+            try:
+                if ext == ".exr":
+                    import OpenImageIO as oiio
 
-    # Extract comprehensive EXIF data (only if we have a file path)
+                    img = oiio.ImageInput.open(str(path))
+                    spec = img.spec()
+                    metadata["Filepath"] = str(path_obj.resolve())
+                    metadata["Format"] = "EXR"
+                    metadata["Size"] = f"{spec.width} x {spec.height}"
+                    metadata["DataType"] = str(spec.format)
+                    metadata["Channels"] = spec.nchannels
+                    # Add additional metadata from spec
+                    if spec.get_string_attribute("compression"):
+                        metadata["Compression"] = spec.get_string_attribute("compression")
+                    if spec.get_string_attribute("Software"):
+                        metadata["Software"] = spec.get_string_attribute("Software")
+                    img.close()
+                elif ext == ".npy":
+                    arr = np.load(path)
+                    metadata["Filepath"] = str(path_obj.resolve())
+                    metadata["Format"] = "NPY"
+                    if arr.ndim == 2:
+                        metadata["Size"] = f"{arr.shape[1]} x {arr.shape[0]}"
+                        metadata["Channels"] = 1
+                    elif arr.ndim == 3:
+                        metadata["Size"] = f"{arr.shape[1]} x {arr.shape[0]}"
+                        metadata["Channels"] = arr.shape[2]
+                    metadata["DataType"] = str(arr.dtype)
+            except Exception as e:
+                metadata["Error"] = str(e)
+        else:
+            # PIL-based images
+            try:
+                with Image.open(path) as img:
+                    metadata["Filepath"] = str(Path(path).resolve())
+                    metadata["Format"] = img.format or "Unknown"
+                    metadata["Size"] = f"{img.size[0]} x {img.size[1]}"
+                    metadata["DataType"] = str(np.array(img_obj).dtype)
+                    metadata["Mode"] = img.mode
+            except Exception as e:
+                metadata["Error (PIL)"] = str(e)
+
+    # Extract comprehensive EXIF data (only for PIL-supported formats)
     if isinstance(path_or_img, str) or (pil_image is not None and path):
         file_path = path if isinstance(path_or_img, str) else path
-        if file_path:
+        if file_path and Path(file_path).suffix.lower() not in (".exr", ".npy"):
             try:
                 import exifread
 

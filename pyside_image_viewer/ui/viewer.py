@@ -178,12 +178,8 @@ class ImageViewer(QMainWindow):
         view_menu = menubar.addMenu("表示")
         view_menu.addAction(QAction("表示輝度調整", self, triggered=self.show_brightness_dialog))
         view_menu.addSeparator()
-        view_menu.addAction(
-            QAction("拡大", self, shortcut="+", triggered=lambda: self.set_zoom(min(self.scale * 2, 128.0)))
-        )
-        view_menu.addAction(
-            QAction("縮小", self, shortcut="-", triggered=lambda: self.set_zoom(max(self.scale / 2, 0.125)))
-        )
+        view_menu.addAction(QAction("拡大", self, triggered=lambda: self.set_zoom(min(self.scale * 2, 128.0))))
+        view_menu.addAction(QAction("縮小", self, triggered=lambda: self.set_zoom(max(self.scale / 2, 0.125))))
 
         analysis = menubar.addMenu("解析")
         analysis.addAction(QAction("メタデータ", self, triggered=lambda: self.show_analysis_dialog(tab="Metadata")))
@@ -233,6 +229,19 @@ class ImageViewer(QMainWindow):
         self.fit_toggle_action.setShortcutContext(Qt.ApplicationShortcut)
         self.fit_toggle_action.triggered.connect(self.toggle_fit_zoom)
         self.addAction(self.fit_toggle_action)
+
+        # Zoom shortcuts as application-level shortcuts so they work even when dialogs are focused
+        self.zoom_in_action = QAction(self)
+        self.zoom_in_action.setShortcut("+")
+        self.zoom_in_action.setShortcutContext(Qt.ApplicationShortcut)
+        self.zoom_in_action.triggered.connect(lambda: self.set_zoom(min(self.scale * 2, 128.0)))
+        self.addAction(self.zoom_in_action)
+
+        self.zoom_out_action = QAction(self)
+        self.zoom_out_action.setShortcut("-")
+        self.zoom_out_action.setShortcutContext(Qt.ApplicationShortcut)
+        self.zoom_out_action.triggered.connect(lambda: self.set_zoom(max(self.scale / 2, 0.125)))
+        self.addAction(self.zoom_out_action)
 
     def show_brightness_dialog(self):
         """表示輝度調整ダイアログを表示します。

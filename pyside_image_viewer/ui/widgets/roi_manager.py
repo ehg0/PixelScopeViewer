@@ -243,7 +243,7 @@ class RoiManagerMixin:
             painter: QPainter to use for painting
         """
         if self.roi_rect and not self.roi_rect.isNull():
-            pen = QPen(QColor(0, 0, 255), 1, Qt.DashLine)
+            pen = QPen(QColor(51, 255, 102, 255), 1)  # Blue color for ROI border
             painter.setPen(pen)
             painter.drawRect(self.roi_rect)
 

@@ -227,13 +227,13 @@ class ImageViewer(QMainWindow):
         self.left_bit_shift_action = QAction(self)
         self.left_bit_shift_action.setShortcut("<")
         self.left_bit_shift_action.setShortcutContext(Qt.ApplicationShortcut)
-        self.left_bit_shift_action.triggered.connect(lambda: self.bit_shift(-1))
+        self.left_bit_shift_action.triggered.connect(lambda: self.adjust_gain_step(-1))
         self.addAction(self.left_bit_shift_action)
 
         self.right_bit_shift_action = QAction(self)
         self.right_bit_shift_action.setShortcut(">")
         self.right_bit_shift_action.setShortcutContext(Qt.ApplicationShortcut)
-        self.right_bit_shift_action.triggered.connect(lambda: self.bit_shift(1))
+        self.right_bit_shift_action.triggered.connect(lambda: self.adjust_gain_step(1))
         self.addAction(self.right_bit_shift_action)
 
         self.fit_toggle_action = QAction(self)
@@ -356,18 +356,10 @@ class ImageViewer(QMainWindow):
         """輝度設定を初期値に戻します（Ctrl+R 等から呼び出されます）。
 
         動作:
-        - 現在画像のビットシフトを 0 に戻す
-        - 表示配列を base_array に復元する
         - 輝度ダイアログが開いている場合はダイアログ側のリセット処理に委譲し、
           ダイアログが閉じている場合はビューア側でパラメータを手動でリセットします。
         """
         handled_by_dialog = False
-
-        # Reset bit shift to 0 and restore base array
-        if self.current_index is not None:
-            img = self.images[self.current_index]
-            img["bit_shift"] = 0
-            img["array"] = img["base_array"].copy()
 
         if self.brightness_dialog is not None:
             # Let the dialog emit the reset signal so the viewer stays in sync
@@ -377,7 +369,19 @@ class ImageViewer(QMainWindow):
             # Reset brightness parameters manually when dialog is closed
             self.brightness_offset = 0
             self.brightness_gain = 1.0
-            self.brightness_saturation = 255
+            # Default saturation depends on image dtype: 1.0 for float, 255 for integer
+            if self.current_index is not None:
+                try:
+                    img = self.images[self.current_index]
+                    base_arr = img.get("base_array", img.get("array"))
+                    if np.issubdtype(base_arr.dtype, np.floating):
+                        self.brightness_saturation = 1.0
+                    else:
+                        self.brightness_saturation = 255
+                except Exception:
+                    self.brightness_saturation = 255
+            else:
+                self.brightness_saturation = 255
             self.update_brightness_status()
 
         # Refresh display if the dialog didn't already trigger it
@@ -522,7 +526,6 @@ class ImageViewer(QMainWindow):
                 "path": str(Path(path).resolve()),
                 "array": arr,
                 "base_array": arr.copy(),
-                "bit_shift": 0,
                 "pil_image": pil_img,  # Store PIL image for metadata extraction
             }
             new_images.append(img_data)
@@ -595,14 +598,8 @@ class ImageViewer(QMainWindow):
         self.original_zoom_scale = 1.0
         self.original_center_coords = None
 
-        # Reset bit shift when switching images and restore base array
-        img = self.images[self.current_index]
-        if "bit_shift" not in img or img["bit_shift"] != 0:
-            img["bit_shift"] = 0
-            if "base_array" in img:
-                img["array"] = img["base_array"].copy()
-
         # Initialize channel checks and colors for new image
+        img = self.images[self.current_index]
         arr = img["array"]
         if arr.ndim >= 3:
             n_channels = arr.shape[2]
@@ -646,6 +643,25 @@ class ImageViewer(QMainWindow):
             pass
 
         arr = img["array"]
+        # Ensure reasonable default saturation per dtype when dialog is not in control
+        try:
+            if np.issubdtype(arr.dtype, np.floating):
+                # Float: prefer saturation=1.0 if previously at uint defaults
+                if self.brightness_saturation in (None, 255):
+                    self.brightness_saturation = 1.0
+                    self.update_brightness_status()
+            else:
+                # Integer types
+                # If coming from float (saturation=1.0) or unset, restore an integer-friendly default
+                if self.brightness_saturation in (None, 1.0):
+                    try:
+                        max_val = np.iinfo(arr.dtype).max
+                    except Exception:
+                        max_val = 255
+                    self.brightness_saturation = 255 if max_val <= 255 else min(max_val, 4095)
+                    self.update_brightness_status()
+        except Exception:
+            pass
         self.display_image(arr)
         self.image_changed.emit()
         self.update_image_list_menu()
@@ -713,8 +729,22 @@ class ImageViewer(QMainWindow):
         パラメータ:
             arr: NumPy 配列(H,W[,C])で表された画像データ
         """
-        # Apply brightness adjustment first if parameters are not default
-        if self.brightness_offset != 0 or self.brightness_gain != 1.0 or self.brightness_saturation != 255:
+        # Apply brightness adjustment:
+        # - Always for float images (to map [0,1] -> [0,255] with sat=1.0 by default)
+        # - Or when parameters deviate from the integer-image defaults
+        apply_adjust = False
+        try:
+            if np.issubdtype(arr.dtype, np.floating):
+                apply_adjust = True
+            else:
+                if self.brightness_offset != 0 or self.brightness_gain != 1.0 or self.brightness_saturation != 255:
+                    apply_adjust = True
+        except Exception:
+            # Fallback to previous behavior
+            if self.brightness_offset != 0 or self.brightness_gain != 1.0 or self.brightness_saturation != 255:
+                apply_adjust = True
+
+        if apply_adjust:
             arr = self.apply_brightness_adjustment(arr)
 
         # Apply channel selection and color synthesis if specified
@@ -834,7 +864,7 @@ class ImageViewer(QMainWindow):
         except Exception:
             QMessageBox.information(self, "差分", "差分の作成に失敗しました。画像サイズや型を確認してください。")
             return
-        img_data = {"path": f"diff:{a_idx+1}-{b_idx+1}", "array": diff, "base_array": diff.copy(), "bit_shift": 0}
+        img_data = {"path": f"diff:{a_idx+1}-{b_idx+1}", "array": diff, "base_array": diff.copy()}
         self.images.append(img_data)
         # switch to the new image
         self.current_index = len(self.images) - 1
@@ -1030,86 +1060,41 @@ class ImageViewer(QMainWindow):
             self.fit_to_window()
             self.fit_zoom_scale = self.scale
 
-    def bit_shift(self, amount):
-        """ビットシフト（表示の明るさ操作）を行います。
+    def adjust_gain_step(self, amount):
+        """輝度ゲイン調整を行います。
 
         説明:
-            - amount が負の場合は左シフト（暗くする）
-            - amount が正の場合は右シフト（明るくする）
-            - シフトに合わせて内部の gain を 2 倍/半分に調整し、
-              近い 2^n 値にスナップします。
+            - amount が負の場合はゲインを半分（暗くする）
+            - amount が正の場合はゲインを2倍（明るくする）
+            - 表示設定ダイアログのゲイン調整と同じ挙動です。
 
-        制限:
-            - uint8 データは左シフト最大 -7 ビットに制限しています（値の破綻を防ぐため）。
-            - 右シフトは最大 +10 ビットまで許容します。
+        パラメータ:
+            amount: 調整方向（-1 で×0.5、+1 で×2.0）
         """
         if self.current_index is None:
             return
-        img = self.images[self.current_index]
-        base = img["base_array"]
-        current_shift = img.get("bit_shift", 0)
-        new_shift = current_shift + amount
 
-        # Apply limits based on data type
-        dtype = base.dtype
-        if np.issubdtype(dtype, np.uint8):
-            # For uint8, left shift max is 7 bits (since we have 8 bits total)
-            max_left_shift = -7
-        else:
-            # For other types, use same limit
-            max_left_shift = -7
-
-        # Right shift max is 10 bits (1024x)
-        max_right_shift = 10
-
-        # Clamp shift amount
-        new_shift = max(max_left_shift, min(max_right_shift, new_shift))
-
-        # If shift didn't change (already at limit), do nothing
-        if new_shift == current_shift:
-            return
-
-        if new_shift >= 0:
-            shifted = np.clip(base.astype(np.int32) << new_shift, 0, 255).astype(np.uint8)
-        else:
-            shifted = np.clip(base.astype(np.int32) >> (-new_shift), 0, 255).astype(np.uint8)
-
-        img["array"] = shifted
-        img["bit_shift"] = new_shift
-
-        # Update gain: left shift -> darker (gain /= 2), right shift -> brighter (gain *= 2)
+        # Update gain: amount < 0 -> darker (gain *= 0.5), amount > 0 -> brighter (gain *= 2)
         current_gain = self.brightness_gain
 
-        if amount < 0:  # Left shift - darker
+        if amount < 0:
             new_gain = current_gain * 0.5
-        else:  # Right shift - brighter
+        else:
             new_gain = current_gain * 2.0
 
-        # Snap to nearest power of 2 or 0.5
-        # Valid values: ..., 0.125, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0, ...
-        if new_gain >= 1.0:
-            # Round to nearest power of 2
-            power = round(np.log2(new_gain))
-            snapped_gain = 2.0**power
-        else:
-            # Round to nearest power of 0.5 (which is 2^-n)
-            power = round(np.log2(new_gain))
-            snapped_gain = 2.0**power
-
-        # Don't clamp - allow values outside normal range for extreme bit shifts
-        # The UI will handle display appropriately
-
         # Update brightness_gain property
-        self.brightness_gain = snapped_gain
+        self.brightness_gain = new_gain
 
         # Update dialog if it exists
         if self.brightness_dialog is not None:
-            self.brightness_dialog.set_gain(snapped_gain)
+            self.brightness_dialog.set_gain(new_gain)
 
         # Update status bar
         self.update_brightness_status()
 
-        self.display_image(shifted)
+        # Refresh display with new gain
+        img = self.images[self.current_index]
+        self.display_image(img["array"])
 
     def select_all(self):
         """画像全体をROI状態にします。

@@ -292,12 +292,24 @@ class ImageViewer(QMainWindow):
         img_path = img.get("path")
 
         # Create dialog if it doesn't exist
+        # For float images, prefer saturation initial value of 1 unless user already changed it
+        try:
+            is_float_img = np.issubdtype(arr.dtype, np.floating)
+        except Exception:
+            is_float_img = False
+
+        init_offset = self.brightness_offset
+        init_gain = self.brightness_gain
+        init_sat = self.brightness_saturation
+        if is_float_img and (init_sat is None or init_sat == 255):
+            init_sat = 1.0
+
         if self.brightness_dialog is None:
             self.brightness_dialog = BrightnessDialog(
                 self,
                 arr,
                 img_path,
-                initial_brightness=(self.brightness_offset, self.brightness_gain, self.brightness_saturation),
+                initial_brightness=(init_offset, init_gain, init_sat),
                 initial_channels=self.channel_checks,
                 initial_colors=self.channel_colors,
             )
@@ -1167,10 +1179,24 @@ class ImageViewer(QMainWindow):
         h, w = arr.shape[:2]
         if 0 <= iy < h and 0 <= ix < w:
             v = arr[iy, ix]
+
+            def _format_scalar(x, dtype):
+                try:
+                    if np.issubdtype(dtype, np.floating):
+                        xv = float(x)
+                        # Format to 4 decimal places
+                        return f"{xv:.3f}"
+                    else:
+                        return str(int(x))
+                except Exception:
+                    return str(x)
+
             if np.ndim(v) == 0:
-                val_str = str(int(v))
+                val_str = _format_scalar(v, arr.dtype)
             else:
-                val_str = "(" + ",".join(str(int(x)) for x in np.ravel(v)) + ")"
+                vals = [_format_scalar(x, arr.dtype) for x in np.ravel(v)]
+                val_str = "(" + ",".join(vals) + ")"
+
             self.status_pixel.setText(f"x={ix} y={iy} val={val_str}")
             # Store current image coordinates for zoom centering
             self.current_mouse_image_coords = (ix, iy)

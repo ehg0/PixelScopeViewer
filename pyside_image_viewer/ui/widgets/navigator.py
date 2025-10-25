@@ -1,15 +1,16 @@
 """Navigator widget showing thumbnail with viewport rectangle."""
 
 from PySide6.QtWidgets import QGroupBox, QVBoxLayout, QLabel
-from PySide6.QtGui import QPixmap, QPainter, QPen, QColor
-from PySide6.QtCore import Qt, QEvent
+from PySide6.QtGui import QPixmap, QPainter, QPen, QColor, QMouseEvent
+from PySide6.QtCore import Qt, QEvent, QPoint
 
 
 class NavigatorWidget(QGroupBox):
     """Navigator widget displaying thumbnail image with viewport rectangle.
 
     Shows a scaled-down version of the current image with a red rectangle
-    indicating the current viewport area.
+    indicating the current viewport area. Clicking on the thumbnail moves
+    the viewport to center on that position.
     """
 
     def __init__(self, viewer):
@@ -33,6 +34,10 @@ class NavigatorWidget(QGroupBox):
         sa.verticalScrollBar().valueChanged.connect(self.update_thumbnail)
         sa.viewport().installEventFilter(self)
 
+        # For clicking to move viewport
+        self.thumbnail_label.installEventFilter(self)
+        self.thumb_rect = None  # Will store (x, y, w, h) of viewport in thumbnail coords
+
         self.update_thumbnail()
 
     def eventFilter(self, obj, event):
@@ -40,14 +45,82 @@ class NavigatorWidget(QGroupBox):
         try:
             if obj is self.viewer.scroll_area.viewport() and event.type() == QEvent.Resize:
                 self.update_thumbnail()
+            elif obj is self.thumbnail_label:
+                if event.type() == QEvent.MouseButtonPress and event.button() == Qt.LeftButton:
+                    self.handle_mouse_press(event)
         except Exception:
             pass
         return super().eventFilter(obj, event)
+
+    def handle_mouse_press(self, event: QMouseEvent):
+        """Handle left mouse button click to move viewport to clicked position."""
+        if self.thumb_rect is None:
+            return
+
+        mouse_pos = event.pos()
+
+        # Get thumbnail dimensions
+        pixmap = self.thumbnail_label.pixmap()
+        if not pixmap:
+            return
+
+        thumb_width = pixmap.width()
+        thumb_height = pixmap.height()
+
+        # Calculate pixmap offset in thumbnail_label (centered)
+        label_width = self.thumbnail_label.width()
+        label_height = self.thumbnail_label.height()
+        x_offset = (label_width - thumb_width) / 2
+        y_offset = (label_height - thumb_height) / 2
+
+        mouse_pos = event.pos()
+
+        # Check if click is within the pixmap area
+        if not (
+            x_offset <= mouse_pos.x() <= x_offset + thumb_width and y_offset <= mouse_pos.y() <= y_offset + thumb_height
+        ):
+            return  # Click outside pixmap, ignore
+
+        # Convert click position relative to pixmap
+        pixmap_x = mouse_pos.x() - x_offset
+        pixmap_y = mouse_pos.y() - y_offset
+
+        # Convert click position to image coordinates
+        img = self.viewer.images[self.viewer.current_index]["array"]
+        h, w = img.shape[:2]
+        scale_factor = min(thumb_width / w, thumb_height / h)
+
+        img_x = pixmap_x / scale_factor
+        img_y = pixmap_y / scale_factor
+
+        # Center the viewport on the clicked position
+        viewport_width = self.viewer.scroll_area.viewport().width()
+        viewport_height = self.viewer.scroll_area.viewport().height()
+        img_viewport_w = viewport_width / self.viewer.scale
+        img_viewport_h = viewport_height / self.viewer.scale
+
+        centered_img_x = img_x - img_viewport_w / 2
+        centered_img_y = img_y - img_viewport_h / 2
+
+        # Clamp to image bounds
+        centered_img_x = max(0, min(centered_img_x, w - img_viewport_w))
+        centered_img_y = max(0, min(centered_img_y, h - img_viewport_h))
+
+        # Update scroll position
+        scroll_area = self.viewer.scroll_area
+        h_scroll = int(centered_img_x * self.viewer.scale)
+        v_scroll = int(centered_img_y * self.viewer.scale)
+
+        scroll_area.horizontalScrollBar().setValue(h_scroll)
+        scroll_area.verticalScrollBar().setValue(v_scroll)
+
+        event.accept()
 
     def update_thumbnail(self):
         """Update the thumbnail image and viewport rectangle."""
         if self.viewer.current_index is None or not self.viewer.images:
             self.thumbnail_label.clear()
+            self.thumb_rect = None
             return
 
         img = self.viewer.images[self.viewer.current_index]["array"]
@@ -83,6 +156,8 @@ class NavigatorWidget(QGroupBox):
         thumb_y = int(img_y * scale_factor)
         thumb_w = int(img_w * scale_factor)
         thumb_h = int(img_h * scale_factor)
+
+        self.thumb_rect = (thumb_x, thumb_y, thumb_w, thumb_h)
 
         # Draw rectangle on pixmap
         painter = QPainter(scaled_pixmap)

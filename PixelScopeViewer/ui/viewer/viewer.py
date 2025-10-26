@@ -34,6 +34,7 @@ from PySide6.QtGui import QPixmap, QPainter, QIcon, QGuiApplication, QAction, QA
 from PySide6.QtCore import Qt, QRect, QEvent, Signal
 
 from ...core.image_io import numpy_to_qimage, pil_to_numpy, is_image_file
+from ..utils import get_default_channel_colors
 from ..widgets import ImageLabel, NavigatorWidget, DisplayInfoWidget, ROIInfoWidget
 from ..dialogs import HelpDialog, DiffDialog, AnalysisDialog
 
@@ -387,15 +388,8 @@ class ImageViewer(QMainWindow):
                     self.channel_checks = self.channel_checks[:n_channels]
 
             if not self.channel_colors:
-                # First time initialization with default colors
-                if n_channels == 3:
-                    from PySide6.QtGui import QColor
-
-                    self.channel_colors = [QColor(255, 0, 0), QColor(0, 255, 0), QColor(0, 0, 255)]  # R, G, B
-                else:
-                    from PySide6.QtGui import QColor
-
-                    self.channel_colors = [QColor(255, 255, 255)] * n_channels  # White for all channels
+                # First time initialization with default colors (hybrid scheme)
+                self.channel_colors = get_default_channel_colors(n_channels)
             else:
                 # Preserve existing colors, extending or truncating as needed
                 if len(self.channel_colors) < n_channels:

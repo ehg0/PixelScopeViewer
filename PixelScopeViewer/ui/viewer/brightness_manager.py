@@ -218,6 +218,13 @@ class BrightnessManager:
         if self.viewer.current_index is not None:
             self.viewer.display_image(self.viewer.images[self.viewer.current_index]["array"])
 
+        # Update analysis dialog if it exists and is visible
+        if self.viewer._analysis_dialog is not None:
+            try:
+                self.viewer._analysis_dialog.update_contents()
+            except Exception:
+                pass
+
     def apply_brightness_adjustment(self, arr: np.ndarray) -> np.ndarray:
         """Apply brightness adjustment to image array.
 

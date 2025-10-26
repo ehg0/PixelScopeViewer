@@ -35,7 +35,7 @@ def create_menus(viewer):
     # View menu
     view_menu = menubar.addMenu("表示")
     # Menu items with visual shortcut representation (wrap with lambda to ignore triggered(bool))
-    view_menu.addAction(QAction("表示設定 (V)", viewer, triggered=lambda: viewer.show_brightness_dialog()))
+    view_menu.addAction(QAction("表示設定 (D)", viewer, triggered=lambda: viewer.show_brightness_dialog()))
     view_menu.addSeparator()
     view_menu.addAction(QAction("拡大", viewer, triggered=lambda: viewer.set_zoom(min(viewer.scale * 2, 128.0))))
     view_menu.addAction(QAction("縮小", viewer, triggered=lambda: viewer.set_zoom(max(viewer.scale / 2, 0.125))))
@@ -120,9 +120,9 @@ def _create_global_shortcuts(viewer):
     viewer.addAction(viewer.zoom_out_action)
 
     # Single-key shortcuts
-    # V: Display settings (Display/View)
+    # D: Display settings (Display)
     viewer.show_display_settings_action = QAction(viewer)
-    viewer.show_display_settings_action.setShortcut("V")
+    viewer.show_display_settings_action.setShortcut("D")
     viewer.show_display_settings_action.setShortcutContext(Qt.ApplicationShortcut)
     # Ignore QAction.triggered(bool) argument
     viewer.show_display_settings_action.triggered.connect(lambda checked=False: viewer.show_brightness_dialog())

@@ -412,11 +412,17 @@ class ImageViewer(QMainWindow):
             pass
 
         arr = img["array"]
-        # Ensure reasonable default saturation per dtype when dialog is not in control
+        # Load per-dtype brightness parameters only if not already set by user
+        # This preserves dialog adjustments while providing sensible defaults
         try:
-            new_sat = self.brightness_manager._default_saturation_for_dtype(arr.dtype, self.brightness_saturation)
-            if new_sat != self.brightness_saturation:
-                self.brightness_saturation = new_sat
+            dtype_key = self.brightness_manager._dtype_key(arr.dtype)
+            # Check if current params match this dtype's stored params
+            stored_params = self.brightness_manager._params_by_dtype.get(dtype_key)
+            current_params = (self.brightness_offset, self.brightness_gain, self.brightness_saturation)
+
+            # Only load stored params if they differ (indicating a dtype switch)
+            if stored_params and stored_params != current_params:
+                self.brightness_offset, self.brightness_gain, self.brightness_saturation = stored_params
                 self.update_brightness_status()
         except Exception:
             pass

@@ -29,7 +29,7 @@ class StatusUpdater:
 
     def update_mouse_status(self, pos):
         """Update status bar with pixel value at mouse position.
-        
+
         Args:
             pos: Mouse position (QPoint)
         """
@@ -75,7 +75,7 @@ class StatusUpdater:
         """Update status bar with current image info and brightness parameters."""
         if self.viewer.current_index is None:
             # Update title bar to show no image
-            self.viewer.setWindowTitle("PySide6 Image Viewer")
+            self.viewer.setWindowTitle("PixelScopeViewer")
             # still update scale display
             self.viewer.status_scale.setText(f"Scale: {self.viewer.scale:.2f}x")
             # clear brightness when no image
@@ -99,7 +99,7 @@ class StatusUpdater:
 
     def update_brightness_status(self):
         """Update status bar with formatted brightness parameters.
-        
+
         Adjusts decimal precision based on value magnitude (more decimals for smaller values).
         """
         try:
@@ -132,7 +132,7 @@ class StatusUpdater:
 
     def update_roi_status(self, rect=None):
         """Update status bar with ROI rectangle information.
-        
+
         Args:
             rect: ROI rectangle (QRect, None uses current ROI)
         """

@@ -172,7 +172,7 @@ class ZoomManager:
 
     def fit_to_window(self):
         """Fit image to window while maintaining aspect ratio.
-        
+
         Calculates scale to fit the image within the viewport and snaps to
         the nearest power-of-2 zoom level.
         """
@@ -195,7 +195,7 @@ class ZoomManager:
 
     def toggle_fit_zoom(self):
         """Toggle between fit-to-window zoom and previous zoom level.
-        
+
         If currently at fit zoom, restores the previous zoom level and center position.
         Otherwise, saves current zoom/position and switches to fit zoom.
         """

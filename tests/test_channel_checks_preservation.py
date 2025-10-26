@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 import numpy as np
 
-# Add parent directory to path to import pyside_image_viewer module
+# Add parent directory to path to import PixelScopeViewer module
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 

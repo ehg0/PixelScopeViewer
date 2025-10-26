@@ -26,7 +26,7 @@ class BrightnessManager:
 
     def show_brightness_dialog(self):
         """Show the brightness/display settings dialog.
-        
+
         Creates the dialog on first call and connects signals to synchronize
         brightness parameters between dialog and viewer.
         """
@@ -126,7 +126,7 @@ class BrightnessManager:
 
     def reset_brightness_settings(self):
         """Reset brightness settings to default values.
-        
+
         Delegates to dialog's reset if it's open, otherwise resets parameters manually.
         Default saturation depends on image dtype: 1.0 for float, 255 for integer.
         """

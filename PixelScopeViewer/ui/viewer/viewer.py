@@ -87,7 +87,7 @@ class ImageViewer(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("PySide6 Image Viewer")
+        self.setWindowTitle("PixelScopeViewer")
         self.resize(1000, 700)
         self.setMouseTracking(True)
 

@@ -1,8 +1,8 @@
-"""Lightweight runner for the refactored pyside_image_viewer package."""
+"""Lightweight runner for the PixelScopeViewer package."""
 
 import sys
 
-from pyside_image_viewer.app import main
+from PixelScopeViewer.app import main
 
 
 if __name__ == "__main__":

@@ -7,7 +7,6 @@ Internal structure:
 - dialog: Main dialog implementation
 - tabs/: Tab widgets (brightness adjustment, channel selection)
 - core/: Pure computation functions (brightness calculation)
-- widgets/: Custom widgets (slider controls)
 """
 
 from .dialog import BrightnessDialog

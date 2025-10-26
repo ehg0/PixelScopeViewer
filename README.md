@@ -222,9 +222,13 @@ pyside6_imageViewer/
             ├── diff_dialog.py     # 差分表示 (109行)
             └── analysis/          # 解析ダイアログ (サブパッケージ)
                 ├── __init__.py
-                ├── analysis_dialog.py  # メインダイアログ (575行)
+        ├── analysis_dialog.py  # メインダイアログ (分割後: タブ管理が中心)
                 ├── controls.py         # 設定ダイアログ (104行)
-                └── widgets.py          # カスタムウィジェット (63行)
+        ├── widgets.py          # カスタムウィジェット (63行)
+        └── tabs/               # タブUIをモジュール化
+          ├── metadata_tab.py     # メタデータ表
+          ├── histogram_tab.py    # ヒストグラムUI
+          └── profile_tab.py      # プロファイルUI
 ```
 
 **設計原則**:

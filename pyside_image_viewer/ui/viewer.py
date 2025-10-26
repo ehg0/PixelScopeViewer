@@ -300,9 +300,7 @@ class ImageViewer(QMainWindow):
 
         init_offset = self.brightness_offset
         init_gain = self.brightness_gain
-        init_sat = self.brightness_saturation
-        if is_float_img and (init_sat is None or init_sat == 255):
-            init_sat = 1.0
+        init_sat = self._default_saturation_for_dtype(arr.dtype, self.brightness_saturation)
 
         if self.brightness_dialog is None:
             self.brightness_dialog = BrightnessDialog(
@@ -351,6 +349,29 @@ class ImageViewer(QMainWindow):
             self.brightness_dialog.activateWindow()
         except Exception:
             pass
+
+    def _default_saturation_for_dtype(self, dtype, current):
+        """Return a dtype-appropriate saturation value given current value.
+
+        Rules:
+        - Float: prefer 1.0 if current is None or an integer default (255)
+        - Integer: prefer 255 for 8-bit, or min(max_val, 4095) for higher bit depth
+                   if current is None or a float default (1.0)
+        Otherwise, keep current.
+        """
+        try:
+            if np.issubdtype(dtype, np.floating):
+                return 1.0 if (current is None or current == 255) else current
+            else:
+                if current is None or current == 1.0:
+                    try:
+                        max_val = np.iinfo(dtype).max
+                    except Exception:
+                        max_val = 255
+                    return 255 if max_val <= 255 else min(max_val, 4095)
+                return current
+        except Exception:
+            return current if current is not None else 255
 
     def reset_brightness_settings(self):
         """輝度設定を初期値に戻します（Ctrl+R 等から呼び出されます）。
@@ -645,21 +666,10 @@ class ImageViewer(QMainWindow):
         arr = img["array"]
         # Ensure reasonable default saturation per dtype when dialog is not in control
         try:
-            if np.issubdtype(arr.dtype, np.floating):
-                # Float: prefer saturation=1.0 if previously at uint defaults
-                if self.brightness_saturation == 255:
-                    self.brightness_saturation = 1.0
-                    self.update_brightness_status()
-            else:
-                # Integer types
-                # If coming from float (saturation=1.0), restore an integer-friendly default
-                if self.brightness_saturation == 1.0:
-                    try:
-                        max_val = np.iinfo(arr.dtype).max
-                    except Exception:
-                        max_val = 255
-                    self.brightness_saturation = 255 if max_val <= 255 else min(max_val, 4095)
-                    self.update_brightness_status()
+            new_sat = self._default_saturation_for_dtype(arr.dtype, self.brightness_saturation)
+            if new_sat != self.brightness_saturation:
+                self.brightness_saturation = new_sat
+                self.update_brightness_status()
         except Exception:
             pass
         self.display_image(arr)

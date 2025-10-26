@@ -24,7 +24,7 @@ class HelpDialog(QDialog):
 - ROI領域の画像をコピー : Ctrl + C
 - 閉じる : Ctrl + W
 - すべて閉じる : Ctrl + Shift + W
-- 表示設定ダイアログを開く : V
+- 表示設定ダイアログを開く : D
 - 解析ダイアログを開く : A
 - 次の画像 : n
 - 前の画像 : b

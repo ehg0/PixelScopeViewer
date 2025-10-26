@@ -1,8 +1,7 @@
 ﻿# PixelScopeViewer
 
-**Version 0.0.1**
+PySide6 (Qt6) で作られた、画素単位での画像向けの画像ビューア
 
-PySide6 (Qt6) で作られた、科学技術画像向けの画像ビューアです。
 
 ## 特徴
 
@@ -75,7 +74,7 @@ python main.py
 | `>` | ゲインを2倍 (明るく) |
 | `ESC` | ROI解除 |
 | `f` | Fit / 直前の拡大率をトグル |
-| `V` | 表示設定ダイアログ |
+| `D` | 表示設定ダイアログ |
 | `A` | 解析ダイアログ |
 | `Ctrl+R` | 表示輝度をリセット (Offset/Gain/Saturation を初期値に戻す) |
 
@@ -124,34 +123,6 @@ python main.py
 - オフセット値を指定可能 (デフォルト: 256)
 - 計算式: `差分 = (画像A - 画像B) + オフセット`
 
-## プログラムから使う
-
-```python
-from PixelScopeViewer import main
-
-# アプリケーションを起動
-main()
-```
-
-または
-
-```python
-from PixelScopeViewer import ImageViewer
-from PixelScopeViewer.core import pil_to_numpy, numpy_to_qimage
-from PySide6.QtWidgets import QApplication
-
-# 画像を読み込んでNumPy配列に変換
-arr = pil_to_numpy("image.png")
-
-# QImageに変換
-qimg = numpy_to_qimage(arr)
-
-# ビューアを起動
-app = QApplication([])
-viewer = ImageViewer()
-viewer.show()
-app.exec()
-```
 
 ## 技術仕様
 
@@ -188,42 +159,37 @@ app.exec()
 #### ディレクトリ構造
 
 ```
-pyside6_imageViewer/
-├── main.py                        # エントリーポイント
-├── legacy/                        # 旧バージョン (gitignore対象)
-├── tests/                         # テストファイル
-│   └── test_exif_metadata.py
-└── PixelScopeViewer/            # メインパッケージ
-    ├── app.py                     # アプリケーション起動
-    ├── core/                      # UI非依存ユーティリティ
-    │   ├── __init__.py
-    │   └── image_io.py            # 画像I/O、EXIF読み取り (236行)
-    └── ui/                        # UIコンポーネント
-        ├── __init__.py
-        ├── viewer.py              # メインビューアウィンドウ (525行)
-        ├── widgets/               # カスタムウィジェット
-        │   ├── __init__.py
-        │   ├── base_image_label.py      # 基底クラス (165行)
-        │   ├── roi_manager.py     # ROI管理Mixin (327行)
-        │   ├── roi_editor.py      # キーボード編集Mixin (76行)
-        │   └── image_label.py           # 統合クラス (97行)
-        └── dialogs/               # ダイアログウィンドウ
-            ├── __init__.py
-            ├── help_dialog.py     # ヘルプ (169行)
-            ├── diff_dialog.py     # 差分表示 (109行)
-            └── analysis/          # 解析ダイアログ (サブパッケージ)
-                ├── __init__.py
-        ├── analysis_dialog.py  # メインダイアログ (分割後: タブ管理が中心)
-                ├── controls.py         # 設定ダイアログ (104行)
-        ├── widgets.py          # カスタムウィジェット (63行)
-        └── tabs/               # タブUIをモジュール化
-          ├── metadata_tab.py     # メタデータ表
-          ├── histogram_tab.py    # ヒストグラムUI
-          └── profile_tab.py      # プロファイルUI
+PixelScopeViewer/
+├── main.py                    # エントリーポイント
+├── tests/                     # テストコード
+└── PixelScopeViewer/          # メインパッケージ
+    ├── app.py                 # アプリケーション起動
+    ├── core/                  # UI非依存ユーティリティ
+    │   ├── image_io.py        # 画像I/O、EXIF読み取り
+    │   └── metadata_utils.py  # メタデータ処理
+    └── ui/                    # UIコンポーネント
+        ├── utils/             # UI共通ユーティリティ (色設定等)
+        ├── viewer/            # メインビューアウィンドウ
+        ├── widgets/           # カスタムウィジェット (ROI、ナビゲーター等)
+        └── dialogs/           # ダイアログウィンドウ
+            ├── help_dialog.py    # ヘルプ
+            ├── diff_dialog.py    # 差分画像
+            ├── display/          # 表示設定 (輝度・チャンネル)
+            └── analysis/         # 解析 (ヒストグラム・プロファイル・メタデータ)
 ```
 
 **設計原則**:
 - **core/**: UI非依存の再利用可能なユーティリティ
+- **ui/viewer/**: メインビューアとその管理クラス群
 - **ui/widgets/**: 画像表示専用ウィジェット (Mixinパターン)
 - **ui/dialogs/**: 各種ダイアログウィンドウ
+  - **display/**: 表示設定 (輝度調整、チャンネル色設定)
+  - **analysis/**: 解析機能 (ヒストグラム、プロファイル、メタデータ表示)
 - **ui/dialogs/analysis/**: 解析機能のサブパッケージ (密結合したコンポーネント群)
+
+
+
+## バージョン履歴
+
+### v0.1.0 (2025-10-26)
+- 初版作成

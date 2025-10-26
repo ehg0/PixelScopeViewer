@@ -23,6 +23,13 @@ class BrightnessManager:
             viewer: ImageViewer instance
         """
         self.viewer = viewer
+        # Persist brightness params by dtype key ("float"/"uint8"/"uint16")
+        # These store last-used settings per data type across image switches
+        self._params_by_dtype = {
+            "float": (0.0, 1.0, 1.0),
+            "uint8": (0, 1.0, 255),
+            "uint16": (0, 1.0, 1023),
+        }
 
     def show_brightness_dialog(self):
         """Show the brightness/display settings dialog.
@@ -73,7 +80,13 @@ class BrightnessManager:
             self.viewer.update_brightness_status()
         else:
             # Update dialog for new image
-            self.viewer.brightness_dialog.update_for_new_image(arr, img_path, channel_checks=self.viewer.channel_checks)
+            self.viewer.brightness_dialog.update_for_new_image(
+                arr,
+                img_path,
+                keep_settings=True,
+                channel_checks=self.viewer.channel_checks,
+                channel_colors=self.viewer.channel_colors,
+            )
             # Note: update_for_new_image will emit brightness_changed signal
             # which will update the status bar through on_brightness_changed
 
@@ -171,6 +184,9 @@ class BrightnessManager:
         self.viewer.brightness_gain = gain
         self.viewer.brightness_saturation = saturation
 
+        # Persist per-dtype params
+        self._save_current_dtype_params()
+
         # Update status bar
         self.viewer.update_brightness_status()
 
@@ -202,6 +218,13 @@ class BrightnessManager:
         if self.viewer.current_index is not None:
             self.viewer.display_image(self.viewer.images[self.viewer.current_index]["array"])
 
+        # Update analysis dialog if it exists and is visible
+        if self.viewer._analysis_dialog is not None:
+            try:
+                self.viewer._analysis_dialog.update_contents()
+            except Exception:
+                pass
+
     def apply_brightness_adjustment(self, arr: np.ndarray) -> np.ndarray:
         """Apply brightness adjustment to image array.
 
@@ -216,6 +239,38 @@ class BrightnessManager:
         return apply_brightness_core(
             arr, self.viewer.brightness_offset, self.viewer.brightness_gain, self.viewer.brightness_saturation
         )
+
+    # ------------------------ dtype helpers & persistence ------------------------
+    def _dtype_key(self, dtype) -> str:
+        """Convert numpy dtype to storage key (float/uint8/uint16)."""
+        try:
+            if np.issubdtype(dtype, np.floating):
+                return "float"
+            if np.issubdtype(dtype, np.integer):
+                try:
+                    max_val = np.iinfo(dtype).max
+                except Exception:
+                    max_val = 255
+                return "uint16" if max_val > 255 else "uint8"
+        except Exception:
+            pass
+        return "uint8"
+
+    def _save_current_dtype_params(self) -> None:
+        """Save current brightness params to the dtype-specific storage."""
+        if self.viewer.current_index is None:
+            return
+        try:
+            img = self.viewer.images[self.viewer.current_index]
+            arr = img.get("base_array", img.get("array"))
+            key = self._dtype_key(arr.dtype)
+            self._params_by_dtype[key] = (
+                self.viewer.brightness_offset,
+                self.viewer.brightness_gain,
+                self.viewer.brightness_saturation,
+            )
+        except Exception:
+            pass
 
     def adjust_gain_step(self, amount):
         """Adjust brightness gain by binary step.
@@ -236,6 +291,9 @@ class BrightnessManager:
 
         # Update brightness_gain property
         self.viewer.brightness_gain = new_gain
+
+        # Persist per-dtype params
+        self._save_current_dtype_params()
 
         # Update dialog if it exists
         if self.viewer.brightness_dialog is not None:

@@ -147,6 +147,10 @@ class AnalysisDialog(QDialog):
             "prof": {"grid": True, "auto_range": True},
         }
 
+        # Keep references to channel dialogs to prevent multiple instances
+        self._hist_channels_dialog = None
+        self._prof_channels_dialog = None
+
         self._build_ui()
 
         # Restore last window geometry if available to avoid cursor-dependent positioning
@@ -254,6 +258,15 @@ class AnalysisDialog(QDialog):
             self.image_path = image_path
         if pil_image is not None:
             self.pil_image = pil_image
+
+        # Update channel dialogs if they exist and image channel count changed
+        if image_array is not None:
+            nch = image_array.shape[2] if image_array.ndim == 3 else 1
+            if self._hist_channels_dialog is not None and self._hist_channels_dialog.isVisible():
+                self._hist_channels_dialog.update_for_new_image(nch, self.channel_checks)
+            if self._prof_channels_dialog is not None and self._prof_channels_dialog.isVisible():
+                self._prof_channels_dialog.update_for_new_image(nch, self.channel_checks)
+
         self.update_contents()
 
     def set_current_tab(self, tab):
@@ -281,6 +294,13 @@ class AnalysisDialog(QDialog):
         """
         if self.image_array is None:
             return
+
+        # If dialog already exists and is visible, just raise it
+        if self._hist_channels_dialog is not None and self._hist_channels_dialog.isVisible():
+            self._hist_channels_dialog.raise_()
+            self._hist_channels_dialog.activateWindow()
+            return
+
         nch = self.image_array.shape[2] if self.image_array.ndim == 3 else 1
 
         def immediate_update(new_checks):
@@ -290,6 +310,10 @@ class AnalysisDialog(QDialog):
 
         # Create and show modeless dialog with immediate updates
         dlg = ChannelsDialog(self, nch, self.channel_checks, callback=immediate_update)
+        self._hist_channels_dialog = dlg
+
+        # Clean up reference when dialog is closed
+        dlg.finished.connect(lambda: setattr(self, "_hist_channels_dialog", None))
 
         # Position dialog near the histogram channels button
         button_pos = self.hist_channels_btn.mapToGlobal(self.hist_channels_btn.rect().topRight())
@@ -304,6 +328,13 @@ class AnalysisDialog(QDialog):
         """
         if self.image_array is None:
             return
+
+        # If dialog already exists and is visible, just raise it
+        if self._prof_channels_dialog is not None and self._prof_channels_dialog.isVisible():
+            self._prof_channels_dialog.raise_()
+            self._prof_channels_dialog.activateWindow()
+            return
+
         nch = self.image_array.shape[2] if self.image_array.ndim == 3 else 1
 
         def immediate_update(new_checks):
@@ -313,6 +344,10 @@ class AnalysisDialog(QDialog):
 
         # Create and show modeless dialog with immediate updates
         dlg = ChannelsDialog(self, nch, self.channel_checks, callback=immediate_update)
+        self._prof_channels_dialog = dlg
+
+        # Clean up reference when dialog is closed
+        dlg.finished.connect(lambda: setattr(self, "_prof_channels_dialog", None))
 
         # Position dialog near the profile channels button
         button_pos = self.prof_channels_btn.mapToGlobal(self.prof_channels_btn.rect().topRight())
@@ -374,8 +409,20 @@ class AnalysisDialog(QDialog):
         apply_log = self.plot_settings.get("hist", {}).get("log", False)
         # Check if image is integer type for histogram x-axis formatting
         is_integer_type = np.issubdtype(arr.dtype, np.integer)
+        # Get channel colors from parent viewer
+        channel_colors = None
+        try:
+            if hasattr(self.parent(), "channel_colors"):
+                channel_colors = self.parent().channel_colors
+        except Exception:
+            pass
         self.hist_tab.update(
-            visible_hist_series, hist_stats, self.plot_settings, apply_log=apply_log, is_integer_type=is_integer_type
+            visible_hist_series,
+            hist_stats,
+            self.plot_settings,
+            apply_log=apply_log,
+            is_integer_type=is_integer_type,
+            channel_colors=channel_colors,
         )
 
         # Profile: compute data and delegate to tab
@@ -406,7 +453,10 @@ class AnalysisDialog(QDialog):
                 xs2 = np.arange(prof.size)
             self.last_profile_data[label] = (xs2, prof)
         prof_stats = profile_stats(arr, orientation=self.profile_orientation, channel_checks=self.channel_checks)
-        self.profile_tab.update(visible_prof_series, prof_stats, self.profile_orientation, self.x_mode)
+        # Get channel colors from parent viewer (same as histogram)
+        self.profile_tab.update(
+            visible_prof_series, prof_stats, self.profile_orientation, self.x_mode, channel_colors=channel_colors
+        )
 
         # Ensure both widgets are in true "Auto" state for axes, unless we have a saved ViewBox state
         if PYQTGRAPH_AVAILABLE:

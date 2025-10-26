@@ -344,16 +344,31 @@ class BrightnessTab(QWidget):
 
     def _on_dtype_changed(self, dtype_text):
         """Handle manual dtype selection from combo box."""
+        # Save current params for the old dtype
+        prev_dtype = self.current_dtype
+        prev_params = (
+            self.offset_spinbox.value(),
+            self.gain_spinbox.value(),
+            self.saturation_spinbox.value(),
+        )
         self._save_current_params()
+
+        # Switch to new dtype and update ranges/widgets
         self.current_dtype = dtype_text
         self._update_ranges_for_dtype(dtype_text)
         self._configure_offset_widgets()
         self._configure_gain_widgets()
         self._configure_saturation_widgets()
-        offset, gain, saturation = self._get_params_for_dtype(dtype_text)
+
+        # Prefer using saved params for the new dtype; if none, carry over previous params
+        if dtype_text in self.dtype_params:
+            offset, gain, saturation = self.dtype_params[dtype_text]
+        else:
+            offset, gain, saturation = prev_params
+
         clamped_offset, clamped_gain, clamped_sat = self._apply_values(offset, gain, saturation, clamp=True)
         self.dtype_params[self.current_dtype] = (clamped_offset, clamped_gain, clamped_sat)
-        self._emit_brightness_changed()
+        self._emit_brightness_changed()  # This will call _sync_to_manager
 
     # ------------------------ label helpers ------------------------
     def _update_offset_label(self, value):
@@ -497,6 +512,21 @@ class BrightnessTab(QWidget):
         )
         self.dtype_params[self.current_dtype] = current_params
 
+    def _sync_to_manager(self):
+        """Sync current dialog dtype params to the viewer's brightness_manager storage."""
+        try:
+            dialog = self.parent()
+            if dialog and hasattr(dialog, "parent") and callable(dialog.parent):
+                viewer = dialog.parent()
+                if viewer and hasattr(viewer, "brightness_manager"):
+                    mgr = viewer.brightness_manager
+                    # Convert dialog's dtype_key to a dummy dtype for manager's _dtype_key logic
+                    # We can directly set _params_by_dtype since we know the keys
+                    offset, gain, saturation = self.dtype_params.get(self.current_dtype, (0, 1.0, 255))
+                    mgr._params_by_dtype[self.current_dtype] = (offset, gain, saturation)
+        except Exception:
+            pass
+
     def _load_params_for_dtype(self, dtype_key):
         """Load and apply saved params for dtype_key; no-op if not saved."""
         if dtype_key not in self.dtype_params:
@@ -514,6 +544,8 @@ class BrightnessTab(QWidget):
         gain = self.gain_spinbox.value()
         saturation = self.saturation_spinbox.value()
         self.brightness_changed.emit(offset, gain, saturation)
+        # Also save to manager's per-dtype storage using dialog's current_dtype
+        self._sync_to_manager()
 
     def set_gain(self, gain_value):
         self.gain_slider.blockSignals(True)

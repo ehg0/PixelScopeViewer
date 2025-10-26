@@ -34,6 +34,7 @@ from PySide6.QtGui import QPixmap, QPainter, QIcon, QGuiApplication, QAction, QA
 from PySide6.QtCore import Qt, QRect, QEvent, Signal
 
 from ...core.image_io import numpy_to_qimage, pil_to_numpy, is_image_file
+from ..utils import get_default_channel_colors
 from ..widgets import ImageLabel, NavigatorWidget, DisplayInfoWidget, ROIInfoWidget
 from ..dialogs import HelpDialog, DiffDialog, AnalysisDialog
 
@@ -387,15 +388,8 @@ class ImageViewer(QMainWindow):
                     self.channel_checks = self.channel_checks[:n_channels]
 
             if not self.channel_colors:
-                # First time initialization with default colors
-                if n_channels == 3:
-                    from PySide6.QtGui import QColor
-
-                    self.channel_colors = [QColor(255, 0, 0), QColor(0, 255, 0), QColor(0, 0, 255)]  # R, G, B
-                else:
-                    from PySide6.QtGui import QColor
-
-                    self.channel_colors = [QColor(255, 255, 255)] * n_channels  # White for all channels
+                # First time initialization with default colors (hybrid scheme)
+                self.channel_colors = get_default_channel_colors(n_channels)
             else:
                 # Preserve existing colors, extending or truncating as needed
                 if len(self.channel_colors) < n_channels:
@@ -412,11 +406,17 @@ class ImageViewer(QMainWindow):
             pass
 
         arr = img["array"]
-        # Ensure reasonable default saturation per dtype when dialog is not in control
+        # Load per-dtype brightness parameters only if not already set by user
+        # This preserves dialog adjustments while providing sensible defaults
         try:
-            new_sat = self.brightness_manager._default_saturation_for_dtype(arr.dtype, self.brightness_saturation)
-            if new_sat != self.brightness_saturation:
-                self.brightness_saturation = new_sat
+            dtype_key = self.brightness_manager._dtype_key(arr.dtype)
+            # Check if current params match this dtype's stored params
+            stored_params = self.brightness_manager._params_by_dtype.get(dtype_key)
+            current_params = (self.brightness_offset, self.brightness_gain, self.brightness_saturation)
+
+            # Only load stored params if they differ (indicating a dtype switch)
+            if stored_params and stored_params != current_params:
+                self.brightness_offset, self.brightness_gain, self.brightness_saturation = stored_params
                 self.update_brightness_status()
         except Exception:
             pass

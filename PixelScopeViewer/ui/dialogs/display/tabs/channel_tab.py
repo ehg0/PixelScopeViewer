@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QColorDialog,
 )
 from PySide6.QtGui import QColor, QPixmap, QIcon
+from ....utils import get_default_channel_colors
 
 
 class ChannelTab(QWidget):
@@ -30,15 +31,13 @@ class ChannelTab(QWidget):
     # ---------- UI helpers ----------
     def _default_colors(self, n_channels, given=None):
         """Return a length-n list of QColor defaults, preferring given when provided.
-        - For 3 channels with no colors given, use RGB.
-        - Otherwise default to white per channel.
-        - If given is shorter than n, pad with white; if longer, truncate.
+
+        If given is shorter than n, pad with white; if longer, truncate.
         """
         if given is not None:
             return [given[i] if i < len(given) else QColor(255, 255, 255) for i in range(n_channels)]
-        if n_channels == 3:
-            return [QColor(255, 0, 0), QColor(0, 255, 0), QColor(0, 0, 255)]
-        return [QColor(255, 255, 255)] * n_channels
+
+        return get_default_channel_colors(n_channels)
 
     def _update_color_button(self, button, color):
         pixmap = QPixmap(48, 16)
@@ -123,6 +122,10 @@ class ChannelTab(QWidget):
         self.deselect_all_btn.clicked.connect(self.deselect_all)
         btn_layout.addWidget(self.deselect_all_btn)
 
+        self.reset_colors_btn = QPushButton("配色をリセット (Reset Colors)")
+        self.reset_colors_btn.clicked.connect(self.reset_colors)
+        btn_layout.addWidget(self.reset_colors_btn)
+
         layout.addLayout(btn_layout)
         layout.addStretch()
 
@@ -146,6 +149,16 @@ class ChannelTab(QWidget):
     def deselect_all(self):
         for cb in self.checkboxes:
             cb.setChecked(False)
+
+    def reset_colors(self):
+        """Reset channel colors to default (RGB for 3ch, white otherwise)."""
+        n_channels = len(self.channel_colors)
+        default_colors = self._default_colors(n_channels, given=None)
+        for i in range(n_channels):
+            self.channel_colors[i] = default_colors[i]
+            if i < len(self.color_buttons):
+                self._update_color_button(self.color_buttons[i], default_colors[i])
+        self._emit_color_change()
 
     def get_channel_states(self):
         return [cb.isChecked() for cb in self.checkboxes]

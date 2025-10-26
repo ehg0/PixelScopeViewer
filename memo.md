@@ -259,3 +259,41 @@ Phase 3（2-3日）: viewer部分分割
 viewer.pyへの影響なし（インポート変更のみ）
 次のコマンドで着手しますか？
 
+
+
+ui/widgets/
+├── __init__.py
+├── image_label.py          (ImageLabel - ROI描画・マウス操作)
+├── navigator.py            (NavigatorWidget - サムネイル)
+├── display_info.py         (DisplayInfoWidget)
+└── roi_info.py             (ROIInfoWidget - スピンボックス編集)
+
+メリット:
+
+各ウィジェットが独立してテスト可能
+ImageLabel の複雑なマウス処理が分離される
+
+
+core/
+├── __init__.py
+├── image_io.py             (既存)
+├── display/
+│   ├── __init__.py
+│   ├── brightness.py       (輝度計算)
+│   └── channels.py         (チャンネル合成)
+└── geometry/
+    ├── __init__.py
+    └── coords.py           (座標変換ユーティリティ)
+
+移動候補:
+- apply_brightness_adjustment → core/display/brightness.py
+- チャンネル合成ロジック → core/display/channels.py
+- 座標変換（画像↔ウィジェット） → core/geometry/coords.py
+
+
+ui/viewer/
+├── __init__.py
+├── viewer.py               (メインクラス - 200行目標)
+├── menu_builder.py         (メニュー生成)
+├── zoom_controller.py      (ズーム・スクロール計算)
+└── shortcuts.py            (キーボードショートカット登録)

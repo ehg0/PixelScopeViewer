@@ -20,8 +20,7 @@ from PySide6.QtWidgets import (
     QAbstractSpinBox,
 )
 from PySide6.QtCore import Qt, Signal
-from .brightness_tab import BrightnessTab
-from .channel_tab import ChannelTab
+from .tabs import BrightnessTab, ChannelTab
 
 
 class BrightnessDialog(QDialog):

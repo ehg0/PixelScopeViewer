@@ -36,6 +36,7 @@ from PySide6.QtCore import Qt, QRect, QEvent, Signal
 from ..core.image_io import numpy_to_qimage, pil_to_numpy, is_image_file
 from .widgets import ImageLabel, NavigatorWidget, DisplayInfoWidget, ROIInfoWidget
 from .dialogs import HelpDialog, DiffDialog, AnalysisDialog, BrightnessDialog
+from .dialogs.display.core import apply_brightness_adjustment as apply_brightness_core
 
 
 class ImageViewer(QMainWindow):
@@ -337,7 +338,7 @@ class ImageViewer(QMainWindow):
 
         # 非表示（前回閉じた等）の場合のみ再表示し、可能なら保存ジオメトリを復元
         try:
-            from .dialogs.brightness_dialog import BrightnessDialog as _BD
+            from .dialogs.display import BrightnessDialog as _BD
 
             if getattr(_BD, "_saved_geometry", None):
                 self.brightness_dialog.restoreGeometry(_BD._saved_geometry)
@@ -467,17 +468,7 @@ class ImageViewer(QMainWindow):
         注意:
             saturation が 0 の場合はゼロ除算を避けるため元配列をそのまま返します。
         """
-        # Avoid division by zero
-        if self.brightness_saturation == 0:
-            return arr
-
-        # Apply formula with proper type conversion
-        adjusted = (
-            self.brightness_gain * (arr.astype(np.float32) - self.brightness_offset) / self.brightness_saturation * 255
-        )
-
-        # Clip to valid range and convert back to uint8
-        return np.clip(adjusted, 0, 255).astype(np.uint8)
+        return apply_brightness_core(arr, self.brightness_offset, self.brightness_gain, self.brightness_saturation)
 
     def show_analysis_dialog(self, tab: Optional[str] = None):
         # QAction.triggered(bool) の誤渡し対策（bool は int 扱いでタブ番号に解釈され得るため無視）

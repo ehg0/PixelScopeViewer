@@ -1,4 +1,4 @@
-﻿# PySide6 Image Viewer
+﻿# PixelScopeViewer
 
 **Version 0.0.1**
 
@@ -9,7 +9,8 @@ PySide6 (Qt6) で作られた、科学技術画像向けの画像ビューアで
 - 複数画像の読み込みとナビゲーション
 - ピクセル単位のROI作成編集
 - ズーム機能 (+/- キー)
-- ビットシフト表示 (RAWデータ可視化用、</> キー)
+- ゲイン調整機能 (科学技術画像の輝度調整用、</> キー)
+- ナビゲーターサムネイル (左クリックで表示領域を素早く移動)
 - 解析機能
   - ヒストグラム (線形/対数表示切替)
   - プロファイル (水平/垂直/対角、相対/絶対座標)
@@ -68,13 +69,20 @@ python main.py
 | `Shift+矢印` | ROIを画像10px移動 |
 | `n` | 次の画像 |
 | `b` | 前の画像 |
-| `+` | ズームイン (表示中心を保持) |
-| `-` | ズームアウト (表示中心を保持) |
-| `<` | 左ビットシフト (暗く) |
-| `>` | 右ビットシフト (明るく) |
+| `+` | ズームイン |
+| `-` | ズームアウト |
+| `<` | ゲインを0.5倍 (暗く) |
+| `>` | ゲインを2倍 (明るく) |
 | `ESC` | ROI解除 |
 | `f` | Fit / 直前の拡大率をトグル |
+| `V` | 表示設定ダイアログ |
+| `A` | 解析ダイアログ |
 | `Ctrl+R` | 表示輝度をリセット (Offset/Gain/Saturation を初期値に戻す) |
+
+#### 表示設定ダイアログのキー操作補足
+- ダイアログ表示中でも `n`/`b` で画像切替が可能（アプリ全体ショートカット）。
+- 数値入力中に `ESC` を押すと「入力のキャンセル（フォーカス解除）」を行い、ウィンドウは閉じません。
+- `<`/`>` でゲインを 0.5x / 2x に変更できます（ゲインはスライダー範囲外の拡張値もスピンボックスで受け付け）。
 
 ### 解析機能
 
@@ -116,29 +124,10 @@ python main.py
 - オフセット値を指定可能 (デフォルト: 256)
 - 計算式: `差分 = (画像A - 画像B) + オフセット`
 
-## プロジェクト構造
-
-```
-pyside_image_viewer/
- core/                   # UI非依存のユーティリティ
-    image_io.py        # 画像I/O、変換処理
- ui/                     # UIコンポーネント
-    viewer.py          # メインウィンドウ
-    widgets.py         # カスタムウィジェット
-    dialogs/           # ダイアログ
-        help_dialog.py     # ヘルプ
-        diff_dialog.py     # 差分画像
-        analysis/          # 解析ダイアログ
-            analysis_dialog.py  # メインダイアログ
-            controls.py         # 設定ダイアログ
- __init__.py            # パッケージエントリーポイント
- main.py                # アプリケーション起動
-```
-
 ## プログラムから使う
 
 ```python
-from pyside_image_viewer import main
+from PixelScopeViewer import main
 
 # アプリケーションを起動
 main()
@@ -147,8 +136,8 @@ main()
 または
 
 ```python
-from pyside_image_viewer import ImageViewer
-from pyside_image_viewer.core import pil_to_numpy, numpy_to_qimage
+from PixelScopeViewer import ImageViewer
+from PixelScopeViewer.core import pil_to_numpy, numpy_to_qimage
 from PySide6.QtWidgets import QApplication
 
 # 画像を読み込んでNumPy配列に変換
@@ -166,22 +155,29 @@ app.exec()
 
 ## 技術仕様
 
-### ビットシフト機能
-- 左シフト (`<`): 値を2で割る (暗く表示)
-- 右シフト (`>`): 値を2倍する (明るく表示)
+### ゲイン調整機能
+- ゲインを下げる (`<`): 値を0.5倍する (暗く表示)
+- ゲインを上げる (`>`): 値を2倍する (明るく表示)
 - ステータスバーには常に元の値を表示
-- 解析は表示中(シフト後)のデータで実行
+- 解析は表示中(調整後)のデータで実行
 
 ### ROI
 - 現在のズームレベルに基づいてピクセル境界にスナップ
 - 座標は画像空間で保持 (ウィジェット空間ではない)
 - ズーム変更時もROIを維持
 
+### ナビゲーター
+- サムネイル画像で現在の表示領域を可視化
+- サムネイル上で左クリックすると、その位置を中心に表示領域が移動
+- ズームや画像切り替え時も追従して更新
+
 ### 対応画像形式
 - PNG
 - JPEG
 - TIFF
 - BMP
+- EXR (OpenEXR, HDR画像形式)
+- NPY (NumPy配列、float対応)
 
 ## アーキテクチャ
 
@@ -197,7 +193,7 @@ pyside6_imageViewer/
 ├── legacy/                        # 旧バージョン (gitignore対象)
 ├── tests/                         # テストファイル
 │   └── test_exif_metadata.py
-└── pyside_image_viewer/           # メインパッケージ
+└── PixelScopeViewer/            # メインパッケージ
     ├── app.py                     # アプリケーション起動
     ├── core/                      # UI非依存ユーティリティ
     │   ├── __init__.py
@@ -217,9 +213,13 @@ pyside6_imageViewer/
             ├── diff_dialog.py     # 差分表示 (109行)
             └── analysis/          # 解析ダイアログ (サブパッケージ)
                 ├── __init__.py
-                ├── analysis_dialog.py  # メインダイアログ (575行)
+        ├── analysis_dialog.py  # メインダイアログ (分割後: タブ管理が中心)
                 ├── controls.py         # 設定ダイアログ (104行)
-                └── widgets.py          # カスタムウィジェット (63行)
+        ├── widgets.py          # カスタムウィジェット (63行)
+        └── tabs/               # タブUIをモジュール化
+          ├── metadata_tab.py     # メタデータ表
+          ├── histogram_tab.py    # ヒストグラムUI
+          └── profile_tab.py      # プロファイルUI
 ```
 
 **設計原則**:
@@ -227,17 +227,3 @@ pyside6_imageViewer/
 - **ui/widgets/**: 画像表示専用ウィジェット (Mixinパターン)
 - **ui/dialogs/**: 各種ダイアログウィンドウ
 - **ui/dialogs/analysis/**: 解析機能のサブパッケージ (密結合したコンポーネント群)
-
-
-## バージョン履歴
- 
-### 0.0.1 (2025年10月20日)
-- **Refactor & release (version 0.0.1)**
-  - 主要な変更点をこのリリースに統合し、今後の基準とする
-  - Pathlib によるパス処理への統一
-  - 不要 / 重複コードの削除と関数化（例: 画像読み込みの共通化）
-  - 表示輝度ダイアログの改善（SpinBox 入力の即時反映 / Enter での反映対策）
-  - モジュール分割とMixin化により UI コンポーネントの責務を分離
-  - README・パッケージメタ情報の更新（`__version__ = "0.0.1"`）
-  - テスト整備の準備（exif メタデータ関連のテスト調整）
-

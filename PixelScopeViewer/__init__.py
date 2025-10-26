@@ -1,4 +1,4 @@
-"""PySide6 Image Viewer - A scientific image viewer with analysis tools.
+"""PixelScopeViewer - A scientific image viewer with analysis tools.
 
 This package provides a Qt-based image viewer optimized for scientific
 and technical images with the following features:
@@ -34,7 +34,7 @@ Package Structure:
     - ui/dialogs/analysis/: Analysis dialog and controls
 
 Quick Start:
-    from pyside_image_viewer import main
+    from PixelScopeViewer import main
     main()
 
 Dependencies:
@@ -48,7 +48,7 @@ from .app import main
 from .ui import ImageViewer, HelpDialog, DiffDialog, AnalysisDialog, BrightnessDialog
 from .core import numpy_to_qimage, pil_to_numpy, is_image_file, get_image_metadata
 
-__version__ = "0.0.1"
+__version__ = "0.1.0"
 __all__ = [
     "main",
     "ImageViewer",

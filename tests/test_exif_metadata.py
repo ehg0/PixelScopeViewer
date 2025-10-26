@@ -7,10 +7,10 @@ using the core image_io module.
 import sys
 from pathlib import Path
 
-# Add parent directory to path to import pyside_image_viewer module
+# Add parent directory to path to import PixelScopeViewer module
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from pyside_image_viewer.core.image_io import get_image_metadata
+from PixelScopeViewer.core.image_io import get_image_metadata
 
 
 def test_metadata_extraction():

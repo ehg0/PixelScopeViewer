@@ -155,6 +155,7 @@ class HistogramTab(QWidget):
         plot_settings: dict,
         apply_log: bool = False,
         is_integer_type: bool = False,
+        channel_colors: list = None,
     ):
         """Update histogram plot and statistics table with pre-computed data.
 
@@ -170,13 +171,30 @@ class HistogramTab(QWidget):
             If True, apply log10(y+1) transform to histogram counts
         is_integer_type: bool
             If True, format x-axis with integer ticks for integer data types
+        channel_colors: list, optional
+            List of QColor objects for channel colors from viewer
         """
         if self.hist_widget is None:
             return
 
         # Clear and plot histogram
         self.hist_widget.clear()
-        colors = ["#ff0000", "#00cc00", "#0066ff", "#333333"]
+
+        # Determine number of channels from series data
+        # If series has only 1 entry or all entries are 'I' (Intensity), treat as grayscale
+        num_channels = len(series)
+        is_grayscale = num_channels == 1 or all(label == "I" for label in series.keys())
+
+        # Get colors based on channel count
+        if is_grayscale:
+            # Single channel: use black
+            colors = ["#000000"]
+        elif channel_colors and len(channel_colors) > 0:
+            # Multi-channel: use viewer's channel colors
+            colors = [c.name() if hasattr(c, "name") else "#7f8c8d" for c in channel_colors]
+        else:
+            # Fallback to default colors
+            colors = ["#ff0000", "#00cc00", "#0066ff", "#333333"]
 
         for idx, (label, (xs, ys)) in enumerate(series.items()):
             pen = pg.mkPen(color=colors[idx] if idx < len(colors) else "#7f8c8d", width=2) if pg else None

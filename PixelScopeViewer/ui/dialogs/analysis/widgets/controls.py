@@ -29,26 +29,65 @@ class ChannelsDialog(QDialog):
         dlg = ChannelsDialog(parent, nch=3, checks=[True, True, False], callback=update_callback)
     """
 
+    MAX_CHANNELS = 8  # Maximum number of channels to support
+
     def __init__(self, parent, nch: int, checks: Optional[list] = None, callback=None):
         super().__init__(parent)
         self.setWindowTitle("Channels")
         self.setModal(False)  # Make it modeless since it's for immediate updates
 
-        # Set a more appropriate default size
-        self.resize(200, 150)
-
         self.callback = callback
+        self.nch = nch
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(5)
+        self.layout = layout
         self.checks: list[QCheckBox] = []
-        for i in range(nch):
+
+        # Create MAX_CHANNELS checkboxes upfront
+        for i in range(self.MAX_CHANNELS):
             cb = QCheckBox(f"C{i}")
-            cb.setChecked(checks[i] if checks and i < len(checks) else True)
-            # Connect checkbox change to immediate update if callback provided
-            if self.callback:
-                cb.stateChanged.connect(self._on_checkbox_changed)
-            layout.addWidget(cb)
+            cb.stateChanged.connect(self._on_checkbox_changed)
+            self.layout.addWidget(cb)
             self.checks.append(cb)
-        # No OK/Cancel buttons - immediate updates only
+
+        # Add stretch at the bottom to keep checkboxes at the top
+        layout.addStretch()
+
+        # Set fixed size to prevent checkbox position from shifting
+        self.setFixedSize(200, 200)
+
+        # Initialize visibility and states for current image
+        self._update_checkboxes(nch, checks)
+
+    def _update_checkboxes(self, nch: int, checks: Optional[list] = None):
+        """Update checkbox visibility and states for the current image.
+
+        Args:
+            nch: Number of channels in current image
+            checks: Checkbox states (optional)
+        """
+        for i in range(self.MAX_CHANNELS):
+            cb = self.checks[i]
+            if i < nch:
+                # This channel exists in the current image
+                cb.setVisible(True)
+                cb.setChecked(checks[i] if checks and i < len(checks) else True)
+                # Disable checkbox if only 1 channel (can't uncheck the only channel)
+                cb.setEnabled(nch > 1)
+            else:
+                # This channel doesn't exist in current image - hide it
+                cb.setVisible(False)
+
+    def update_for_new_image(self, nch: int, checks: Optional[list] = None):
+        """Update dialog for new image with different channel count.
+
+        Args:
+            nch: New number of channels
+            checks: New checkbox states (optional)
+        """
+        self.nch = nch
+        self._update_checkboxes(nch, checks)
 
     def _on_checkbox_changed(self):
         """Called when any checkbox changes state - update graph immediately."""
@@ -56,4 +95,5 @@ class ChannelsDialog(QDialog):
             self.callback(self.results())
 
     def results(self) -> list[bool]:
-        return [cb.isChecked() for cb in self.checks]
+        """Return the checked state of visible checkboxes only."""
+        return [cb.isChecked() for cb in self.checks[: self.nch]]

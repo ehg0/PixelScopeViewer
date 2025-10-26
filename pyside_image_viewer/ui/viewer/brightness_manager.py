@@ -25,14 +25,10 @@ class BrightnessManager:
         self.viewer = viewer
 
     def show_brightness_dialog(self):
-        """表示設定ダイアログを表示します。
-
-        現在選択中の画像が存在しない場合は情報ダイアログを表示して終了します。
-
-        このメソッドはダイアログを初めて作成する際にダイアログを生成し、
-        ダイアログからのシグナルを購読してビューア側の輝度パラメータを同期します。
-
-        例外やエラーは GUI 内でユーザ向けに通知されます。
+        """Show the brightness/display settings dialog.
+        
+        Creates the dialog on first call and connects signals to synchronize
+        brightness parameters between dialog and viewer.
         """
         if self.viewer.current_index is None:
             QMessageBox.information(self.viewer, "表示設定", "画像が選択されていません。")
@@ -129,11 +125,10 @@ class BrightnessManager:
             return current if current is not None else 255
 
     def reset_brightness_settings(self):
-        """輝度設定を初期値に戻します(Ctrl+R 等から呼び出されます)。
-
-        動作:
-        - 輝度ダイアログが開いている場合はダイアログ側のリセット処理に委譲し、
-          ダイアログが閉じている場合はビューア側でパラメータを手動でリセットします。
+        """Reset brightness settings to default values.
+        
+        Delegates to dialog's reset if it's open, otherwise resets parameters manually.
+        Default saturation depends on image dtype: 1.0 for float, 255 for integer.
         """
         handled_by_dialog = False
 
@@ -208,34 +203,25 @@ class BrightnessManager:
             self.viewer.display_image(self.viewer.images[self.viewer.current_index]["array"])
 
     def apply_brightness_adjustment(self, arr: np.ndarray) -> np.ndarray:
-        """画像配列に対して輝度補正を適用して新しい配列を返します。
+        """Apply brightness adjustment to image array.
 
-        使用する式:
-            yout = gain * (yin - offset) / saturation * 255
+        Formula: yout = gain * (yin - offset) / saturation * 255
 
-        パラメータ:
-            arr: 入力画像の NumPy 配列(任意の dtype を受け付けます)
+        Args:
+            arr: Input image array (any dtype accepted)
 
-        戻り値:
-            uint8 にクリップ/変換された補正後の配列を返します。
-
-        注意:
-            saturation が 0 の場合はゼロ除算を避けるため元配列をそのまま返します。
+        Returns:
+            Adjusted array clipped and converted to uint8
         """
         return apply_brightness_core(
             arr, self.viewer.brightness_offset, self.viewer.brightness_gain, self.viewer.brightness_saturation
         )
 
     def adjust_gain_step(self, amount):
-        """輝度ゲイン調整を行います。
+        """Adjust brightness gain by binary step.
 
-        説明:
-            - amount が負の場合はゲインを半分(暗くする)
-            - amount が正の場合はゲインを2倍(明るくする)
-            - 表示設定ダイアログのゲイン調整と同じ挙動です。
-
-        パラメータ:
-            amount: 調整方向(-1 で×0.5、+1 で×2.0)
+        Args:
+            amount: Adjustment direction (-1 for half/darker, +1 for double/brighter)
         """
         if self.viewer.current_index is None:
             return

@@ -28,10 +28,10 @@ class StatusUpdater:
         self.viewer = viewer
 
     def update_mouse_status(self, pos):
-        """マウス位置のピクセル値をステータスバーに表示します。
-
+        """Update status bar with pixel value at mouse position.
+        
         Args:
-            pos: マウス位置(QPoint)
+            pos: Mouse position (QPoint)
         """
         if self.viewer.current_index is None or not self.viewer.images:
             self.viewer.status_pixel.setText("")
@@ -98,9 +98,9 @@ class StatusUpdater:
         self.update_brightness_status()
 
     def update_brightness_status(self):
-        """ステータスバーに現在の輝度パラメータを表示用に整形して設定します。
-
-        表示用の文字列整形は値の大きさに応じて桁数を調整します(小さい値は小数点以下を多く表示)。
+        """Update status bar with formatted brightness parameters.
+        
+        Adjusts decimal precision based on value magnitude (more decimals for smaller values).
         """
         try:
             # Format offset
@@ -131,10 +131,10 @@ class StatusUpdater:
             self.viewer.status_brightness.setText("")
 
     def update_roi_status(self, rect=None):
-        """ROI領域の情報をステータスバーに表示します。
-
+        """Update status bar with ROI rectangle information.
+        
         Args:
-            rect: ROI矩形(QRect、Noneの場合は現在のROIを使用)
+            rect: ROI rectangle (QRect, None uses current ROI)
         """
         # Prefer the canonical image-coordinate ROI for consistent display
         if self.viewer.current_roi_rect is not None and not self.viewer.current_roi_rect.isNull():

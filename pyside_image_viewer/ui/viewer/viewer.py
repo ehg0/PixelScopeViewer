@@ -180,63 +180,50 @@ class ImageViewer(QMainWindow):
 
     # Delegate zoom methods to zoom_manager
     def set_zoom(self, scale: float):
-        """ズーム倍率を設定し、可視領域の中心位置を維持します。"""
         self.zoom_manager.set_zoom(scale)
 
     def set_zoom_at_status_coords(self, scale: float):
-        """ステータスバーに表示している座標(マウス位置)をビュー中心に固定してズームします。"""
         self.zoom_manager.set_zoom_at_status_coords(scale)
 
     def set_zoom_at_coords(self, scale: float, image_coords: tuple[float, float]):
-        """指定した画像座標をビューポート中心に維持してズーム倍率を設定します。"""
         self.zoom_manager.set_zoom_at_coords(scale, image_coords)
 
     def fit_to_window(self):
-        """画像をウィンドウにフィットさせるズーム倍率を設定します。"""
         self.zoom_manager.fit_to_window()
 
     def toggle_fit_zoom(self):
-        """Fitと直前の拡大率をトグルします。"""
         self.zoom_manager.toggle_fit_zoom()
 
     # Delegate brightness methods to brightness_manager
     def show_brightness_dialog(self):
-        """表示設定ダイアログを表示します。"""
         self.brightness_manager.show_brightness_dialog()
 
     def reset_brightness_settings(self):
-        """輝度設定を初期値に戻します。"""
         self.brightness_manager.reset_brightness_settings()
 
     def adjust_gain_step(self, amount):
-        """輝度ゲイン調整を行います。"""
         self.brightness_manager.adjust_gain_step(amount)
 
     def apply_brightness_adjustment(self, arr: np.ndarray) -> np.ndarray:
-        """画像配列に対して輝度補正を適用して新しい配列を返します。"""
         return self.brightness_manager.apply_brightness_adjustment(arr)
 
     # Delegate status update methods to status_updater
     def update_mouse_status(self, pos):
-        """マウス位置のピクセル値をステータスバーに表示します。"""
         self.status_updater.update_mouse_status(pos)
 
     def update_status(self):
-        """Update status bar with current image info and brightness parameters."""
         self.status_updater.update_status()
 
     def update_brightness_status(self):
-        """ステータスバーに現在の輝度パラメータを表示用に整形して設定します。"""
         self.status_updater.update_brightness_status()
 
     def update_roi_status(self, rect=None):
-        """ROI領域の情報をステータスバーに表示します。"""
         self.status_updater.update_roi_status(rect)
 
     # Image loading and navigation
     def show_analysis_dialog(self, tab: Optional[str] = None):
-        """解析ダイアログを表示します。"""
-        # QAction.triggered(bool) の誤渡し対策(bool は int 扱いでタブ番号に解釈され得るため無視)
+        """Show analysis dialog for current image and ROI."""
+        # Ignore bool argument from QAction.triggered(bool) signal
         if isinstance(tab, bool):
             tab = None
         # open analysis dialog for current image and current ROI
@@ -273,7 +260,7 @@ class ImageViewer(QMainWindow):
                 pass
 
     def open_files(self):
-        """ファイルダイアログを開いて画像ファイルを読み込みます。"""
+        """Open file dialog to load image files."""
         files, _ = QFileDialog.getOpenFileNames(
             self, "画像を開く", "", "Images (*.png *.jpg *.tif *.bmp *.jpeg *.exr *.npy)"
         )
@@ -281,12 +268,10 @@ class ImageViewer(QMainWindow):
         self._finalize_image_addition(new_count)
 
     def dragEnterEvent(self, e):
-        """ドラッグ&ドロップの受け入れを処理します。"""
         if e.mimeData().hasUrls():
             e.acceptProposedAction()
 
     def dropEvent(self, e):
-        """ドロップされたファイルを読み込みます。"""
         files = [u.toLocalFile() for u in e.mimeData().urls()]
         image_files = [f for f in files if is_image_file(f)]
         new_count = self._add_images(image_files)
@@ -328,7 +313,7 @@ class ImageViewer(QMainWindow):
         self.update_image_list_menu()
 
     def update_image_list_menu(self):
-        """画像リストメニューを更新します。"""
+        """Update the image list menu with current loaded images."""
         self.img_menu.clear()
         # Menu entries for navigation (shortcuts are provided as application-level actions)
         self.img_menu.addAction(QAction("次の画像", self, triggered=self.next_image))
@@ -356,7 +341,7 @@ class ImageViewer(QMainWindow):
             self.img_menu.addAction(act)
 
     def make_show_callback(self, idx):
-        """画像表示用のコールバック関数を生成します。"""
+        """Create callback function to show image at specific index."""
 
         def fn(checked=None):
             # QAction.triggered may send a checked argument; accept it but ignore
@@ -371,7 +356,7 @@ class ImageViewer(QMainWindow):
         return fn
 
     def show_current_image(self):
-        """現在選択中の画像を表示します。"""
+        """Display the currently selected image."""
         if self.current_index is None or not self.images:
             self.image_label.clear()
             self.update_status()
@@ -492,13 +477,10 @@ class ImageViewer(QMainWindow):
                     pass
 
     def display_image(self, arr):
-        """指定した画像配列をビューアに表示します。
+        """Display image array in the viewer with brightness adjustment and channel synthesis.
 
-        引数で渡された配列に対して現在の輝度パラメータがデフォルトでない場合は
-        apply_brightness_adjustment を経由して補正を行い、QImage に変換して ImageLabel に渡します。
-
-        パラメータ:
-            arr: NumPy 配列(H,W[,C])で表された画像データ
+        Args:
+            arr: NumPy array (H,W[,C]) representing image data
         """
         # Apply brightness adjustment:
         # - Always for float images (to map [0,1] -> [0,255] with sat=1.0 by default)
@@ -576,21 +558,21 @@ class ImageViewer(QMainWindow):
         self.update_status()
 
     def next_image(self):
-        """次の画像に移動します。"""
+        """Navigate to next image in the list."""
         if not self.images:
             return
         self.current_index = (self.current_index + 1) % len(self.images)
         self.show_current_image()
 
     def prev_image(self):
-        """前の画像に移動します。"""
+        """Navigate to previous image in the list."""
         if not self.images:
             return
         self.current_index = (self.current_index - 1) % len(self.images)
         self.show_current_image()
 
     def close_current_image(self):
-        """現在の画像を閉じます。"""
+        """Close the currently displayed image."""
         if self.current_index is None:
             return
         del self.images[self.current_index]
@@ -601,7 +583,7 @@ class ImageViewer(QMainWindow):
         self.show_current_image()
 
     def close_all_images(self):
-        """すべての画像を閉じます。"""
+        """Close all loaded images."""
         self.images.clear()
         self.current_index = None
         # update UI and image menu
@@ -622,7 +604,7 @@ class ImageViewer(QMainWindow):
                 pass
 
     def show_diff_dialog(self):
-        """差分画像ダイアログを表示します。"""
+        """Show difference image creation dialog."""
         if len(self.images) < 2:
             QMessageBox.information(self, "差分", "比較する画像が2枚必要です。")
             return
@@ -648,10 +630,7 @@ class ImageViewer(QMainWindow):
 
     # ROI operations
     def select_all(self):
-        """画像全体をROI状態にします。
-
-        選択が更新された場合は on_roi_changed を経由して関連ダイアログに通知します。
-        """
+        """Set entire image as ROI and notify related dialogs."""
         if self.current_index is None or not self.images:
             return
         self.image_label.set_roi_full()
@@ -660,7 +639,7 @@ class ImageViewer(QMainWindow):
             self.on_roi_changed(self.image_label.roi_rect)
 
     def on_roi_changed(self, rect: QRect):
-        """ROI変更時のハンドラです。"""
+        """Handle ROI change events."""
         s = self.scale
         self.current_roi_rect = QRect(
             int(rect.x() / s),
@@ -686,7 +665,7 @@ class ImageViewer(QMainWindow):
         self.roi_changed.emit()
 
     def copy_roi_to_clipboard(self):
-        """ROI領域の画像をクリップボードにコピーします。"""
+        """Copy ROI region to clipboard."""
         sel = self.current_roi_rect
         if not sel or self.current_index is None:
             QMessageBox.information(self, "コピー", "ROI領域がありません。")
@@ -737,14 +716,14 @@ class ImageViewer(QMainWindow):
 
     # Event handlers
     def eventFilter(self, obj, event):
-        """イベントフィルタです。マウス移動時にステータスを更新します。"""
+        """Filter events to update status on mouse move."""
         if obj is self.image_label and event.type() == QEvent.MouseMove:
             self.update_mouse_status(event.position().toPoint())
             return False
         return super().eventFilter(obj, event)
 
     def keyPressEvent(self, e):
-        """キーボードイベントのハンドラです。"""
+        """Handle key press events (ESC to clear ROI)."""
         if e.key() == Qt.Key_Escape:
             self.image_label.roi_rect = None
             self.image_label.update()

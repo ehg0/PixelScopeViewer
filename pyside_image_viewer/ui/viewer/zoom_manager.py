@@ -88,12 +88,10 @@ class ZoomManager:
         scroll_area.verticalScrollBar().setValue(new_v_scroll)
 
     def set_zoom(self, scale: float):
-        """ズーム倍率を設定し、可視領域の中心位置を維持します。
+        """Set zoom scale while maintaining the viewport center position.
 
-        パラメータ:
-            scale: 新しい倍率(1.0 が原寸)
-
-        このメソッドは表示中の画像がない場合は単に scale を設定して終了します。
+        Args:
+            scale: New zoom scale factor (1.0 = original size)
         """
         if self.viewer.current_index is None:
             self.viewer.scale = scale
@@ -117,9 +115,12 @@ class ZoomManager:
         self.viewer.scale_changed.emit()
 
     def set_zoom_at_status_coords(self, scale: float):
-        """ステータスバーに表示している座標(マウス位置)をビュー中心に固定してズームします。
+        """Zoom to scale while centering on the mouse position shown in status bar.
 
-        マウス位置が未取得(None)の場合は通常の center ベースの set_zoom にフォールバックします。
+        Falls back to center-based zoom if mouse coordinates are not available.
+
+        Args:
+            scale: New zoom scale factor (1.0 = original size)
         """
         if self.viewer.current_index is None:
             self.viewer.scale = scale
@@ -145,13 +146,11 @@ class ZoomManager:
         self.viewer.scale_changed.emit()
 
     def set_zoom_at_coords(self, scale: float, image_coords: tuple[float, float]):
-        """指定した画像座標をビューポート中心に維持してズーム倍率を設定します。
+        """Set zoom scale while keeping specified image coordinates at viewport center.
 
-        パラメータ:
-            scale: 新しい倍率(1.0 が原寸)
-            image_coords: (x, y) 維持する画像座標
-
-        このメソッドは表示中の画像がない場合は単に scale を設定して終了します。
+        Args:
+            scale: New zoom scale factor (1.0 = original size)
+            image_coords: (x, y) image coordinates to keep centered
         """
         if self.viewer.current_index is None:
             self.viewer.scale = scale
@@ -172,10 +171,10 @@ class ZoomManager:
         self.viewer.scale_changed.emit()
 
     def fit_to_window(self):
-        """画像をウィンドウにフィットさせるズーム倍率を設定します。
-
-        画像のアスペクト比を維持して、ウィンドウのサイズに合わせてスケールを計算し、
-        最も近いバイナリ倍率(2の累乗)にスナップします。
+        """Fit image to window while maintaining aspect ratio.
+        
+        Calculates scale to fit the image within the viewport and snaps to
+        the nearest power-of-2 zoom level.
         """
         if self.viewer.current_index is None:
             return
@@ -195,10 +194,10 @@ class ZoomManager:
         self.set_zoom(snapped_scale)
 
     def toggle_fit_zoom(self):
-        """Fitと直前の拡大率をトグルします。
-
-        現在のスケールがfitスケールに近い場合は直前の拡大率に戻し、
-        そうでなければ現在のスケールを記憶してfitにします。
+        """Toggle between fit-to-window zoom and previous zoom level.
+        
+        If currently at fit zoom, restores the previous zoom level and center position.
+        Otherwise, saves current zoom/position and switches to fit zoom.
         """
         if self.viewer.current_index is None:
             return

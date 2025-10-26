@@ -145,3 +145,155 @@ Pyside6で以下の仕様の画像ビューワを作って。
 - Docstring, readme.mdなどドキュメンテーションも行って
 - 今回のコードをversion 0.0.1として
 - パスの操作はPathlib使って
+
+#codebase 
+現状のコードを最適化したい。
+パフォーマンスの向上やメンテナンス性の向上を重視した、リファクタリングを行ってください。
+- 不要・未使用機能コードがあれば、削除すること
+- 重複機能があれば、関数化を検討すること
+- 必要に応じて、機能細分化やコードの階層構造見直しを実行すること
+- Docstring, readme.mdなどドキュメンテーションも行うこと
+
+
+
+
+---
+保守性と拡張性の観点から、以下の順序で段階的に分割することを推奨します:
+
+推奨分割順序
+1. analysis_dialog.py（最優先） - 793行
+最も長く、独立性が高いため影響範囲が限定的です。
+
+第1段階: タブ分割（即座に効果大）
+```
+ui/dialogs/analysis/
+  ├── analysis_dialog.py  # タブ管理のみ（100行程度に削減）
+  ├── tabs/
+  │   ├── __init__.py
+  │   ├── metadata_tab.py      # メタデータ表示（150行）
+  │   ├── histogram_tab.py     # ヒストグラム計算・描画（250行）
+  │   └── profile_tab.py       # プロファイル計算・描画（250行）
+  ├── compute.py              # 統計計算ロジック（100行）
+  └── plotting.py             # pyqtgraphスタイル設定（50行）
+```
+
+
+理由:
+
+タブごとに責務が明確で依存関係が少ない
+各タブは独立してテスト可能
+新しいタブ追加が容易（例: FFT解析タブ）
+
+2. brightness_tab.py（次優先） - 442行
+UIコンポーネントが多いが、ロジックは比較的シンプル。
+
+第1段階: コントロール分割
+```
+ui/dialogs/
+  ├── brightness_tab.py       # タブ本体（150行）
+  ├── brightness/
+  │   ├── __init__.py
+  │   ├── offset_controls.py  # オフセット調整UI（80行）
+  │   ├── gain_controls.py    # ゲイン調整UI（80行）
+  │   ├── saturation_controls.py  # 飽和調整UI（80行）
+  │   └── channel_controls.py # チャンネル設定UI（100行）
+  └── brightness_compute.py   # 輝度計算式（50行）
+```
+
+
+理由:
+
+UI部品ごとに分割すると再利用性が高まる
+計算ロジック分離でテストが容易
+将来的にプリセット保存機能追加が簡単
+
+
+3. viewer.py（最後） - 483行
+中核クラスのため慎重な分割が必要。依存関係が多い。
+
+第1段階: 副作用の少ない部分から
+```
+ui/
+  ├── viewer.py               # メインクラス（250行に削減）
+  ├── viewer/
+  │   ├── __init__.py
+  │   ├── menu_builder.py     # メニュー・ショートカット生成（100行）
+  │   ├── image_loader.py     # ファイルI/O・DnD（80行）
+  │   └── zoom_controller.py  # ズーム・スクロール計算（100行）
+```
+
+理由:
+
+メニュー生成は純粋な構築処理で分離しやすい
+ズーム計算は数学的ロジックでテスト容易
+viewer本体は状態管理とイベントハンドリングに集中できる
+第2段階（余裕があれば）:
+```
+ui/viewer/
+  ├── roi_manager.py          # ROI操作・座標変換（80行）
+  └── display_controller.py   # 表示・輝度適用（60行
+```
+
+
+段階的実装計画
+Phase 1（1-2日）: analysis_dialog分割
+影響: 解析ダイアログのみ
+リスク: 低（独立性高）
+メリット: 最も長いファイルが即座に解決
+Phase 2（1日）: brightness_tab分割
+影響: 表示設定ダイアログのみ
+リスク: 低（viewer依存だが疎結合）
+メリット: UI再利用性向上
+Phase 3（2-3日）: viewer部分分割
+影響: アプリ全体
+リスク: 中（メインクラスのため慎重に）
+メリット: コア機能の見通し向上
+具体的な次アクション
+推奨: analysis_dialog → タブ分割から着手
+
+理由:
+
+最も長い（793行）
+各タブは既に論理的に独立
+既存の CopyableTableWidget など再利用可能
+viewer.pyへの影響なし（インポート変更のみ）
+次のコマンドで着手しますか？
+
+
+
+ui/widgets/
+├── __init__.py
+├── image_label.py          (ImageLabel - ROI描画・マウス操作)
+├── navigator.py            (NavigatorWidget - サムネイル)
+├── display_info.py         (DisplayInfoWidget)
+└── roi_info.py             (ROIInfoWidget - スピンボックス編集)
+
+メリット:
+
+各ウィジェットが独立してテスト可能
+ImageLabel の複雑なマウス処理が分離される
+
+
+core/
+├── __init__.py
+├── image_io.py             (既存)
+├── display/
+│   ├── __init__.py
+│   ├── brightness.py       (輝度計算)
+│   └── channels.py         (チャンネル合成)
+└── geometry/
+    ├── __init__.py
+    └── coords.py           (座標変換ユーティリティ)
+
+移動候補:
+- apply_brightness_adjustment → core/display/brightness.py
+- チャンネル合成ロジック → core/display/channels.py
+- 座標変換（画像↔ウィジェット） → core/geometry/coords.py
+
+
+ui/viewer/
+├── __init__.py
+├── viewer.py               (メインクラス - 200行目標)
+├── menu_builder.py         (メニュー生成)
+├── zoom_controller.py      (ズーム・スクロール計算)
+└── shortcuts.py            (キーボードショートカット登録)

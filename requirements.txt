@@ -4,3 +4,4 @@ numpy>=1.24,<2.0
 Pillow>=9.5,<10.0
 pyqtgraph>=0.13.3,<0.14
 exifread>=3.0.0,<4.0
+openimageio>=3.0.0,<4.0

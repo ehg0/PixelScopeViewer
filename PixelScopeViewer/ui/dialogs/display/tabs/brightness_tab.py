@@ -1,3 +1,4 @@
+import math
 import numpy as np
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
@@ -11,6 +12,53 @@ from PySide6.QtWidgets import (
     QSpinBox,
     QComboBox,
 )
+
+
+class PowerOfTwoSpinBox(QDoubleSpinBox):
+    """Custom spin box that steps by powers of 2."""
+
+    def __init__(self, parent=None, log2_min=-7, log2_max=10):
+        super().__init__(parent)
+        self._log2_min = log2_min
+        self._log2_max = log2_max
+
+    def stepBy(self, steps):
+        """Override to step by powers of 2."""
+        current_value = self.value()
+        if current_value <= 0:
+            current_value = 1.0
+
+        # Get current log2 value
+        current_log2 = math.log2(current_value)
+
+        # Round to nearest integer and apply steps
+        current_log2_int = round(current_log2)
+        new_log2 = current_log2_int + steps
+
+        # Clamp to valid range
+        new_log2 = max(self._log2_min, min(self._log2_max, new_log2))
+
+        # Convert back to actual value
+        new_value = 2**new_log2
+
+        # Set the new value (this will trigger valueChanged signal)
+        self.setValue(new_value)
+
+    def textFromValue(self, value):
+        """Override to display optimal decimal places for powers of 2."""
+        if value <= 0:
+            # Handle invalid values
+            return "0"
+
+        if value >= 1.0:
+            # For values >= 1, display as integer
+            return f"{int(value)}"
+        else:
+            # For fractional values (< 1), calculate minimal decimal places needed
+            # Powers of 2 less than 1: 0.5, 0.25, 0.125, 0.0625, etc.
+            log2_val = math.log2(value)
+            decimals = max(1, abs(int(log2_val)))
+            return f"{value:.{decimals}f}".rstrip("0").rstrip(".")
 
 
 class BrightnessTab(QWidget):
@@ -38,6 +86,10 @@ class BrightnessTab(QWidget):
         self._gain_slider_min, self._gain_slider_max = self.gain_range
         self._gain_spinbox_min = 2**-7  # 1/128
         self._gain_spinbox_max = 1024.0
+
+        # Log2 slider range for binary steps (powers of 2)
+        self._gain_log2_min = -7  # 2^-7 = 1/128
+        self._gain_log2_max = 10  # 2^10 = 1024
 
         # Build UI
         self._build_ui()
@@ -176,9 +228,10 @@ class BrightnessTab(QWidget):
         gain_control_layout.addWidget(gain_caption)
 
         self.gain_slider = QSlider(Qt.Horizontal)
-        self.gain_slider.setRange(int(self.gain_range[0] * 100), int(self.gain_range[1] * 100))
+        # Use log2 scale with integer steps for binary gain values
+        self.gain_slider.setRange(self._gain_log2_min, self._gain_log2_max)
         self.gain_slider.setTickPosition(QSlider.TicksBelow)
-        self.gain_slider.setTickInterval(int((self.gain_range[1] - self.gain_range[0]) * 100 / 4))
+        self.gain_slider.setTickInterval(1)  # Each tick is a power of 2
         self.gain_slider.setStyleSheet(
             """
             QSlider::groove:horizontal { background: #ddd; height: 6px; border-radius: 3px; }
@@ -187,17 +240,23 @@ class BrightnessTab(QWidget):
             """
         )
         self.gain_slider.blockSignals(True)
-        self.gain_slider.setValue(int(self.initial_gain * 100))
+        # Convert initial gain to log2 value
+        import math
+
+        initial_log2 = int(round(math.log2(self.initial_gain)))
+        initial_log2 = max(self._gain_log2_min, min(self._gain_log2_max, initial_log2))
+        self.gain_slider.setValue(initial_log2)
         self.gain_slider.blockSignals(False)
         self.gain_slider.valueChanged.connect(self._on_gain_slider_changed)
 
-        self.gain_spinbox = QDoubleSpinBox()
-        self.gain_spinbox.setDecimals(5)
-        self.gain_spinbox.setSingleStep(0.01)
+        self.gain_spinbox = PowerOfTwoSpinBox(log2_min=self._gain_log2_min, log2_max=self._gain_log2_max)
+        self.gain_spinbox.setDecimals(7)  # Max decimals for 2^-7 = 0.0078125
+        self.gain_spinbox.setSingleStep(1)  # This is not used due to stepBy override, but set for consistency
         self.gain_spinbox.setReadOnly(False)
         self.gain_spinbox.setKeyboardTracking(True)
         self.gain_spinbox.setRange(self._gain_spinbox_min, self._gain_spinbox_max)
-        self.gain_spinbox.setStyleSheet("QDoubleSpinBox { padding: 10px; font-size: 10pt; }")
+        self.gain_spinbox.setFixedWidth(100)  # Set fixed width for compact display
+        self.gain_spinbox.setStyleSheet("QSpinBox, QDoubleSpinBox { padding: 10px; font-size: 10pt; }")
         self.gain_spinbox.blockSignals(True)
         self.gain_spinbox.setValue(self.initial_gain)
         self.gain_spinbox.blockSignals(False)
@@ -301,7 +360,8 @@ class BrightnessTab(QWidget):
         self._emit_brightness_changed()
 
     def _on_gain_slider_changed(self, value):
-        actual_value = value / 100.0
+        # Slider value is log2, convert to actual gain (power of 2)
+        actual_value = 2**value
         self.gain_spinbox.blockSignals(True)
         self.gain_spinbox.setValue(actual_value)
         self.gain_spinbox.blockSignals(False)
@@ -310,17 +370,39 @@ class BrightnessTab(QWidget):
         self._emit_brightness_changed()
 
     def _on_gain_spinbox_changed(self, value):
-        self.gain_slider.blockSignals(True)
-        if self.gain_range[0] <= value <= self.gain_range[1]:
-            self.gain_slider.setValue(int(value * 100))
-        elif value < self.gain_range[0]:
-            self.gain_slider.setValue(int(self.gain_range[0] * 100))
+        import math
+
+        # Round to nearest power of 2
+        if value > 0:
+            log2_value = math.log2(value)
+            nearest_log2 = round(log2_value)
+            nearest_log2 = max(self._gain_log2_min, min(self._gain_log2_max, nearest_log2))
+            nearest_power_of_2 = 2**nearest_log2
+
+            # Update spinbox to show the rounded power of 2
+            self.gain_spinbox.blockSignals(True)
+            self.gain_spinbox.setValue(nearest_power_of_2)
+            self.gain_spinbox.blockSignals(False)
+
+            # Update slider
+            self.gain_slider.blockSignals(True)
+            self.gain_slider.setValue(nearest_log2)
+            self.gain_slider.blockSignals(False)
+
+            self._update_gain_label(nearest_power_of_2)
+            self._save_current_params()
+            self._emit_brightness_changed()
         else:
-            self.gain_slider.setValue(int(self.gain_range[1] * 100))
-        self.gain_slider.blockSignals(False)
-        self._update_gain_label(value)
-        self._save_current_params()
-        self._emit_brightness_changed()
+            # Handle invalid input
+            self.gain_spinbox.blockSignals(True)
+            self.gain_spinbox.setValue(1.0)
+            self.gain_spinbox.blockSignals(False)
+            self.gain_slider.blockSignals(True)
+            self.gain_slider.setValue(0)
+            self.gain_slider.blockSignals(False)
+            self._update_gain_label(1.0)
+            self._save_current_params()
+            self._emit_brightness_changed()
 
     def _on_saturation_slider_changed(self, value):
         actual_value = value / 1000.0 if self.is_float_type else value
@@ -456,22 +538,38 @@ class BrightnessTab(QWidget):
 
     def _configure_gain_widgets(self):
         """Configure gain slider/spinbox ranges; spinbox has extended range."""
+        import math
+
         self.gain_slider.blockSignals(True)
-        self.gain_slider.setRange(int(self.gain_range[0] * 100), int(self.gain_range[1] * 100))
+        self.gain_slider.setRange(self._gain_log2_min, self._gain_log2_max)
         self.gain_slider.blockSignals(False)
         self.gain_spinbox.blockSignals(True)
         self.gain_spinbox.setRange(self._gain_spinbox_min, self._gain_spinbox_max)
         self.gain_spinbox.blockSignals(False)
 
     def _apply_values(self, offset, gain, saturation, clamp=True):
+        import math
+
         if clamp:
             offset = max(self.offset_range[0], min(self.offset_range[1], offset))
             gain_for_spin = max(self._gain_spinbox_min, min(self._gain_spinbox_max, gain))
-            gain_for_slider = max(self._gain_slider_min, min(self._gain_slider_max, gain))
+            # Round gain to nearest power of 2
+            if gain_for_spin > 0:
+                log2_val = math.log2(gain_for_spin)
+                nearest_log2 = round(log2_val)
+                nearest_log2 = max(self._gain_log2_min, min(self._gain_log2_max, nearest_log2))
+                gain_for_spin = 2**nearest_log2
+                gain_for_slider = nearest_log2
+            else:
+                gain_for_spin = 1.0
+                gain_for_slider = 0
             sat = max(self.saturation_range[0], min(self.saturation_range[1], saturation))
         else:
             gain_for_spin = gain
-            gain_for_slider = gain
+            if gain > 0:
+                gain_for_slider = round(math.log2(gain))
+            else:
+                gain_for_slider = 0
             sat = saturation
 
         # Offset
@@ -487,7 +585,7 @@ class BrightnessTab(QWidget):
         self.gain_slider.blockSignals(True)
         self.gain_spinbox.blockSignals(True)
         self.gain_spinbox.setValue(gain_for_spin)
-        self.gain_slider.setValue(int(gain_for_slider * 100))
+        self.gain_slider.setValue(int(gain_for_slider))
         self._update_gain_label(gain_for_spin)
         self.gain_slider.blockSignals(False)
         self.gain_spinbox.blockSignals(False)
@@ -548,16 +646,22 @@ class BrightnessTab(QWidget):
         self._sync_to_manager()
 
     def set_gain(self, gain_value):
+        import math
+
+        # Round to nearest power of 2
+        if gain_value > 0:
+            log2_value = math.log2(gain_value)
+            nearest_log2 = round(log2_value)
+            nearest_log2 = max(self._gain_log2_min, min(self._gain_log2_max, nearest_log2))
+            clamped = 2**nearest_log2
+        else:
+            clamped = 1.0
+            nearest_log2 = 0
+
         self.gain_slider.blockSignals(True)
         self.gain_spinbox.blockSignals(True)
-        clamped = max(self._gain_spinbox_min, min(self._gain_spinbox_max, gain_value))
         self.gain_spinbox.setValue(clamped)
-        if self._gain_slider_min <= gain_value <= self._gain_slider_max:
-            self.gain_slider.setValue(int(gain_value * 100))
-        else:
-            self.gain_slider.setValue(
-                int((self._gain_slider_min if gain_value < self._gain_slider_min else self._gain_slider_max) * 100)
-            )
+        self.gain_slider.setValue(nearest_log2)
         self._update_gain_label(clamped)
         self.gain_slider.blockSignals(False)
         self.gain_spinbox.blockSignals(False)
@@ -570,6 +674,8 @@ class BrightnessTab(QWidget):
         self._emit_brightness_changed()
 
     def _reset_to_initial(self):
+        import math
+
         self.offset_slider.blockSignals(True)
         self.offset_spinbox.blockSignals(True)
         self.offset_spinbox.setValue(self.initial_offset)
@@ -580,9 +686,17 @@ class BrightnessTab(QWidget):
 
         self.gain_slider.blockSignals(True)
         self.gain_spinbox.blockSignals(True)
-        self.gain_spinbox.setValue(self.initial_gain)
-        self.gain_slider.setValue(int(self.initial_gain * 100))
-        self._update_gain_label(self.initial_gain)
+        # Round initial gain to nearest power of 2
+        if self.initial_gain > 0:
+            initial_log2 = round(math.log2(self.initial_gain))
+            initial_log2 = max(self._gain_log2_min, min(self._gain_log2_max, initial_log2))
+            rounded_gain = 2**initial_log2
+        else:
+            initial_log2 = 0
+            rounded_gain = 1.0
+        self.gain_spinbox.setValue(rounded_gain)
+        self.gain_slider.setValue(initial_log2)
+        self._update_gain_label(rounded_gain)
         self.gain_slider.blockSignals(False)
         self.gain_spinbox.blockSignals(False)
 
@@ -598,7 +712,7 @@ class BrightnessTab(QWidget):
 
         self.dtype_params[self.current_dtype] = (
             self.initial_offset,
-            self.initial_gain,
+            rounded_gain,
             self.initial_saturation,
         )
 

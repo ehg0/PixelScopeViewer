@@ -163,3 +163,4 @@ cython_debug/
 #.idea/
 
 sample/golden_gate_hills_4k.exr
+memo.md

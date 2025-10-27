@@ -84,6 +84,7 @@ class ImageLabel(RoiManagerMixin, RoiEditorMixin, BaseImageLabel):
         # Paint image (from base class)
         if not self._orig_pixmap.isNull():
             painter.save()
+            painter.setRenderHint(QPainter.SmoothPixmapTransform, False)  # nearest-neighbor
             painter.scale(self.scale, self.scale)
             painter.drawPixmap(0, 0, self._orig_pixmap)
             painter.restore()

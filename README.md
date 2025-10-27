@@ -143,12 +143,18 @@ python main.py
 - ズームや画像切り替え時も追従して更新
 
 ### 対応画像形式
+浮動小数点型の場合、`[0, 1]`の範囲を想定して表示時に255倍される
 - PNG
 - JPEG
 - TIFF
 - BMP
 - EXR (OpenEXR, HDR画像形式)
-- NPY (NumPy配列、float対応)
+- NPY (NumPy配列)
+  - 想定shape: `(height, width)` (グレースケール) または `(height, width, channels)` (マルチチャンネル)
+  - チャンネル数: 1 (グレースケール), 3 (RGB), 4 (RGBA/RGBIR), 5以上もサポート
+  - データ型: NumPyがサポートするすべての数値型 (uint8, uint16, int32, float32, float64など)
+
+
 
 ## アーキテクチャ
 

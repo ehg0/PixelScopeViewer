@@ -34,7 +34,7 @@ class ChannelTab(QWidget):
 
         If given is shorter than n, pad with white; if longer, truncate.
         """
-        if given is not None:
+        if given is not None and len(given) > 0:
             return [given[i] if i < len(given) else QColor(255, 255, 255) for i in range(n_channels)]
 
         return get_default_channel_colors(n_channels)

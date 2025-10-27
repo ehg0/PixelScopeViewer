@@ -152,7 +152,7 @@ python main.py
 - NPY (NumPy配列)
   - 想定shape: `(height, width)` (グレースケール) または `(height, width, channels)` (マルチチャンネル)
   - チャンネル数: 1 (グレースケール), 3 (RGB), 4 (RGBA/RGBIR), 5以上もサポート
-  - データ型: NumPyがサポートするすべての数値型 (uint8, uint16, int32, float32, float64など)
+  - データ型: uint8, uint16, float32など
 
 
 

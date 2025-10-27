@@ -1,16 +1,18 @@
+import math
 import numpy as np
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
-    QHBoxLayout,
-    QLabel,
-    QSlider,
-    QDoubleSpinBox,
-    QPushButton,
-    QSpinBox,
-    QComboBox,
+from PySide6.QtCore import Signal
+from PySide6.QtWidgets import QWidget, QVBoxLayout
+
+from .components import PowerOfTwoSpinBox
+from .logic import (
+    determine_dtype_defaults,
+    get_dtype_defaults,
+    round_to_power_of_2,
+    format_value_label,
+    format_gain_label,
+    clamp_value,
 )
+from .logic.brightness_builder import BrightnessUIBuilder
 
 
 class BrightnessTab(QWidget):
@@ -29,14 +31,22 @@ class BrightnessTab(QWidget):
 
         # Storage for per-dtype parameters: {dtype_key: (offset, gain, saturation)}
         self.dtype_params = {}
-        self.current_dtype = "uint8"  # Will be updated by _determine_initial_values
 
-        # Determine initial values based on image type
-        self._determine_initial_values()
+        # Determine initial values based on image type using helper function
+        defaults = determine_dtype_defaults(image_array, image_path)
+        self.current_dtype = defaults["dtype_key"]
+        self.is_float_type = defaults["is_float_type"]
+        self.initial_offset = defaults["initial_offset"]
+        self.initial_gain = defaults["initial_gain"]
+        self.initial_saturation = defaults["initial_saturation"]
+        self.offset_range = defaults["offset_range"]
+        self.gain_range = defaults["gain_range"]
+        self.saturation_range = defaults["saturation_range"]
 
         # Extended ranges for controls
-        self._gain_slider_min, self._gain_slider_max = self.gain_range
-        self._gain_spinbox_min = 2**-7  # 1/128
+        self._gain_log2_min = -7  # 2^-7 = 1/128
+        self._gain_log2_max = 10  # 2^10 = 1024
+        self._gain_spinbox_min = 2**-7
         self._gain_spinbox_max = 1024.0
 
         # Build UI
@@ -45,244 +55,58 @@ class BrightnessTab(QWidget):
         # Set initial values and save to dtype_params
         self._reset_to_initial()
 
-    # ------------------------ init helpers ------------------------
-    def _determine_initial_values(self):
-        self.current_dtype = "uint8"
-        self.initial_offset = 0
-        self.initial_gain = 1.0
-        self.initial_saturation = 255
-
-        self.is_float_type = False
-        self.offset_range = (-255, 255)
-        self.gain_range = (0.1, 10.0)
-        self.saturation_range = (1, 255)
-
-        if self.image_path and self.image_path.lower().endswith(".bin"):
-            self.initial_saturation = 1023
-            self.saturation_range = (1, 4095)
-            self.offset_range = (-1023, 1023)
-
-        if self.image_array is not None:
-            dtype = self.image_array.dtype
-            if np.issubdtype(dtype, np.floating):
-                self.current_dtype = "float"
-                self.is_float_type = True
-                self.initial_saturation = 1.0
-                self.saturation_range = (0.001, 10.0)
-                self.offset_range = (-1.0, 1.0)
-                self.gain_range = (0.1, 10.0)
-            elif np.issubdtype(dtype, np.integer):
-                info = np.iinfo(dtype)
-                max_val = info.max
-                if max_val > 255:
-                    self.current_dtype = "uint16"
-                    self.initial_saturation = min(max_val, 4095)
-                    self.saturation_range = (1, max_val)
-                    self.offset_range = (-max_val // 2, max_val // 2)
-
+    # ------------------------ UI building ------------------------
     def _build_ui(self):
+        """Build the entire UI using BrightnessUIBuilder."""
         main_layout = QVBoxLayout(self)
         main_layout.setSpacing(20)
         main_layout.setContentsMargins(25, 25, 25, 25)
 
-        # dtype selector
-        dtype_layout = QHBoxLayout()
-        dtype_label = QLabel("データ型 (Data Type):")
-        dtype_label.setStyleSheet("font-weight: bold; font-size: 10pt;")
-        self.dtype_combo = QComboBox()
-        self.dtype_combo.addItems(["float", "uint8", "uint16"])
-        self.dtype_combo.setCurrentText(self.current_dtype)
-        self.dtype_combo.currentTextChanged.connect(self._on_dtype_changed)
-        dtype_layout.addWidget(dtype_label)
-        dtype_layout.addWidget(self.dtype_combo)
-        dtype_layout.addStretch()
-        main_layout.addLayout(dtype_layout)
-        main_layout.addSpacing(10)
+        builder = BrightnessUIBuilder(self)
 
-        # Offset label with value
-        offset_label_layout = QHBoxLayout()
-        offset_title_label = QLabel("オフセット (Offset)")
-        offset_title_label.setStyleSheet("font-weight: bold; font-size: 10pt;")
-        self.offset_value_label = QLabel(
-            f"{self.initial_offset:.0f}" if not self.is_float_type else f"{self.initial_offset:.5f}"
-        )
-        self.offset_value_label.setStyleSheet("color: #555; font-size: 10pt;")
-        offset_label_layout.addWidget(offset_title_label)
-        offset_label_layout.addWidget(self.offset_value_label)
-        offset_label_layout.addStretch()
-        main_layout.addLayout(offset_label_layout)
+        # Dtype selector
+        self.dtype_combo = builder.build_dtype_selector(main_layout, self.current_dtype, self._on_dtype_changed)
 
         # Offset controls
-        offset_control_layout = QHBoxLayout()
-        offset_control_layout.setSpacing(10)
-        offset_caption = QLabel("Offset")
-        offset_caption.setStyleSheet("font-size: 9pt; color: #888; min-width: 50px;")
-        offset_caption.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        offset_control_layout.addWidget(offset_caption)
-
-        self.offset_slider = QSlider(Qt.Horizontal)
-        self.offset_slider.setRange(int(self.offset_range[0] * 10), int(self.offset_range[1] * 10))
-        self.offset_slider.setTickPosition(QSlider.TicksBelow)
-        self.offset_slider.setTickInterval((self.offset_range[1] - self.offset_range[0]) // 4)
-        self.offset_slider.setStyleSheet(
-            """
-            QSlider::groove:horizontal { background: #ddd; height: 6px; border-radius: 3px; }
-            QSlider::handle:horizontal { background: #666; width: 16px; margin: -5px 0; border-radius: 8px; }
-            QSlider::handle:horizontal:hover { background: #444; }
-            """
+        self.offset_value_label, self.offset_slider, self.offset_spinbox = builder.build_offset_controls(
+            main_layout,
+            self.initial_offset,
+            self.offset_range,
+            self.is_float_type,
+            self._on_offset_slider_changed,
+            self._on_offset_spinbox_changed,
         )
-        self.offset_slider.blockSignals(True)
-        self.offset_slider.setValue(int(self.initial_offset * 10))
-        self.offset_slider.blockSignals(False)
-        self.offset_slider.valueChanged.connect(self._on_offset_slider_changed)
-
-        self.offset_spinbox = QDoubleSpinBox()
-        if self.is_float_type:
-            self.offset_spinbox.setDecimals(5)
-            self.offset_spinbox.setSingleStep(0.01)
-        else:
-            self.offset_spinbox.setDecimals(0)
-            self.offset_spinbox.setSingleStep(1)
-        self.offset_spinbox.setReadOnly(False)
-        self.offset_spinbox.setKeyboardTracking(True)
-        self.offset_spinbox.setRange(self.offset_range[0], self.offset_range[1])
-        self.offset_spinbox.setStyleSheet("QSpinBox, QDoubleSpinBox { padding: 10px; font-size: 10pt; }")
-        self.offset_spinbox.blockSignals(True)
-        self.offset_spinbox.setValue(self.initial_offset)
-        self.offset_spinbox.blockSignals(False)
-        self.offset_spinbox.valueChanged.connect(self._on_offset_spinbox_changed)
-
-        offset_control_layout.addWidget(self.offset_slider, 4)
-        offset_control_layout.addWidget(self.offset_spinbox, 1)
-        main_layout.addLayout(offset_control_layout)
-
-        # Gain label with value
-        gain_label_layout = QHBoxLayout()
-        gain_title_label = QLabel("ゲイン (Gain)")
-        gain_title_label.setStyleSheet("font-weight: bold; font-size: 10pt;")
-        gain_title_label.setToolTip("ゲイン×0.5 : <,  ゲイン×2 : >")
-        self.gain_value_label = QLabel(f"{self.initial_gain:.2f}")
-        self.gain_value_label.setStyleSheet("color: #555; font-size: 10pt;")
-        gain_label_layout.addWidget(gain_title_label)
-        gain_label_layout.addWidget(self.gain_value_label)
-        gain_label_layout.addStretch()
-        main_layout.addLayout(gain_label_layout)
 
         # Gain controls
-        gain_control_layout = QHBoxLayout()
-        gain_caption = QLabel("Gain")
-        gain_caption.setStyleSheet("font-size: 9pt; color: #888; min-width: 50px;")
-        gain_caption.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        gain_control_layout.addWidget(gain_caption)
-
-        self.gain_slider = QSlider(Qt.Horizontal)
-        self.gain_slider.setRange(int(self.gain_range[0] * 100), int(self.gain_range[1] * 100))
-        self.gain_slider.setTickPosition(QSlider.TicksBelow)
-        self.gain_slider.setTickInterval(int((self.gain_range[1] - self.gain_range[0]) * 100 / 4))
-        self.gain_slider.setStyleSheet(
-            """
-            QSlider::groove:horizontal { background: #ddd; height: 6px; border-radius: 3px; }
-            QSlider::handle:horizontal { background: #666; width: 16px; margin: -5px 0; border-radius: 8px; }
-            QSlider::handle:horizontal:hover { background: #444; }
-            """
+        self.gain_value_label, self.gain_slider, self.gain_spinbox = builder.build_gain_controls(
+            main_layout,
+            self.initial_gain,
+            self._gain_log2_min,
+            self._gain_log2_max,
+            self._gain_spinbox_min,
+            self._gain_spinbox_max,
+            self._on_gain_slider_changed,
+            self._on_gain_spinbox_changed,
         )
-        self.gain_slider.blockSignals(True)
-        self.gain_slider.setValue(int(self.initial_gain * 100))
-        self.gain_slider.blockSignals(False)
-        self.gain_slider.valueChanged.connect(self._on_gain_slider_changed)
-
-        self.gain_spinbox = QDoubleSpinBox()
-        self.gain_spinbox.setDecimals(5)
-        self.gain_spinbox.setSingleStep(0.01)
-        self.gain_spinbox.setReadOnly(False)
-        self.gain_spinbox.setKeyboardTracking(True)
-        self.gain_spinbox.setRange(self._gain_spinbox_min, self._gain_spinbox_max)
-        self.gain_spinbox.setStyleSheet("QDoubleSpinBox { padding: 10px; font-size: 10pt; }")
-        self.gain_spinbox.blockSignals(True)
-        self.gain_spinbox.setValue(self.initial_gain)
-        self.gain_spinbox.blockSignals(False)
-        self.gain_spinbox.valueChanged.connect(self._on_gain_spinbox_changed)
-
-        gain_control_layout.addWidget(self.gain_slider, 4)
-        gain_control_layout.addWidget(self.gain_spinbox, 1)
-        main_layout.addLayout(gain_control_layout)
-
-        # Saturation label with value
-        saturation_label_layout = QHBoxLayout()
-        saturation_title_label = QLabel("飽和レベル (Saturation)")
-        saturation_title_label.setStyleSheet("font-weight: bold; font-size: 10pt;")
-        self.saturation_value_label = QLabel(
-            f"{self.initial_saturation:.0f}" if not self.is_float_type else f"{self.initial_saturation:.5f}"
-        )
-        self.saturation_value_label.setStyleSheet("color: #555; font-size: 10pt;")
-        saturation_label_layout.addWidget(saturation_title_label)
-        saturation_label_layout.addWidget(self.saturation_value_label)
-        saturation_label_layout.addStretch()
-        main_layout.addLayout(saturation_label_layout)
 
         # Saturation controls
-        saturation_control_layout = QHBoxLayout()
-        saturation_caption = QLabel("Saturation")
-        saturation_caption.setStyleSheet("font-size: 9pt; color: #888; min-width: 50px;")
-        saturation_caption.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        saturation_control_layout.addWidget(saturation_caption)
-
-        self.saturation_slider = QSlider(Qt.Horizontal)
-        self.saturation_slider.setTickPosition(QSlider.TicksBelow)
-        self.saturation_slider.setStyleSheet(
-            """
-            QSlider::groove:horizontal { background: #ddd; height: 6px; border-radius: 3px; }
-            QSlider::handle:horizontal { background: #666; width: 16px; margin: -5px 0; border-radius: 8px; }
-            QSlider::handle:horizontal:hover { background: #444; }
-            """
+        (
+            self.saturation_value_label,
+            self.saturation_slider,
+            self.saturation_spinbox,
+        ) = builder.build_saturation_controls(
+            main_layout,
+            self.initial_saturation,
+            self.saturation_range,
+            self.is_float_type,
+            self._on_saturation_slider_changed,
+            self._on_saturation_spinbox_changed,
         )
-        if self.is_float_type:
-            self.saturation_slider.setRange(int(self.saturation_range[0] * 1000), int(self.saturation_range[1] * 1000))
-            self.saturation_slider.setTickInterval(
-                int((self.saturation_range[1] - self.saturation_range[0]) * 1000 / 4)
-            )
-            self.saturation_slider.blockSignals(True)
-            self.saturation_slider.setValue(int(self.initial_saturation * 1000))
-            self.saturation_slider.blockSignals(False)
-        else:
-            self.saturation_slider.setRange(self.saturation_range[0], self.saturation_range[1])
-            self.saturation_slider.setTickInterval((self.saturation_range[1] - self.saturation_range[0]) // 4)
-            self.saturation_slider.blockSignals(True)
-            self.saturation_slider.setValue(int(self.initial_saturation))
-            self.saturation_slider.blockSignals(False)
 
-        self.saturation_spinbox = QDoubleSpinBox()
-        if self.is_float_type:
-            self.saturation_spinbox.setDecimals(5)
-            self.saturation_spinbox.setSingleStep(0.01)
-        else:
-            self.saturation_spinbox.setDecimals(0)
-            self.saturation_spinbox.setSingleStep(1)
-        self.saturation_spinbox.setReadOnly(False)
-        self.saturation_spinbox.setKeyboardTracking(True)
-        self.saturation_slider.valueChanged.connect(self._on_saturation_slider_changed)
-        self.saturation_spinbox.setRange(self.saturation_range[0], self.saturation_range[1])
-        self.saturation_spinbox.setStyleSheet("QSpinBox, QDoubleSpinBox { padding: 10px; font-size: 10pt; }")
-        self.saturation_spinbox.blockSignals(True)
-        self.saturation_spinbox.setValue(self.initial_saturation)
-        self.saturation_spinbox.blockSignals(False)
-        self.saturation_spinbox.valueChanged.connect(self._on_saturation_spinbox_changed)
+        # Formula and reset button
+        self.reset_button = builder.build_formula_and_reset(main_layout, self._on_reset_clicked)
 
-        saturation_control_layout.addWidget(self.saturation_slider, 4)
-        saturation_control_layout.addWidget(self.saturation_spinbox, 1)
-        main_layout.addLayout(saturation_control_layout)
-
-        formula_label = QLabel("-> yout = gain × (yin - offset) / saturation × 255")
-        formula_label.setStyleSheet("font-style: italic; font-size: 10pt")
-        main_layout.addWidget(formula_label)
-
-        self.reset_button = QPushButton("Reset (Ctrl+R)")
-        self.reset_button.clicked.connect(self._on_reset_clicked)
-        main_layout.addWidget(self.reset_button)
-
-        main_layout.addStretch()
-
-    # ------------------------ slots & UI sync ------------------------
+    # ------------------------ Slot handlers ------------------------
     def _on_offset_slider_changed(self, value):
         actual_value = value / 10.0
         self.offset_spinbox.blockSignals(True)
@@ -301,7 +125,8 @@ class BrightnessTab(QWidget):
         self._emit_brightness_changed()
 
     def _on_gain_slider_changed(self, value):
-        actual_value = value / 100.0
+        # Slider value is log2, convert to actual gain (power of 2)
+        actual_value = 2**value
         self.gain_spinbox.blockSignals(True)
         self.gain_spinbox.setValue(actual_value)
         self.gain_spinbox.blockSignals(False)
@@ -310,17 +135,26 @@ class BrightnessTab(QWidget):
         self._emit_brightness_changed()
 
     def _on_gain_spinbox_changed(self, value):
-        self.gain_slider.blockSignals(True)
-        if self.gain_range[0] <= value <= self.gain_range[1]:
-            self.gain_slider.setValue(int(value * 100))
-        elif value < self.gain_range[0]:
-            self.gain_slider.setValue(int(self.gain_range[0] * 100))
+        # Round to nearest power of 2
+        if value > 0:
+            rounded = round_to_power_of_2(value, self._gain_log2_min, self._gain_log2_max)
+            log2_value = int(round(math.log2(rounded)))
+
+            # Update spinbox and slider
+            self.gain_spinbox.blockSignals(True)
+            self.gain_spinbox.setValue(rounded)
+            self.gain_spinbox.blockSignals(False)
+
+            self.gain_slider.blockSignals(True)
+            self.gain_slider.setValue(log2_value)
+            self.gain_slider.blockSignals(False)
+
+            self._update_gain_label(rounded)
+            self._save_current_params()
+            self._emit_brightness_changed()
         else:
-            self.gain_slider.setValue(int(self.gain_range[1] * 100))
-        self.gain_slider.blockSignals(False)
-        self._update_gain_label(value)
-        self._save_current_params()
-        self._emit_brightness_changed()
+            # Handle invalid input
+            self._reset_gain_to_default()
 
     def _on_saturation_slider_changed(self, value):
         actual_value = value / 1000.0 if self.is_float_type else value
@@ -368,60 +202,33 @@ class BrightnessTab(QWidget):
 
         clamped_offset, clamped_gain, clamped_sat = self._apply_values(offset, gain, saturation, clamp=True)
         self.dtype_params[self.current_dtype] = (clamped_offset, clamped_gain, clamped_sat)
-        self._emit_brightness_changed()  # This will call _sync_to_manager
+        self._emit_brightness_changed()
 
-    # ------------------------ label helpers ------------------------
+    # ------------------------ Label updates ------------------------
     def _update_offset_label(self, value):
-        if isinstance(value, (int, np.integer)):
-            self.offset_value_label.setText(f"{value}")
-        else:
-            self.offset_value_label.setText(f"{value:.5f}")
+        self.offset_value_label.setText(format_value_label(value, self.is_float_type))
 
     def _update_gain_label(self, value):
-        if value < 0.01:
-            self.gain_value_label.setText(f"{value:.6f}")
-        elif value < 0.1:
-            self.gain_value_label.setText(f"{value:.5f}")
-        elif value >= 100:
-            self.gain_value_label.setText(f"{value:.1f}")
-        else:
-            self.gain_value_label.setText(f"{value:.2f}")
+        self.gain_value_label.setText(format_gain_label(value))
 
     def _update_saturation_label(self, value):
-        if isinstance(value, (int, np.integer)):
-            self.saturation_value_label.setText(f"{value}")
-        else:
-            self.saturation_value_label.setText(f"{value:.5f}")
+        self.saturation_value_label.setText(format_value_label(value, self.is_float_type))
 
-    # ------------------------ de-dup helpers ------------------------
+    # ------------------------ Range and widget configuration ------------------------
     def _update_ranges_for_dtype(self, dtype_key):
         """Update is_float_type and ranges based on dtype key."""
-        if dtype_key == "float":
-            self.is_float_type = True
-            self.offset_range = (-1.0, 1.0)
-            self.saturation_range = (0.001, 10.0)
-        elif dtype_key == "uint8":
-            self.is_float_type = False
-            self.offset_range = (-255, 255)
-            self.saturation_range = (1, 255)
-        elif dtype_key == "uint16":
-            self.is_float_type = False
-            self.offset_range = (-1023, 1023)
-            self.saturation_range = (1, 4095)
+        defaults = get_dtype_defaults(dtype_key)
+        self.is_float_type = defaults["is_float_type"]
+        self.offset_range = defaults["offset_range"]
+        self.saturation_range = defaults["saturation_range"]
+        self.gain_range = defaults["gain_range"]
 
     def _get_params_for_dtype(self, dtype_key):
         """Return (offset, gain, saturation) for dtype: saved if available, else defaults."""
         if dtype_key in self.dtype_params:
             return self.dtype_params[dtype_key]
-        # Use dtype-specific defaults
-        if dtype_key == "float":
-            return (0.0, 1.0, 1.0)
-        elif dtype_key == "uint8":
-            return (0, 1.0, 255)
-        elif dtype_key == "uint16":
-            return (0, 1.0, 1023)
-        else:
-            return (0, 1.0, 255)
+        defaults = get_dtype_defaults(dtype_key)
+        return (defaults["initial_offset"], defaults["initial_gain"], defaults["initial_saturation"])
 
     def _configure_offset_widgets(self):
         self.offset_slider.blockSignals(True)
@@ -455,24 +262,30 @@ class BrightnessTab(QWidget):
         self.saturation_spinbox.blockSignals(False)
 
     def _configure_gain_widgets(self):
-        """Configure gain slider/spinbox ranges; spinbox has extended range."""
+        """Configure gain slider/spinbox ranges."""
         self.gain_slider.blockSignals(True)
-        self.gain_slider.setRange(int(self.gain_range[0] * 100), int(self.gain_range[1] * 100))
+        self.gain_slider.setRange(self._gain_log2_min, self._gain_log2_max)
         self.gain_slider.blockSignals(False)
+
         self.gain_spinbox.blockSignals(True)
         self.gain_spinbox.setRange(self._gain_spinbox_min, self._gain_spinbox_max)
         self.gain_spinbox.blockSignals(False)
 
     def _apply_values(self, offset, gain, saturation, clamp=True):
+        """Apply values to all widgets, optionally clamping them to valid ranges.
+
+        Returns:
+            tuple: (actual_offset, actual_gain, actual_saturation) after clamping and rounding
+        """
         if clamp:
-            offset = max(self.offset_range[0], min(self.offset_range[1], offset))
-            gain_for_spin = max(self._gain_spinbox_min, min(self._gain_spinbox_max, gain))
-            gain_for_slider = max(self._gain_slider_min, min(self._gain_slider_max, gain))
-            sat = max(self.saturation_range[0], min(self.saturation_range[1], saturation))
+            offset = clamp_value(offset, self.offset_range[0], self.offset_range[1])
+            gain = clamp_value(gain, self._gain_spinbox_min, self._gain_spinbox_max)
+            gain = round_to_power_of_2(gain, self._gain_log2_min, self._gain_log2_max)
+            saturation = clamp_value(saturation, self.saturation_range[0], self.saturation_range[1])
         else:
-            gain_for_spin = gain
-            gain_for_slider = gain
-            sat = saturation
+            gain = round_to_power_of_2(gain, self._gain_log2_min, self._gain_log2_max)
+
+        gain_log2 = int(round(math.log2(gain)))
 
         # Offset
         self.offset_slider.blockSignals(True)
@@ -486,25 +299,26 @@ class BrightnessTab(QWidget):
         # Gain
         self.gain_slider.blockSignals(True)
         self.gain_spinbox.blockSignals(True)
-        self.gain_spinbox.setValue(gain_for_spin)
-        self.gain_slider.setValue(int(gain_for_slider * 100))
-        self._update_gain_label(gain_for_spin)
+        self.gain_spinbox.setValue(gain)
+        self.gain_slider.setValue(gain_log2)
+        self._update_gain_label(gain)
         self.gain_slider.blockSignals(False)
         self.gain_spinbox.blockSignals(False)
 
         # Saturation
         self.saturation_slider.blockSignals(True)
         self.saturation_spinbox.blockSignals(True)
-        self.saturation_spinbox.setValue(sat)
-        self.saturation_slider.setValue(int(sat * 1000) if self.is_float_type else int(sat))
-        self._update_saturation_label(sat)
+        self.saturation_spinbox.setValue(saturation)
+        self.saturation_slider.setValue(int(saturation * 1000) if self.is_float_type else int(saturation))
+        self._update_saturation_label(saturation)
         self.saturation_slider.blockSignals(False)
         self.saturation_spinbox.blockSignals(False)
 
-        return offset, gain_for_spin, sat
+        return offset, gain, saturation
 
-    # ------------------------ state helpers ------------------------
+    # ------------------------ State management ------------------------
     def _save_current_params(self):
+        """Save current widget values to dtype_params."""
         current_params = (
             self.offset_spinbox.value(),
             self.gain_spinbox.value(),
@@ -520,56 +334,65 @@ class BrightnessTab(QWidget):
                 viewer = dialog.parent()
                 if viewer and hasattr(viewer, "brightness_manager"):
                     mgr = viewer.brightness_manager
-                    # Convert dialog's dtype_key to a dummy dtype for manager's _dtype_key logic
-                    # We can directly set _params_by_dtype since we know the keys
                     offset, gain, saturation = self.dtype_params.get(self.current_dtype, (0, 1.0, 255))
                     mgr._params_by_dtype[self.current_dtype] = (offset, gain, saturation)
         except Exception:
             pass
 
-    def _load_params_for_dtype(self, dtype_key):
-        """Load and apply saved params for dtype_key; no-op if not saved."""
-        if dtype_key not in self.dtype_params:
-            return
-        offset, gain, saturation = self.dtype_params[dtype_key]
-        self._update_ranges_for_dtype(dtype_key)
-        self._configure_offset_widgets()
-        self._configure_gain_widgets()
-        self._configure_saturation_widgets()
-        self._apply_values(offset, gain, saturation, clamp=True)
+    def _reset_gain_to_default(self):
+        """Reset gain to 1.0 when invalid value entered."""
+        self.gain_spinbox.blockSignals(True)
+        self.gain_spinbox.setValue(1.0)
+        self.gain_spinbox.blockSignals(False)
 
-    # ------------------------ public API ------------------------
+        self.gain_slider.blockSignals(True)
+        self.gain_slider.setValue(0)
+        self.gain_slider.blockSignals(False)
+
+        self._update_gain_label(1.0)
+        self._save_current_params()
+        self._emit_brightness_changed()
+
+    # ------------------------ Public API ------------------------
     def _emit_brightness_changed(self):
+        """Emit brightness_changed signal with current values."""
         offset = self.offset_spinbox.value()
         gain = self.gain_spinbox.value()
         saturation = self.saturation_spinbox.value()
         self.brightness_changed.emit(offset, gain, saturation)
-        # Also save to manager's per-dtype storage using dialog's current_dtype
         self._sync_to_manager()
 
     def set_gain(self, gain_value):
+        """Set gain value programmatically.
+
+        Args:
+            gain_value: Desired gain value (will be rounded to power of 2)
+        """
+        rounded = round_to_power_of_2(gain_value, self._gain_log2_min, self._gain_log2_max)
+        log2_value = int(round(math.log2(rounded)))
+
         self.gain_slider.blockSignals(True)
         self.gain_spinbox.blockSignals(True)
-        clamped = max(self._gain_spinbox_min, min(self._gain_spinbox_max, gain_value))
-        self.gain_spinbox.setValue(clamped)
-        if self._gain_slider_min <= gain_value <= self._gain_slider_max:
-            self.gain_slider.setValue(int(gain_value * 100))
-        else:
-            self.gain_slider.setValue(
-                int((self._gain_slider_min if gain_value < self._gain_slider_min else self._gain_slider_max) * 100)
-            )
-        self._update_gain_label(clamped)
+        self.gain_spinbox.setValue(rounded)
+        self.gain_slider.setValue(log2_value)
+        self._update_gain_label(rounded)
         self.gain_slider.blockSignals(False)
         self.gain_spinbox.blockSignals(False)
         self._save_current_params()
         self._emit_brightness_changed()
 
     def reset_parameters(self):
+        """Reset all parameters to initial values."""
         self._reset_to_initial()
         self._save_current_params()
         self._emit_brightness_changed()
 
     def _reset_to_initial(self):
+        """Reset widgets to initial values."""
+        rounded_gain = round_to_power_of_2(self.initial_gain, self._gain_log2_min, self._gain_log2_max)
+        gain_log2 = int(round(math.log2(rounded_gain)))
+
+        # Offset
         self.offset_slider.blockSignals(True)
         self.offset_spinbox.blockSignals(True)
         self.offset_spinbox.setValue(self.initial_offset)
@@ -578,14 +401,16 @@ class BrightnessTab(QWidget):
         self.offset_slider.blockSignals(False)
         self.offset_spinbox.blockSignals(False)
 
+        # Gain
         self.gain_slider.blockSignals(True)
         self.gain_spinbox.blockSignals(True)
-        self.gain_spinbox.setValue(self.initial_gain)
-        self.gain_slider.setValue(int(self.initial_gain * 100))
-        self._update_gain_label(self.initial_gain)
+        self.gain_spinbox.setValue(rounded_gain)
+        self.gain_slider.setValue(gain_log2)
+        self._update_gain_label(rounded_gain)
         self.gain_slider.blockSignals(False)
         self.gain_spinbox.blockSignals(False)
 
+        # Saturation
         self.saturation_slider.blockSignals(True)
         self.saturation_spinbox.blockSignals(True)
         self.saturation_spinbox.setValue(self.initial_saturation)
@@ -596,13 +421,14 @@ class BrightnessTab(QWidget):
         self.saturation_slider.blockSignals(False)
         self.saturation_spinbox.blockSignals(False)
 
-        self.dtype_params[self.current_dtype] = (
-            self.initial_offset,
-            self.initial_gain,
-            self.initial_saturation,
-        )
+        self.dtype_params[self.current_dtype] = (self.initial_offset, rounded_gain, self.initial_saturation)
 
     def get_parameters(self):
+        """Get current brightness parameters.
+
+        Returns:
+            tuple: (offset, gain, saturation)
+        """
         return (
             self.offset_spinbox.value(),
             self.gain_spinbox.value(),
@@ -610,57 +436,62 @@ class BrightnessTab(QWidget):
         )
 
     def update_for_new_image(self, image_array=None, image_path=None, keep_settings=True):
+        """Update tab for a new image.
+
+        Args:
+            image_array: New image array
+            image_path: New image path
+            keep_settings: Whether to preserve current settings
+        """
         old_dtype = self.current_dtype
         old_params = (
             self.offset_spinbox.value(),
             self.gain_spinbox.value(),
             self.saturation_spinbox.value(),
         )
+
         self.image_array = image_array
         self.image_path = image_path
         old_is_float = self.is_float_type
 
-        self._determine_initial_values()
-        self._gain_slider_min, self._gain_slider_max = self.gain_range
+        # Determine new defaults
+        defaults = determine_dtype_defaults(image_array, image_path)
+        self.current_dtype = defaults["dtype_key"]
+        self.is_float_type = defaults["is_float_type"]
+        self.initial_offset = defaults["initial_offset"]
+        self.initial_gain = defaults["initial_gain"]
+        self.initial_saturation = defaults["initial_saturation"]
+        self.offset_range = defaults["offset_range"]
+        self.gain_range = defaults["gain_range"]
+        self.saturation_range = defaults["saturation_range"]
 
         if keep_settings:
             self.dtype_params[old_dtype] = old_params
 
+        # Update dtype combo
         if hasattr(self, "dtype_combo"):
             self.dtype_combo.blockSignals(True)
             self.dtype_combo.setCurrentText(self.current_dtype)
             self.dtype_combo.blockSignals(False)
 
-        if old_is_float != self.is_float_type:
-            pass
-
-        if keep_settings:
-            if self.current_dtype in self.dtype_params:
-                new_offset, new_gain, new_saturation = self.dtype_params[self.current_dtype]
-            else:
-                new_offset, new_gain, new_saturation = (
-                    self.initial_offset,
-                    self.initial_gain,
-                    self.initial_saturation,
-                )
+        # Determine values to use
+        if keep_settings and self.current_dtype in self.dtype_params:
+            new_offset, new_gain, new_saturation = self.dtype_params[self.current_dtype]
         else:
-            new_offset, new_gain, new_saturation = (
-                self.initial_offset,
-                self.initial_gain,
-                self.initial_saturation,
-            )
+            new_offset = self.initial_offset
+            new_gain = self.initial_gain
+            new_saturation = self.initial_saturation
 
+        # Reconfigure widgets
         self._configure_offset_widgets()
         self._configure_gain_widgets()
         self._configure_saturation_widgets()
 
+        # Apply values
         clamped_offset, clamped_gain, clamped_sat = self._apply_values(new_offset, new_gain, new_saturation, clamp=True)
-
         self.dtype_params[self.current_dtype] = (clamped_offset, clamped_gain, clamped_sat)
         self._emit_brightness_changed()
 
         if not keep_settings:
             self._reset_to_initial()
             self._emit_brightness_changed()
-
-    # key handling remains in the dialog layer to integrate with parent actions

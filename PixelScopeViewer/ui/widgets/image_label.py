@@ -79,12 +79,12 @@ class ImageLabel(RoiManagerMixin, RoiEditorMixin, BaseImageLabel):
         Args:
             event: QPaintEvent
         """
-        painter = QPainter(self)
-
-        # Paint image (from base class)
+        # First, let the base class paint the image.
+        # It will create and use its own painter.
         super().paintEvent(event)
 
-        # Paint selection (from selection manager)
+        # Now, create a new painter to draw the ROI overlay on top.
+        painter = QPainter(self)
         self.paint_roi(painter)
 
     def wheelEvent(self, event: QWheelEvent):

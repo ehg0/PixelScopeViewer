@@ -66,7 +66,7 @@ class ImageLabel(RoiManagerMixin, RoiEditorMixin, BaseImageLabel):
             self.roi_rect = self._image_rect_to_widget(prev_sel_img)
         else:
             self.roi_rect = None
-        self.update()
+        # self.update() # This is called in base class set_image
 
     def clear(self):
         """Clear the displayed image and selection."""
@@ -79,17 +79,12 @@ class ImageLabel(RoiManagerMixin, RoiEditorMixin, BaseImageLabel):
         Args:
             event: QPaintEvent
         """
+        # First, let the base class paint the image.
+        # It will create and use its own painter.
+        super().paintEvent(event)
+
+        # Now, create a new painter to draw the ROI overlay on top.
         painter = QPainter(self)
-
-        # Paint image (from base class)
-        if not self._orig_pixmap.isNull():
-            painter.save()
-            painter.setRenderHint(QPainter.SmoothPixmapTransform, False)  # nearest-neighbor
-            painter.scale(self.scale, self.scale)
-            painter.drawPixmap(0, 0, self._orig_pixmap)
-            painter.restore()
-
-        # Paint selection (from selection manager)
         self.paint_roi(painter)
 
     def wheelEvent(self, event: QWheelEvent):

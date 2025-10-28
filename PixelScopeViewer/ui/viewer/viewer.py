@@ -617,9 +617,6 @@ class ImageViewer(QMainWindow):
         dlg = DiffDialog(self, image_list=self.images, default_offset=127)
         if dlg.exec() != QDialog.Accepted:
             return
-        dlg = DiffDialog(self, image_list=self.images, default_offset=127)
-        if dlg.exec() != QDialog.Accepted:
-            return
         a_idx, b_idx, offset = dlg.get_result()
         if a_idx is None or b_idx is None:
             return

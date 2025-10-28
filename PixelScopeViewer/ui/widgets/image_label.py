@@ -66,7 +66,7 @@ class ImageLabel(RoiManagerMixin, RoiEditorMixin, BaseImageLabel):
             self.roi_rect = self._image_rect_to_widget(prev_sel_img)
         else:
             self.roi_rect = None
-        self.update()
+        # self.update() # This is called in base class set_image
 
     def clear(self):
         """Clear the displayed image and selection."""
@@ -82,12 +82,7 @@ class ImageLabel(RoiManagerMixin, RoiEditorMixin, BaseImageLabel):
         painter = QPainter(self)
 
         # Paint image (from base class)
-        if not self._orig_pixmap.isNull():
-            painter.save()
-            painter.setRenderHint(QPainter.SmoothPixmapTransform, False)  # nearest-neighbor
-            painter.scale(self.scale, self.scale)
-            painter.drawPixmap(0, 0, self._orig_pixmap)
-            painter.restore()
+        super().paintEvent(event)
 
         # Paint selection (from selection manager)
         self.paint_roi(painter)

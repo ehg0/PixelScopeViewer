@@ -30,7 +30,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QDockWidget,
 )
-from PySide6.QtGui import QPixmap, QPainter, QIcon, QGuiApplication, QAction, QActionGroup
+from PySide6.QtGui import QPixmap, QPainter, QIcon, QGuiApplication, QAction, QActionGroup, QPixmap
 from PySide6.QtCore import Qt, QRect, QEvent, Signal
 
 from ...core.image_io import numpy_to_qimage, pil_to_numpy, is_image_file
@@ -130,8 +130,8 @@ class ImageViewer(QMainWindow):
         # Navigator dock
         self.navigator_dock = QDockWidget("Navigator")
         self.navigator_dock.setFeatures(QDockWidget.DockWidgetFloatable | QDockWidget.DockWidgetMovable)
-        navigator_widget = NavigatorWidget(self)
-        self.navigator_dock.setWidget(navigator_widget)
+        self.navigator_widget = NavigatorWidget(self)
+        self.navigator_dock.setWidget(self.navigator_widget)
         self.addDockWidget(Qt.RightDockWidgetArea, self.navigator_dock)
 
         # Info dock with tabs
@@ -286,6 +286,11 @@ class ImageViewer(QMainWindow):
                 continue
             try:
                 arr, pil_img = pil_to_numpy(path)
+                # Create and cache thumbnail pixmap on load
+                thumb_qimg = numpy_to_qimage(arr)
+                thumb_pixmap = QPixmap.fromImage(thumb_qimg).scaled(
+                    250, 250, Qt.KeepAspectRatio, Qt.SmoothTransformation
+                )
             except Exception:
                 continue
             img_data = {
@@ -293,6 +298,7 @@ class ImageViewer(QMainWindow):
                 "array": arr,
                 "base_array": arr.copy(),
                 "pil_image": pil_img,  # Store PIL image for metadata extraction
+                "thumbnail_pixmap": thumb_pixmap,  # Cache thumbnail
             }
             new_images.append(img_data)
 
@@ -611,6 +617,9 @@ class ImageViewer(QMainWindow):
         dlg = DiffDialog(self, image_list=self.images, default_offset=127)
         if dlg.exec() != QDialog.Accepted:
             return
+        dlg = DiffDialog(self, image_list=self.images, default_offset=127)
+        if dlg.exec() != QDialog.Accepted:
+            return
         a_idx, b_idx, offset = dlg.get_result()
         if a_idx is None or b_idx is None:
             return
@@ -622,7 +631,20 @@ class ImageViewer(QMainWindow):
         except Exception:
             QMessageBox.information(self, "差分", "差分の作成に失敗しました。画像サイズや型を確認してください。")
             return
-        img_data = {"path": f"diff:{a_idx+1}-{b_idx+1}", "array": diff, "base_array": diff.copy(), "pil_image": None}
+
+        # Create and cache thumbnail for the diff image
+        thumb_qimg = numpy_to_qimage(diff)
+        thumb_pixmap = QPixmap.fromImage(thumb_qimg).scaled(
+            self.navigator_widget.thumbnail_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation
+        )
+
+        img_data = {
+            "path": f"diff:{a_idx+1}-{b_idx+1}",
+            "array": diff,
+            "base_array": diff.copy(),
+            "pil_image": None,
+            "thumbnail_pixmap": thumb_pixmap,
+        }
         self.images.append(img_data)
         # switch to the new image
         self.current_index = len(self.images) - 1

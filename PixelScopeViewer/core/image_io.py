@@ -57,19 +57,22 @@ def numpy_to_qimage(arr: np.ndarray) -> QImage:
     if a.ndim == 2:
         disp = np.clip(a, 0, 255).astype(np.uint8)
         h, w = disp.shape
-        return QImage(disp.data, w, h, w, QImage.Format_Grayscale8).copy()
+        # Ensure array is C-contiguous for QImage
+        disp = np.ascontiguousarray(disp)
+        return QImage(disp.data, w, h, w, QImage.Format_Grayscale8)
     elif a.ndim == 3:
         h, w, c = a.shape
         disp = np.clip(a, 0, 255).astype(np.uint8)
         # Ensure array is C-contiguous for QImage
         disp = np.ascontiguousarray(disp)
         if c == 3:
-            return QImage(disp.data, w, h, 3 * w, QImage.Format_RGB888).copy()
+            return QImage(disp.data, w, h, 3 * w, QImage.Format_RGB888)
         elif c == 4:
-            return QImage(disp.data, w, h, 4 * w, QImage.Format_RGBA8888).copy()
+            return QImage(disp.data, w, h, 4 * w, QImage.Format_RGBA8888)
         else:
             gray = np.clip(a.mean(axis=2), 0, 255).astype(np.uint8)
-            return QImage(gray.data, gray.shape[1], gray.shape[0], gray.shape[1], QImage.Format_Grayscale8).copy()
+            gray = np.ascontiguousarray(gray)
+            return QImage(gray.data, gray.shape[1], gray.shape[0], gray.shape[1], QImage.Format_Grayscale8)
     else:
         raise ValueError("Unsupported array shape")
 

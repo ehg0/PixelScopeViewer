@@ -123,20 +123,25 @@ class NavigatorWidget(QGroupBox):
             self.thumb_rect = None
             return
 
-        img = self.viewer.images[self.viewer.current_index]["array"]
-        h, w = img.shape[:2]
+        img_data = self.viewer.images[self.viewer.current_index]
+        h, w = img_data["array"].shape[:2]
 
-        # Create thumbnail pixmap
-        from ...core.image_io import numpy_to_qimage
+        # Use cached thumbnail pixmap
+        base_pixmap = img_data.get("thumbnail_pixmap")
+        if not base_pixmap:
+            # Fallback if thumbnail is not cached for some reason
+            from ...core.image_io import numpy_to_qimage
 
-        qimg = numpy_to_qimage(img)
-        pixmap = QPixmap.fromImage(qimg)
+            qimg = numpy_to_qimage(img_data["array"])
+            base_pixmap = QPixmap.fromImage(qimg).scaled(
+                self.thumbnail_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation
+            )
 
-        # Scale to fit thumbnail size while maintaining aspect ratio
-        scaled_pixmap = pixmap.scaled(self.thumbnail_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        # Create a mutable copy to draw the viewport rectangle on
+        scaled_pixmap = base_pixmap.copy()
 
         # Calculate viewport rectangle in thumbnail coordinates
-        scale_factor = min(self.thumbnail_label.width() / w, self.thumbnail_label.height() / h)
+        scale_factor = min(scaled_pixmap.width() / w, scaled_pixmap.height() / h)
 
         # Get current viewport in image coordinates
         scroll_area = self.viewer.scroll_area

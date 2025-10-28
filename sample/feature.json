@@ -1,0 +1,67 @@
+{
+  "dataset_name": "example_dataset_v1",
+  "categories": [
+    {"id": 0, "name": "person"},
+    {"id": 1, "name": "car"}
+  ],
+  "images": [
+    {
+      "id": 1,
+      "file_name": "GoldenGate.exr",
+      "width": null,
+      "height": null,
+      "metrics": {
+        "mean_luminance": 0.45,
+        "luminance_variance": 0.12,
+        "sharpness": 0.83,
+        "snr_db": 28.4
+      },
+      "annotations": [
+        {"category_id": 1, "bbox": [1000, 800, 500, 400]}
+      ]
+    },
+    {
+      "id": 2,
+      "file_name": "rgb-sample.png",
+      "width": null,
+      "height": null,
+      "metrics": {
+        "mean_luminance": 0.50,
+        "luminance_variance": 0.08,
+        "sharpness": 0.70,
+        "snr_db": 22.0
+      },
+      "annotations": [
+        {"category_id": 0, "bbox": [10, 10, 50, 50]}
+      ]
+    },
+    {
+      "id": 3,
+      "file_name": "test_gradient_3ch.npy",
+      "width": null,
+      "height": null,
+      "metrics": {
+        "mean_luminance": 0.55,
+        "luminance_variance": 0.05,
+        "sharpness": 0.60,
+        "snr_db": 20.1
+      },
+      "annotations": []
+    },
+    {
+      "id": 4,
+      "file_name": "test_gradient_3ch.png",
+      "width": null,
+      "height": null,
+      "metrics": {
+        "mean_luminance": 0.57,
+        "luminance_variance": 0.09,
+        "sharpness": 0.81,
+        "snr_db": 20.0
+      },
+      "annotations": [
+        {"category_id": 0, "bbox": [5, 5, 32, 32]}
+      ]
+    }
+  ]
+}

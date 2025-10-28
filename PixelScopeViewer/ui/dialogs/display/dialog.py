@@ -71,14 +71,14 @@ class BrightnessDialog(QDialog):
         # Create tab widget
         self.tabs = QTabWidget()
 
-        # Brightness tab
-        self.brightness_tab = BrightnessTab(self, image_array, image_path)
-        self.tabs.addTab(self.brightness_tab, "輝度調整 (Brightness)")
-
         # Channel tab
         self.channel_tab = ChannelTab(self, image_array, image_path, initial_channels, initial_colors)
         self.tabs.addTab(self.channel_tab, "チャンネル (Channels)")
 
+        # Brightness tab
+        self.brightness_tab = BrightnessTab(self, image_array, image_path)
+        self.tabs.addTab(self.brightness_tab, "輝度調整 (Brightness)")
+        
         # Connect signals
         self.brightness_tab.brightness_changed.connect(self.brightness_changed)
         self.channel_tab.channels_changed.connect(self.channels_changed)

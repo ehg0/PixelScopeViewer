@@ -121,7 +121,6 @@ class AnalysisDialog(QDialog):
         image_array: Optional[np.ndarray] = None,
         image_rect: Optional[QRect] = None,
         image_path: Optional[str] = None,
-        pil_image=None,
     ):
         super().__init__(parent)
         self.setWindowTitle("Analysis")
@@ -129,7 +128,6 @@ class AnalysisDialog(QDialog):
         self.image_array = image_array
         self.image_rect = image_rect
         self.image_path = image_path
-        self.pil_image = pil_image  # Store PIL image for metadata extraction
 
         # state
         self.profile_orientation = "h"  # "h", "v", or "d" (diagonal)
@@ -239,7 +237,6 @@ class AnalysisDialog(QDialog):
         image_array: Optional[np.ndarray],
         image_rect: Optional[QRect],
         image_path: Optional[str] = None,
-        pil_image=None,
     ):
         """ダイアログの表示内容を新しい画像データや選択矩形で更新します。
 
@@ -250,14 +247,11 @@ class AnalysisDialog(QDialog):
             image_array: 画像または選択領域の NumPy 配列
             image_rect: 画像座標系での選択矩形（QRect）
             image_path: 画像ファイルのパス（メタデータ取得に利用）
-            pil_image: PIL.Image オブジェクトが既にある場合はそれを渡すとメタデータ取得が高速になります
         """
         self.image_array = image_array
         self.image_rect = image_rect
         if image_path is not None:
             self.image_path = image_path
-        if pil_image is not None:
-            self.pil_image = pil_image
 
         # Update channel dialogs if they exist and image channel count changed
         if image_array is not None:
@@ -487,11 +481,8 @@ class AnalysisDialog(QDialog):
             return
 
         try:
-            # Use cached PIL image if available, otherwise fall back to file path
-            if self.pil_image is not None:
-                metadata = get_image_metadata(self.pil_image, pil_image=self.pil_image)
-            else:
-                metadata = get_image_metadata(self.image_path)
+            # fall back to file path
+            metadata = get_image_metadata(self.image_path)
 
             if not metadata:
                 self.meta_tab.update([("Info", "No metadata available")])
@@ -502,7 +493,7 @@ class AnalysisDialog(QDialog):
             rows = []
 
             # 1. Basic information (from PIL)
-            basic_keys = ["Filepath", "Format", "Size", "DataType", "Mode"]
+            basic_keys = ["Filepath", "Format", "Size", "Channels", "DataType"]
             for key in basic_keys:
                 if key in metadata:
                     value_str = str(metadata[key])

@@ -129,6 +129,11 @@ def pil_to_numpy(path: Union[str, Path, Image.Image]) -> Tuple[np.ndarray, Image
             return arr, img
 
 
+def cv2_imread_unicode(path: str):
+    data = np.fromfile(path, dtype=np.uint8)
+    return cv2.imdecode(data, cv2.IMREAD_UNCHANGED)
+
+
 def load_image(path: Union[str, Path]) -> np.ndarray:
     """Load an image file into a NumPy array.
 
@@ -165,7 +170,7 @@ def load_image(path: Union[str, Path]) -> np.ndarray:
         return arr
     else:
         # LDR画像は OpenCV
-        img = cv2.imread(path_str, cv2.IMREAD_UNCHANGED)
+        img = cv2_imread_unicode(path_str)
         if img is None:
             raise RuntimeError(f"Cannot open image: {path_str}")
 
@@ -259,7 +264,7 @@ def get_image_metadata(path_or_img: Union[str, Path, Image.Image]) -> dict:
         else:
             try:
                 path_str = str(path)
-                arr = cv2.imread(path_str, cv2.IMREAD_UNCHANGED)
+                arr = cv2_imread_unicode(path_str)
                 if arr is None:
                     raise ValueError(f"Could not load image with OpenCV: {path_str}")
 

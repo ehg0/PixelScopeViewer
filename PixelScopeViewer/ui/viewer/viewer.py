@@ -33,7 +33,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QPixmap, QPainter, QIcon, QGuiApplication, QAction, QActionGroup, QPixmap
 from PySide6.QtCore import Qt, QRect, QEvent, Signal
 
-from ...core.image_io import numpy_to_qimage, pil_to_numpy, is_image_file
+from ...core.image_io import numpy_to_qimage, load_image, is_image_file
 from ..utils import get_default_channel_colors
 from ..widgets import ImageLabel, NavigatorWidget, DisplayInfoWidget, ROIInfoWidget
 from ..dialogs import HelpDialog, DiffDialog, AnalysisDialog
@@ -76,7 +76,7 @@ class ImageViewer(QMainWindow):
 
     Attributes:
         images: List of loaded image dictionaries with keys:
-                'path', 'array', 'base_array', 'pil_image'
+                'path', 'array', 'base_array'
         current_index: Index of currently displayed image
         scale: Current zoom scale factor
     """
@@ -247,8 +247,7 @@ class ImageViewer(QMainWindow):
         arr = img.get("base_array", img.get("array"))
         sel = self.current_roi_rect
         img_path = img.get("path")
-        pil_img = img.get("pil_image")  # Get cached PIL image
-        dlg = AnalysisDialog(self, image_array=arr, image_rect=sel, image_path=img_path, pil_image=pil_img)
+        dlg = AnalysisDialog(self, image_array=arr, image_rect=sel, image_path=img_path)
         dlg.show()
         # keep a reference until the dialog is closed
         self._analysis_dialog = dlg
@@ -285,7 +284,7 @@ class ImageViewer(QMainWindow):
             if not path:
                 continue
             try:
-                arr, pil_img = pil_to_numpy(path)
+                arr = load_image(path)
                 # Create and cache thumbnail pixmap on load
                 thumb_qimg = numpy_to_qimage(arr)
                 thumb_pixmap = QPixmap.fromImage(thumb_qimg).scaled(
@@ -297,7 +296,6 @@ class ImageViewer(QMainWindow):
                 "path": str(Path(path).resolve()),
                 "array": arr,
                 "base_array": arr.copy(),
-                "pil_image": pil_img,  # Store PIL image for metadata extraction
                 "thumbnail_pixmap": thumb_pixmap,  # Cache thumbnail
             }
             new_images.append(img_data)
@@ -449,10 +447,9 @@ class ImageViewer(QMainWindow):
             img = self.images[self.current_index]
             arr_for_analysis = img.get("base_array", img.get("array"))
             img_path = img.get("path", None)
-            pil_img = img.get("pil_image")
             if self._analysis_dialog:
                 try:
-                    self._analysis_dialog.set_image_and_rect(arr_for_analysis, self.current_roi_rect, img_path, pil_img)
+                    self._analysis_dialog.set_image_and_rect(arr_for_analysis, self.current_roi_rect, img_path)
                 except Exception:
                     pass
         except Exception:
@@ -476,9 +473,8 @@ class ImageViewer(QMainWindow):
             if img:
                 arr = img.get("base_array", img.get("array"))
                 img_path = img.get("path")
-                pil_img = img.get("pil_image")
                 try:
-                    self._analysis_dialog.set_image_and_rect(arr, self.current_roi_rect, img_path, pil_img)
+                    self._analysis_dialog.set_image_and_rect(arr, self.current_roi_rect, img_path)
                 except Exception:
                     pass
 
@@ -639,7 +635,6 @@ class ImageViewer(QMainWindow):
             "path": f"diff:{a_idx+1}-{b_idx+1}",
             "array": diff,
             "base_array": diff.copy(),
-            "pil_image": None,
             "thumbnail_pixmap": thumb_pixmap,
         }
         self.images.append(img_data)
@@ -674,9 +669,8 @@ class ImageViewer(QMainWindow):
             if img:
                 arr = img.get("base_array", img.get("array"))
                 img_path = img.get("path")
-                pil_img = img.get("pil_image")
                 try:
-                    self._analysis_dialog.set_image_and_rect(arr, self.current_roi_rect, img_path, pil_img)
+                    self._analysis_dialog.set_image_and_rect(arr, self.current_roi_rect, img_path)
                 except Exception:
                     # ignore dialog-specific errors and continue notifying others
                     pass
@@ -722,9 +716,8 @@ class ImageViewer(QMainWindow):
                 if img:
                     arr = img.get("base_array", img.get("array"))
                     img_path = img.get("path")
-                    pil_img = img.get("pil_image")
                     try:
-                        self._analysis_dialog.set_image_and_rect(arr, self.current_roi_rect, img_path, pil_img)
+                        self._analysis_dialog.set_image_and_rect(arr, self.current_roi_rect, img_path)
                     except Exception:
                         pass
             # Emit ROI changed for dependent widgets (e.g., ROIInfo)

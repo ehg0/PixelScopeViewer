@@ -13,11 +13,11 @@ from pathlib import Path
 from io import StringIO
 from contextlib import redirect_stdout, redirect_stderr
 from typing import Union, Tuple
-import os
-import sys
 import numpy as np
 from PIL import Image
 from PySide6.QtGui import QImage
+import cv2
+import OpenImageIO as oiio
 
 from .metadata_utils import is_binary_tag, is_printable_text, decode_bytes
 
@@ -129,6 +129,61 @@ def pil_to_numpy(path: Union[str, Path, Image.Image]) -> Tuple[np.ndarray, Image
             return arr, img
 
 
+def cv2_imread_unicode(path: str):
+    data = np.fromfile(path, dtype=np.uint8)
+    return cv2.imdecode(data, cv2.IMREAD_UNCHANGED)
+
+
+def load_image(path: Union[str, Path]) -> np.ndarray:
+    """Load an image file into a NumPy array.
+
+    Supported inputs:
+      - .exr, .hdr: read with OpenImageIO; returns the image array with its
+        original data type (often float32) and channel count from the file.
+      - .npy: loaded via numpy.load and returned as-is.
+      - other extensions: read with OpenCV; returns a NumPy array (typically
+        uint8). Color images read by OpenCV are converted to RGB or RGBA
+        (OpenCV's BGR/BGRA → RGB/RGBA). Grayscale images are returned as 2-D arrays.
+
+    Args:
+        path: Path to the image file (str or pathlib.Path).
+
+    Returns:
+        np.ndarray: Image data. dtype and channel order depend on the format
+        (EXR/HDR may be float; LDR images are converted to RGB/RGBA uint8).
+
+    Raises:
+        RuntimeError: If OpenCV fails to open an LDR image.
+        Exceptions from OpenImageIO or numpy.load may propagate for EXR/HDR/NPY.
+    """
+    path_str = str(path)
+    ext = Path(path_str).suffix.lower()
+
+    # EXR / HDR は OpenImageIO で読み込む
+    if ext in [".exr", ".hdr"]:
+        img = oiio.ImageInput.open(str(path))
+        arr = img.read_image()
+        img.close()
+        return arr
+    elif ext == ".npy":
+        arr = np.load(path)
+        return arr
+    else:
+        # LDR画像は OpenCV
+        img = cv2_imread_unicode(path_str)
+        if img is None:
+            raise RuntimeError(f"Cannot open image: {path_str}")
+
+        # 4チャンネルの場合は BGRA → RGBA に変換
+        if img.ndim == 3 and img.shape[2] == 4:
+            img = cv2.cvtColor(img, cv2.COLOR_BGRA2RGBA)
+        # 3チャンネルは BGR → RGB に変換
+        elif img.ndim == 3 and img.shape[2] == 3:
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+    return img
+
+
 def is_image_file(path: Union[str, Path]) -> bool:
     """Return True if the given path has a supported image file suffix.
 
@@ -146,7 +201,7 @@ def is_image_file(path: Union[str, Path]) -> bool:
     return ext in (".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".exr", ".npy")
 
 
-def get_image_metadata(path_or_img: Union[str, Path, Image.Image], pil_image: Image.Image = None) -> dict:
+def get_image_metadata(path_or_img: Union[str, Path, Image.Image]) -> dict:
     """Return a dictionary of image metadata.
 
     The function tries to extract basic image properties using Pillow
@@ -155,9 +210,6 @@ def get_image_metadata(path_or_img: Union[str, Path, Image.Image], pil_image: Im
 
     Args:
         path_or_img: Either a filesystem path (str/Path) to the image file
-            or a ``PIL.Image.Image`` instance.
-        pil_image: Deprecated alias for passing a PIL Image; provided for
-            backward compatibility.
 
     Returns:
         dict: Mapping of metadata keys to values. Basic keys include
@@ -166,8 +218,6 @@ def get_image_metadata(path_or_img: Union[str, Path, Image.Image], pil_image: Im
         included with spaces replaced by underscores in tag names.
 
     Behavior:
-        - If ``path_or_img`` is a PIL image, only basic properties are
-          extracted (no disk EXIF parsing).
         - If the ``exifread`` package is not installed, the returned
           dictionary will include a ``Warning`` key advising installation.
 
@@ -176,18 +226,7 @@ def get_image_metadata(path_or_img: Union[str, Path, Image.Image], pil_image: Im
         >>> print(md['Format'], md.get('EXIF_DateTimeDigitized'))
     """
     metadata = {}
-
-    # Handle deprecated pil_image parameter
-    if pil_image is not None:
-        img_obj = pil_image
-        path = getattr(pil_image, "filename", None)
-    elif isinstance(path_or_img, str):
-        img_obj = None
-        path = path_or_img
-    else:
-        # Assume it's a PIL Image object
-        img_obj = path_or_img
-        path = getattr(path_or_img, "filename", None)
+    path = path_or_img
 
     # Extract basic information based on file type
     if path:
@@ -196,15 +235,13 @@ def get_image_metadata(path_or_img: Union[str, Path, Image.Image], pil_image: Im
         if ext in (".exr", ".npy"):
             try:
                 if ext == ".exr":
-                    import OpenImageIO as oiio
-
                     img = oiio.ImageInput.open(str(path))
                     spec = img.spec()
                     metadata["Filepath"] = str(path_obj.resolve())
                     metadata["Format"] = "EXR"
                     metadata["Size"] = f"{spec.width} x {spec.height}"
-                    metadata["DataType"] = str(spec.format)
                     metadata["Channels"] = spec.nchannels
+                    metadata["DataType"] = str(spec.format).split()[-1]
                     # Add additional metadata from spec
                     if spec.get_string_attribute("compression"):
                         metadata["Compression"] = spec.get_string_attribute("compression")
@@ -216,8 +253,8 @@ def get_image_metadata(path_or_img: Union[str, Path, Image.Image], pil_image: Im
                     metadata["Filepath"] = str(path_obj.resolve())
                     metadata["Format"] = "NPY"
                     if arr.ndim == 2:
-                        metadata["Size"] = f"{arr.shape[1]} x {arr.shape[0]}"
                         metadata["Channels"] = 1
+                        metadata["Size"] = f"{arr.shape[1]} x {arr.shape[0]}"
                     elif arr.ndim == 3:
                         metadata["Size"] = f"{arr.shape[1]} x {arr.shape[0]}"
                         metadata["Channels"] = arr.shape[2]
@@ -225,63 +262,32 @@ def get_image_metadata(path_or_img: Union[str, Path, Image.Image], pil_image: Im
             except Exception as e:
                 metadata["Error"] = str(e)
         else:
-            # PIL-based images
             try:
-                with Image.open(path) as img:
-                    metadata["Filepath"] = str(Path(path).resolve())
-                    metadata["Format"] = img.format or "Unknown"
-                    metadata["Size"] = f"{img.size[0]} x {img.size[1]}"
-                    metadata["DataType"] = str(np.array(img_obj).dtype)
-                    metadata["Mode"] = img.mode
+                path_str = str(path)
+                arr = cv2_imread_unicode(path_str)
+                if arr is None:
+                    raise ValueError(f"Could not load image with OpenCV: {path_str}")
+
+                h, w = arr.shape[:2]
+                metadata["Filepath"] = str(Path(path).resolve())
+                metadata["Format"] = Path(path).suffix.lstrip(".").upper() or "Unknown"
+                metadata["Size"] = f"{w} x {h}"
+                metadata["DataType"] = str(arr.dtype)
+
+                # Channels / Mode inference
+                if arr.ndim == 2:
+                    metadata["Channels"] = 1
+                    metadata["Mode"] = "GRAY"
+                else:
+                    channels = arr.shape[2]
+                    metadata["Channels"] = channels
+                    if channels == 3:
+                        metadata["Mode"] = "RGB"
+                    elif channels == 4:
+                        metadata["Mode"] = "RGBA"
+                    else:
+                        metadata["Mode"] = f"{channels}-channel"
             except Exception as e:
-                metadata["Error (PIL)"] = str(e)
-
-    # Extract comprehensive EXIF data (only for PIL-supported formats)
-    if isinstance(path_or_img, str) or (pil_image is not None and path):
-        file_path = path if isinstance(path_or_img, str) else path
-        if file_path and Path(file_path).suffix.lower() not in (".exr", ".npy"):
-            try:
-                import exifread
-
-                with open(file_path, "rb") as f:
-                    # Suppress exifread's debug messages
-                    with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
-                        tags = exifread.process_file(f, details=False)
-
-                    for tag, value in tags.items():
-                        # Skip binary/thumbnail data
-                        if is_binary_tag(tag):
-                            continue
-
-                        try:
-                            value_str = str(value)
-
-                            # Handle byte data with multiple encoding attempts
-                            if isinstance(value.values, bytes):
-                                # Skip large binary data
-                                if len(value.values) > 1000:
-                                    continue
-
-                                # Try decoding with multiple encodings
-                                decoded = decode_bytes(value.values)
-                                if not decoded:
-                                    continue
-                                value_str = decoded
-
-                            # Skip fields with excessive control characters
-                            if not is_printable_text(value_str, min_ratio=0.8):
-                                continue
-
-                            # Store with cleaned tag name
-                            clean_tag = tag.replace(" ", "_")
-                            metadata[clean_tag] = value_str
-
-                        except Exception:
-                            continue
-
-            except ImportError:
-                metadata["Warning"] = "exifread library not installed. Install with: pip install exifread"
-            except Exception as e:
-                metadata["Error (EXIF)"] = str(e)
+                metadata["Error (OpenCV)"] = str(e)
 
     return metadata

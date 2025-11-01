@@ -339,16 +339,7 @@ class ImageViewer(QMainWindow):
     # ------------------------
     # Features: load + dialog
     # ------------------------
-    def open_feature_files(self):
-        files, _ = QFileDialog.getOpenFileNames(self, "特徴量ファイルを開く", "", "Feature Files (*.json *.csv)")
-        if not files:
-            return
-        count = self.features_manager.load_feature_files(files)
-        if count <= 0:
-            QMessageBox.information(self, "特徴量読み込み", "読み込めるデータがありませんでした。")
-            return
-        if self._features_dialog is not None:
-            self._features_dialog.refresh_from_manager()
+    # Removed: feature file opening moved into FeaturesDialog menu
 
     def show_features_dialog(self):
         if self._features_dialog is not None:

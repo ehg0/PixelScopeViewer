@@ -18,7 +18,7 @@ def create_menus(viewer):
 
     # File menu
     file_menu = menubar.addMenu("ファイル")
-    file_menu.addAction(QAction("読み込み...", viewer, shortcut="Ctrl+O", triggered=viewer.open_files))
+    file_menu.addAction(QAction("画像ファイル読み込み...", viewer, shortcut="Ctrl+O", triggered=viewer.open_files))
     file_menu.addSeparator()
     file_menu.addAction(QAction("画像全体をROI", viewer, shortcut="Ctrl+A", triggered=viewer.select_all))
     file_menu.addAction(

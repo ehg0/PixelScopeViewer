@@ -18,7 +18,7 @@ def create_menus(viewer):
 
     # File menu
     file_menu = menubar.addMenu("ファイル")
-    file_menu.addAction(QAction("読み込み...", viewer, shortcut="Ctrl+O", triggered=viewer.open_files))
+    file_menu.addAction(QAction("画像ファイルを開く...", viewer, shortcut="Ctrl+O", triggered=viewer.open_files))
     file_menu.addSeparator()
     file_menu.addAction(QAction("画像全体をROI", viewer, shortcut="Ctrl+A", triggered=viewer.select_all))
     file_menu.addAction(
@@ -47,6 +47,8 @@ def create_menus(viewer):
     analysis.addAction(QAction("メタデータ", viewer, triggered=lambda: viewer.show_analysis_dialog(tab="Metadata")))
     analysis.addAction(QAction("プロファイル", viewer, triggered=lambda: viewer.show_analysis_dialog(tab="Profile")))
     analysis.addAction(QAction("ヒストグラム", viewer, triggered=lambda: viewer.show_analysis_dialog(tab="Histogram")))
+    analysis.addSeparator()
+    analysis.addAction(QAction("特徴量表示 (T)", viewer, triggered=lambda: viewer.show_features_dialog()))
     analysis.addSeparator()
     analysis.addAction(QAction("差分画像表示", viewer, triggered=lambda: viewer.show_diff_dialog()))
 
@@ -135,3 +137,10 @@ def _create_global_shortcuts(viewer):
     # Wrap to ignore triggered(bool) argument that would incorrectly be passed as tab parameter
     viewer.show_analysis_action.triggered.connect(lambda checked=False: viewer.show_analysis_dialog())
     viewer.addAction(viewer.show_analysis_action)
+
+    # F: Features dialog (Features)
+    viewer.show_features_action = QAction(viewer)
+    viewer.show_features_action.setShortcut("T")
+    viewer.show_features_action.setShortcutContext(Qt.ApplicationShortcut)
+    viewer.show_features_action.triggered.connect(lambda: viewer.show_features_dialog())
+    viewer.addAction(viewer.show_features_action)

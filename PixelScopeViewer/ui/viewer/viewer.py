@@ -437,10 +437,10 @@ class ImageViewer(QMainWindow):
             else:
                 # Preserve existing colors, extending or truncating as needed
                 if len(self.channel_colors) < n_channels:
-                    # Extend with white for new channels
-                    from PySide6.QtGui import QColor
-
-                    self.channel_colors.extend([QColor(255, 255, 255)] * (n_channels - len(self.channel_colors)))
+                    # Extend with default colors for new channels
+                    current_len = len(self.channel_colors)
+                    default_colors = get_default_channel_colors(n_channels)
+                    self.channel_colors.extend(default_colors[current_len:])
                 elif len(self.channel_colors) > n_channels:
                     # Truncate to current channel count
                     self.channel_colors = self.channel_colors[:n_channels]
@@ -549,10 +549,10 @@ class ImageViewer(QMainWindow):
             if len(self.channel_checks) < n_channels:
                 self.channel_checks.extend([True] * (n_channels - len(self.channel_checks)))
             if len(self.channel_colors) < n_channels:
-                from PySide6.QtGui import QColor
-
-                # Extend with white for additional channels
-                self.channel_colors.extend([QColor(255, 255, 255)] * (n_channels - len(self.channel_colors)))
+                # Extend with default colors for additional channels
+                current_len = len(self.channel_colors)
+                default_colors = get_default_channel_colors(n_channels)
+                self.channel_colors.extend(default_colors[current_len:])
             elif len(self.channel_colors) > n_channels:
                 self.channel_colors = self.channel_colors[:n_channels]
 

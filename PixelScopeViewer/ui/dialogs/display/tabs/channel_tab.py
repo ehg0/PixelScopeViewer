@@ -32,10 +32,12 @@ class ChannelTab(QWidget):
     def _default_colors(self, n_channels, given=None):
         """Return a length-n list of QColor defaults, preferring given when provided.
 
-        If given is shorter than n, pad with white; if longer, truncate.
+        If given is shorter than n, pad with default colors; if longer, truncate.
         """
         if given is not None and len(given) > 0:
-            return [given[i] if i < len(given) else QColor(255, 255, 255) for i in range(n_channels)]
+            # Use given colors, and extend with default colors for missing channels
+            default_colors = get_default_channel_colors(n_channels)
+            return [given[i] if i < len(given) else default_colors[i] for i in range(n_channels)]
 
         return get_default_channel_colors(n_channels)
 

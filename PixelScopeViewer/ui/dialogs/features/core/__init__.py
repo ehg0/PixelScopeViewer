@@ -1,1 +1,1 @@
-"""Core helpers for features dialog (placeholder)."""
+"""(deprecated) Unused placeholder; directory scheduled for removal."""

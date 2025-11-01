@@ -163,21 +163,8 @@ class FeaturesDialog(QDialog):
         # Initialize button states based on initial tab
         self._on_tab_changed(0)
 
-        # Apply initial sort on Images tab by 'id' column in ascending order
-        cols = self.manager.get_columns()
-        if "id" in cols:
-            id_idx = cols.index("id")
-            self.table_images.sortByColumn(id_idx, Qt.AscendingOrder)
-        # Categories sort by id
-        cat_cols = self.manager.get_categories_columns()
-        if "id" in cat_cols:
-            cat_id_idx = cat_cols.index("id")
-            self.table_categories.sortByColumn(cat_id_idx, Qt.AscendingOrder)
-        # Annotations sort by image_id
-        ann_cols = self.model_annotations.get_columns()
-        if "image_id" in ann_cols:
-            ann_id_idx = ann_cols.index("image_id")
-            self.table_annotations.sortByColumn(ann_id_idx, Qt.AscendingOrder)
+        # Apply canonical initial sorts
+        self._apply_initial_sorts()
 
     # ----- UI handlers -----
     def refresh_from_manager(self):
@@ -186,12 +173,52 @@ class FeaturesDialog(QDialog):
         self.model_annotations.refresh()
         self.refresh_filter_columns()
         self.refresh_roles()
+        # Re-apply canonical sorts after data refresh to keep ascending order
+        self._apply_initial_sorts()
         # Update title (last loaded path may change)
         title = "特徴量表示"
         last_path = self.manager.get_last_loaded_path()
         if last_path:
             title = f"特徴量表示 - {last_path}"
         self.setWindowTitle(title)
+
+    def _apply_initial_sorts(self):
+        """Apply canonical ascending sorts regardless of load order or user action.
+
+        - Images: sort by leftmost key (prefer 'id' if available; fallback to column 0)
+        - Categories: sort by 'id' if available; else column 0
+        - Annotations: sort by 'image_id' if available; else column 0
+        """
+        # Images
+        img_cols = self.manager.get_columns()
+        if img_cols:
+            if "id" in img_cols:
+                img_key_col = img_cols.index("id")
+            else:
+                img_key_col = 0
+            self.table_images.sortByColumn(img_key_col, Qt.AscendingOrder)
+            try:
+                self.table_images.horizontalHeader().setSortIndicator(img_key_col, Qt.AscendingOrder)
+            except Exception:
+                pass
+        # Categories
+        cat_cols = self.manager.get_categories_columns() or []
+        if cat_cols:
+            cat_key_col = cat_cols.index("id") if "id" in cat_cols else 0
+            self.table_categories.sortByColumn(cat_key_col, Qt.AscendingOrder)
+            try:
+                self.table_categories.horizontalHeader().setSortIndicator(cat_key_col, Qt.AscendingOrder)
+            except Exception:
+                pass
+        # Annotations
+        ann_cols = self.model_annotations.get_columns()
+        if ann_cols:
+            ann_key_col = ann_cols.index("image_id") if "image_id" in ann_cols else 0
+            self.table_annotations.sortByColumn(ann_key_col, Qt.AscendingOrder)
+            try:
+                self.table_annotations.horizontalHeader().setSortIndicator(ann_key_col, Qt.AscendingOrder)
+            except Exception:
+                pass
 
     def refresh_filter_columns(self):
         cols = self._current_columns()

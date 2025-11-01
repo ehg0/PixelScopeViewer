@@ -85,7 +85,14 @@ class StatusUpdater:
 
         # Update title bar with filename and index
         filename = Path(p).name
-        title = f"{filename} ({self.viewer.current_index+1}/{len(self.viewer.images)})"
+        img = self.viewer.images[self.viewer.current_index]
+        arr = img.get("base_array", img.get("array"))
+        if arr.ndim == 2:
+            h, w = arr.shape
+            c = 1
+        else:
+            h, w, c = arr.shape[:3]
+        title = f"[{self.viewer.current_index+1}/{len(self.viewer.images)}]  {filename} — {w}×{h}, {c}ch"
         self.viewer.setWindowTitle(title)
 
         # display current scale

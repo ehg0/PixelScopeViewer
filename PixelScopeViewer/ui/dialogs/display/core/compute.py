@@ -42,3 +42,29 @@ def apply_brightness_adjustment(arr: np.ndarray, offset: float, gain: float, sat
 
     # Clip to valid range and convert back to uint8
     return np.clip(adjusted, 0, 255).astype(np.uint8)
+
+
+def apply_brightness_adjustment_float(arr: np.ndarray, offset: float, gain: float, saturation: float) -> np.ndarray:
+    """Apply linear brightness transform but keep float and sign (no clipping).
+
+    Intended for vector fields (e.g., 2ch flow for HSV) where preserving
+    angles and relative magnitudes is important. Performs:
+
+        y = gain * (x - offset) / max(saturation, eps)
+
+    without scaling to 0..255 or dtype conversion.
+
+    Args:
+        arr: Input image array (any dtype). Output is float32 with same shape.
+        offset: Baseline shift.
+        gain: Gain multiplier.
+        saturation: Scale reference. If 0, returns original array as float32.
+
+    Returns:
+        np.ndarray: float32 array with linear transform applied, no clipping.
+    """
+    x = arr.astype(np.float32, copy=False)
+    if saturation == 0:
+        return x.copy()
+    eps = 1e-12
+    return gain * (x - offset) / max(float(saturation), eps)

@@ -34,7 +34,16 @@ from PySide6.QtGui import QPixmap, QPainter, QIcon, QGuiApplication, QAction, QA
 from PySide6.QtCore import Qt, QRect, QEvent, Signal
 
 from ...core.image_io import numpy_to_qimage, load_image, is_image_file
-from ..utils import get_default_channel_colors
+from ..utils import (
+    get_default_channel_colors,
+    ChannelColorManager,
+    MODE_1CH_GRAYSCALE,
+    MODE_1CH_JET,
+    MODE_2CH_COMPOSITE,
+    MODE_2CH_FLOW_HSV,
+    apply_jet_colormap,
+    flow_to_hsv_rgb,
+)
 from ..widgets import ImageLabel, NavigatorWidget, DisplayInfoWidget, ROIInfoWidget
 from ..dialogs import HelpDialog, DiffDialog, AnalysisDialog
 from ..dialogs import FeaturesDialog
@@ -44,6 +53,7 @@ from .menu_builder import create_menus
 from .zoom_manager import ZoomManager
 from .brightness_manager import BrightnessManager
 from .status_updater import StatusUpdater
+from ..dialogs.display.core.compute import apply_brightness_adjustment_float
 
 
 class ImageViewer(QMainWindow):
@@ -180,6 +190,9 @@ class ImageViewer(QMainWindow):
         self.features_manager = FeaturesManager()
         self._features_dialog = None
 
+        # Centralized channel color/mode manager
+        self.color_manager = ChannelColorManager()
+
         create_menus(self)
         self.setAcceptDrops(True)
         # keep references to modeless dialogs so they don't get GC'd
@@ -296,6 +309,79 @@ class ImageViewer(QMainWindow):
                 # Non-fatal
                 pass
 
+    def _prepare_thumbnail_array(self, arr: np.ndarray) -> np.ndarray:
+        """Prepare array for thumbnail display using current display modes.
+
+        Returns an image array (grayscale or RGB) that matches the current
+        Channel tab display settings for 1ch and 2ch images.
+        """
+        # 1ch image handling
+        if arr.ndim == 2 or (arr.ndim == 3 and arr.shape[2] == 1):
+            # Apply brightness for consistency with main view
+            adj = self.apply_brightness_adjustment(arr)
+            if self.color_manager.mode_1ch == MODE_1CH_JET:
+                if adj.ndim == 3 and adj.shape[2] == 1:
+                    adj = adj[..., 0]
+                return apply_jet_colormap(adj)
+            else:
+                # Grayscale thumbnail
+                if adj.ndim == 3 and adj.shape[2] == 1:
+                    adj = adj[..., 0]
+                return adj
+
+        # 2ch image handling
+        if arr.ndim == 3 and arr.shape[2] == 2:
+            if self.color_manager.mode_2ch == MODE_2CH_FLOW_HSV:
+                # Apply float-preserving brightness then HSV for consistency
+                try:
+                    try:
+                        self.brightness_manager.ensure_initial_params_for_2ch_hsv(arr)
+                    except Exception:
+                        pass
+                    try:
+                        adjf = apply_brightness_adjustment_float(
+                            arr,
+                            self.brightness_offset,
+                            self.brightness_gain,
+                            self.brightness_saturation,
+                        )
+                        return flow_to_hsv_rgb(adjf)
+                    except Exception:
+                        return flow_to_hsv_rgb(arr)
+                except Exception:
+                    return arr
+            else:
+                # Composite mode: apply brightness then composite with current checks/colors
+                adj = self.apply_brightness_adjustment(arr)
+                h, w, c = adj.shape
+                n = c
+                # Align checks and colors
+                checks = (self.channel_checks or [])[:]
+                if len(checks) < n:
+                    checks.extend([True] * (n - len(checks)))
+                if len(self.channel_colors) != n:
+                    colors = self.color_manager.get_colors(n)
+                else:
+                    colors = self.color_manager.resolve_with_existing(n, self.channel_colors)
+                selected = [i for i, ck in enumerate(checks) if ck]
+                if not selected:
+                    return np.zeros((h, w, 3), dtype=np.uint8)
+                comp = np.zeros((h, w, 3), dtype=np.float32)
+                for idx in selected:
+                    if idx < n and idx < len(colors):
+                        col = colors[idx]
+                        r = col.red() / 255.0
+                        g = col.green() / 255.0
+                        b = col.blue() / 255.0
+                        ch = adj[:, :, idx].astype(np.float32) / 255.0
+                        comp[:, :, 0] += ch * r
+                        comp[:, :, 1] += ch * g
+                        comp[:, :, 2] += ch * b
+                return np.clip(comp * 255.0, 0, 255).astype(np.uint8)
+
+        # For other cases, return original
+        return arr
+
     def _add_images(self, paths: Iterable[str]) -> int:
         """Load image files and append them to the viewer."""
         new_images = []
@@ -305,7 +391,8 @@ class ImageViewer(QMainWindow):
             try:
                 arr = load_image(path)
                 # Create and cache thumbnail pixmap on load
-                thumb_qimg = numpy_to_qimage(arr)
+                thumb_arr = self._prepare_thumbnail_array(arr)
+                thumb_qimg = numpy_to_qimage(thumb_arr)
                 thumb_pixmap = QPixmap.fromImage(thumb_qimg).scaled(
                     250, 250, Qt.KeepAspectRatio, Qt.SmoothTransformation
                 )
@@ -418,35 +505,13 @@ class ImageViewer(QMainWindow):
         if arr.ndim >= 3:
             n_channels = arr.shape[2]
 
-            # Preserve existing channel checks and colors, extending or truncating as needed
-            if not self.channel_checks:
-                # First time initialization
-                self.channel_checks = [True] * n_channels
-            else:
-                # Extend or truncate to match current channel count
-                if len(self.channel_checks) < n_channels:
-                    # Extend with True for new channels
-                    self.channel_checks.extend([True] * (n_channels - len(self.channel_checks)))
-                elif len(self.channel_checks) > n_channels:
-                    # Truncate to current channel count
-                    self.channel_checks = self.channel_checks[:n_channels]
-
-            if not self.channel_colors:
-                # First time initialization with default colors (hybrid scheme)
-                self.channel_colors = get_default_channel_colors(n_channels)
-            else:
-                # Preserve existing colors, extending or truncating as needed
-                if len(self.channel_colors) < n_channels:
-                    # Extend with white for new channels
-                    from PySide6.QtGui import QColor
-
-                    self.channel_colors.extend([QColor(255, 255, 255)] * (n_channels - len(self.channel_colors)))
-                elif len(self.channel_colors) > n_channels:
-                    # Truncate to current channel count
-                    self.channel_colors = self.channel_colors[:n_channels]
+            # Always load colors and checks for this channel count from the manager
+            self.channel_colors = self.color_manager.get_colors(n_channels)
+            self.channel_checks = self.color_manager.get_checks(n_channels)
         else:
-            # For grayscale images, preserve the settings but don't use them
-            # This way, when switching back to color images, the settings are restored
+            # For grayscale images, keep empty lists
+            self.channel_checks = []
+            self.channel_colors = []
             pass
 
         arr = img["array"]
@@ -480,6 +545,8 @@ class ImageViewer(QMainWindow):
                 keep_settings=True,
                 channel_checks=self.channel_checks,
                 channel_colors=self.channel_colors,
+                initial_mode_1ch=self.color_manager.mode_1ch,
+                initial_mode_2ch=self.color_manager.mode_2ch,
             )
 
         # notify open analysis dialogs about new image
@@ -519,11 +586,42 @@ class ImageViewer(QMainWindow):
                     pass
 
     def display_image(self, arr):
-        """Display image array in the viewer with brightness adjustment and channel synthesis.
+        """Display image array in the viewer with current zoom and adjustments.
 
         Args:
             arr: NumPy array (H,W[,C]) representing image data
         """
+        # Special pseudo-color modes override normal pipeline
+        try:
+            if arr.ndim == 2 or (arr.ndim == 3 and arr.shape[2] == 1):
+                # 1ch handling
+                if self.color_manager.mode_1ch == MODE_1CH_JET:
+                    # For 1ch jet, apply brightness first then colormap
+                    adj = self.apply_brightness_adjustment(arr)
+                    if adj.ndim == 3 and adj.shape[2] == 1:
+                        adj = adj[..., 0]
+                    rgb = apply_jet_colormap(adj)
+                    qimg = numpy_to_qimage(rgb)
+                    self.image_label.set_image(qimg, self.scale)
+                    self.update_status()
+                    return
+            elif arr.ndim == 3 and arr.shape[2] == 2:
+                if self.color_manager.mode_2ch == MODE_2CH_FLOW_HSV:
+                    # For optical flow HSV, brightness adjustment skews vector semantics.
+                    # Use original 2ch array and map magnitude→Value internally.
+                    try:
+                        rgb = flow_to_hsv_rgb(arr)
+                        qimg = numpy_to_qimage(rgb)
+                        self.image_label.set_image(qimg, self.scale)
+                        self.update_status()
+                        return
+                    except Exception as e:
+                        # Log error but continue to normal pipeline
+                        print(f"Warning: 2ch HSV conversion failed: {e}")
+        except Exception as e:
+            # Log error but continue to normal pipeline
+            print(f"Warning: Pseudo-color mode check failed: {e}")
+
         # Apply brightness adjustment:
         # - Always for float images (to map [0,1] -> [0,255] with sat=1.0 by default)
         # - Or when parameters deviate from the integer-image defaults
@@ -548,13 +646,12 @@ class ImageViewer(QMainWindow):
             n_channels = arr.shape[2]
             if len(self.channel_checks) < n_channels:
                 self.channel_checks.extend([True] * (n_channels - len(self.channel_checks)))
-            if len(self.channel_colors) < n_channels:
-                from PySide6.QtGui import QColor
-
-                # Extend with white for additional channels
-                self.channel_colors.extend([QColor(255, 255, 255)] * (n_channels - len(self.channel_colors)))
-            elif len(self.channel_colors) > n_channels:
-                self.channel_colors = self.channel_colors[:n_channels]
+            # Resolve colors via manager; if mismatch, fetch from manager
+            if len(self.channel_colors) != n_channels:
+                self.channel_colors = self.color_manager.get_colors(n_channels)
+            else:
+                # Ensure manager stores current overrides for this n
+                self.channel_colors = self.color_manager.resolve_with_existing(n_channels, self.channel_colors)
 
             # Check if any channels are selected
             selected_channels = [i for i, checked in enumerate(self.channel_checks) if checked]
@@ -666,7 +763,8 @@ class ImageViewer(QMainWindow):
             return
 
         # Create and cache thumbnail for the diff image
-        thumb_qimg = numpy_to_qimage(diff)
+        thumb_arr = self._prepare_thumbnail_array(diff)
+        thumb_qimg = numpy_to_qimage(thumb_arr)
         thumb_pixmap = QPixmap.fromImage(thumb_qimg).scaled(
             self.navigator_widget.thumbnail_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation
         )

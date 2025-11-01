@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, Signal
 from .tabs import BrightnessTab, ChannelTab
+from ...utils import MODE_1CH_GRAYSCALE, MODE_2CH_FLOW_HSV
 
 
 class BrightnessDialog(QDialog):
@@ -37,6 +38,8 @@ class BrightnessDialog(QDialog):
     brightness_changed = Signal(float, float, float)  # offset, gain, saturation
     channels_changed = Signal(list)  # list of bools for channel visibility
     channel_colors_changed = Signal(list)  # list of colors for channels
+    mode_1ch_changed = Signal(str)
+    mode_2ch_changed = Signal(str)
 
     # Persist window geometry across openings so it doesn't jump based on cursor/OS heuristics
     _saved_geometry = None
@@ -49,6 +52,8 @@ class BrightnessDialog(QDialog):
         initial_brightness=(0.0, 1.0, 255.0),
         initial_channels=None,
         initial_colors=None,
+        initial_mode_1ch: str = MODE_1CH_GRAYSCALE,
+        initial_mode_2ch: str = MODE_2CH_FLOW_HSV,
     ):
         """Initialize brightness and channel adjustment dialog.
 
@@ -72,17 +77,29 @@ class BrightnessDialog(QDialog):
         self.tabs = QTabWidget()
 
         # Channel tab
-        self.channel_tab = ChannelTab(self, image_array, image_path, initial_channels, initial_colors)
+        self.channel_tab = ChannelTab(
+            self,
+            image_array,
+            image_path,
+            initial_channels,
+            initial_colors,
+            initial_mode_1ch,
+            initial_mode_2ch,
+        )
         self.tabs.addTab(self.channel_tab, "チャンネル (Channels)")
 
         # Brightness tab
         self.brightness_tab = BrightnessTab(self, image_array, image_path)
         self.tabs.addTab(self.brightness_tab, "輝度調整 (Brightness)")
-        
+
         # Connect signals
         self.brightness_tab.brightness_changed.connect(self.brightness_changed)
+        # Also forward brightness to channel tab for colorbar captions
+        self.brightness_tab.brightness_changed.connect(self.channel_tab.on_brightness_for_colorbar)
         self.channel_tab.channels_changed.connect(self.channels_changed)
         self.channel_tab.channel_colors_changed.connect(self.channel_colors_changed)
+        self.channel_tab.mode_1ch_changed.connect(self.mode_1ch_changed)
+        self.channel_tab.mode_2ch_changed.connect(self.mode_2ch_changed)
 
         # Layout
         layout = QVBoxLayout(self)
@@ -100,6 +117,11 @@ class BrightnessDialog(QDialog):
         # Set initial values
         if initial_brightness:
             self.set_brightness(*initial_brightness)
+            # Seed colorbar captions with initial brightness
+            try:
+                self.channel_tab.on_brightness_for_colorbar(*initial_brightness)
+            except Exception:
+                pass
         if initial_channels:
             self.set_channels(initial_channels)
         if initial_colors:
@@ -156,12 +178,24 @@ class BrightnessDialog(QDialog):
         self.channel_tab.set_channel_colors(colors)
 
     def update_for_new_image(
-        self, image_array=None, image_path=None, keep_settings=True, channel_checks=None, channel_colors=None
+        self,
+        image_array=None,
+        image_path=None,
+        keep_settings=True,
+        channel_checks=None,
+        channel_colors=None,
+        initial_mode_1ch: str | None = None,
+        initial_mode_2ch: str | None = None,
     ):
         """Update dialog for new image."""
         self.image_array = image_array
         self.image_path = image_path
         self.brightness_tab.update_for_new_image(image_array, image_path, keep_settings)
+        # Keep current modes if not provided
+        if initial_mode_1ch is not None:
+            self.channel_tab._mode1 = initial_mode_1ch
+        if initial_mode_2ch is not None:
+            self.channel_tab._mode2 = initial_mode_2ch
         self.channel_tab.update_for_new_image(image_array, channel_checks, channel_colors)
 
     def moveEvent(self, event):

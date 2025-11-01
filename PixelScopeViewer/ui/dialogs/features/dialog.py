@@ -153,9 +153,8 @@ class FeaturesDialog(QDialog):
         self.btn_save.clicked.connect(self._on_save)
         self.btn_toggle_cols.clicked.connect(self._on_toggle_columns)
         self.chk_show_loaded_only.toggled.connect(self._on_loaded_only_toggled)
-
-        # Listen to image change to refresh row highlighting
-        self.viewer.image_changed.connect(self.refresh_roles)
+        # Listen to image change: refresh highlight and re-evaluate loaded-only filter
+        self.viewer.image_changed.connect(self._on_viewer_images_changed)
 
         # Initialize filter
         self.refresh_filter_columns()
@@ -234,6 +233,15 @@ class FeaturesDialog(QDialog):
             tl = self.model_images.index(0, 0)
             br = self.model_images.index(r - 1, c - 1)
             self.model_images.dataChanged.emit(tl, br, [Qt.DisplayRole, Qt.BackgroundRole, Qt.ForegroundRole])
+
+    def _on_viewer_images_changed(self):
+        # Recompute proxy filtering when the set of loaded images changes
+        try:
+            self.proxy_images.invalidateFilter()
+        except Exception:
+            pass
+        # Refresh roles (loaded/current highlighting)
+        self.refresh_roles()
 
     def _on_loaded_only_toggled(self, checked: bool):
         self.proxy_images.set_loaded_only(checked)

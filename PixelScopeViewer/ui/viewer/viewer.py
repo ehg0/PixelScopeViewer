@@ -37,6 +37,8 @@ from ...core.image_io import numpy_to_qimage, load_image, is_image_file
 from ..utils import get_default_channel_colors
 from ..widgets import ImageLabel, NavigatorWidget, DisplayInfoWidget, ROIInfoWidget
 from ..dialogs import HelpDialog, DiffDialog, AnalysisDialog
+from ..dialogs import FeaturesDialog
+from ..utils.features_manager import FeaturesManager
 
 from .menu_builder import create_menus
 from .zoom_manager import ZoomManager
@@ -174,6 +176,10 @@ class ImageViewer(QMainWindow):
         self.brightness_manager = BrightnessManager(self)
         self.status_updater = StatusUpdater(self)
 
+        # Features manager / dialog
+        self.features_manager = FeaturesManager()
+        self._features_dialog = None
+
         create_menus(self)
         self.setAcceptDrops(True)
         # keep references to modeless dialogs so they don't get GC'd
@@ -274,8 +280,21 @@ class ImageViewer(QMainWindow):
     def dropEvent(self, e):
         files = [u.toLocalFile() for u in e.mimeData().urls()]
         image_files = [f for f in files if is_image_file(f)]
+        feature_files = [f for f in files if Path(f).suffix.lower() in (".json", ".csv")]
+
+        # Load images
         new_count = self._add_images(image_files)
         self._finalize_image_addition(new_count)
+
+        # Load feature files
+        if feature_files:
+            try:
+                self.features_manager.load_feature_files(feature_files)
+                if self._features_dialog is not None:
+                    self._features_dialog.refresh_from_manager()
+            except Exception:
+                # Non-fatal
+                pass
 
     def _add_images(self, paths: Iterable[str]) -> int:
         """Load image files and append them to the viewer."""
@@ -316,6 +335,27 @@ class ImageViewer(QMainWindow):
             self.current_index = len(self.images) - new_count
         self.show_current_image()
         self.update_image_list_menu()
+
+    # ------------------------
+    # Features: load + dialog
+    # ------------------------
+    # Removed: feature file opening moved into FeaturesDialog menu
+
+    def show_features_dialog(self):
+        if self._features_dialog is not None:
+            # Update title with latest loaded path
+            title = "特徴量表示"
+            last_path = self.features_manager.get_last_loaded_path()
+            if last_path:
+                title = f"特徴量表示 - {last_path}"
+            self._features_dialog.setWindowTitle(title)
+            self._features_dialog.raise_()
+            self._features_dialog.activateWindow()
+            return
+        dlg = FeaturesDialog(self, self.features_manager)
+        dlg.show()
+        self._features_dialog = dlg
+        dlg.finished.connect(lambda: setattr(self, "_features_dialog", None))
 
     def update_image_list_menu(self):
         """Update the image list menu with current loaded images."""

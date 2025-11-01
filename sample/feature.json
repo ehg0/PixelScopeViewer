@@ -13,7 +13,7 @@
       "metrics": {
         "mean_luminance": 0.45,
         "luminance_variance": 0.12,
-        "sharpness": 0.83,
+        "sharpness": 0.8323435464536,
         "snr_db": 28.4
       },
       "annotations": [

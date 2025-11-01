@@ -6,6 +6,7 @@ This module handles brightness parameter management and display dialog coordinat
 import numpy as np
 from PySide6.QtWidgets import QMessageBox
 from ..dialogs import BrightnessDialog
+from ..utils import MODE_1CH_GRAYSCALE, MODE_1CH_JET, MODE_2CH_COMPOSITE, MODE_2CH_FLOW_HSV
 from ..dialogs.display.core import apply_brightness_adjustment as apply_brightness_core
 
 
@@ -64,6 +65,8 @@ class BrightnessManager:
                 initial_brightness=(init_offset, init_gain, init_sat),
                 initial_channels=self.viewer.channel_checks,
                 initial_colors=self.viewer.channel_colors,
+                initial_mode_1ch=self.viewer.color_manager.mode_1ch,
+                initial_mode_2ch=self.viewer.color_manager.mode_2ch,
             )
             self.viewer.brightness_dialog.brightness_changed.connect(
                 self.viewer.brightness_manager.on_brightness_changed
@@ -72,6 +75,8 @@ class BrightnessManager:
             self.viewer.brightness_dialog.channel_colors_changed.connect(
                 self.viewer.brightness_manager.on_channel_colors_changed
             )
+            self.viewer.brightness_dialog.mode_1ch_changed.connect(self.viewer.brightness_manager.on_mode_1ch_changed)
+            self.viewer.brightness_dialog.mode_2ch_changed.connect(self.viewer.brightness_manager.on_mode_2ch_changed)
             # Initialize status bar with current parameters
             params = self.viewer.brightness_dialog.get_brightness()
             self.viewer.brightness_offset = params[0]
@@ -86,6 +91,8 @@ class BrightnessManager:
                 keep_settings=True,
                 channel_checks=self.viewer.channel_checks,
                 channel_colors=self.viewer.channel_colors,
+                initial_mode_1ch=self.viewer.color_manager.mode_1ch,
+                initial_mode_2ch=self.viewer.color_manager.mode_2ch,
             )
             # Note: update_for_new_image will emit brightness_changed signal
             # which will update the status bar through on_brightness_changed
@@ -201,6 +208,14 @@ class BrightnessManager:
             channels: List of bools for channel visibility
         """
         self.viewer.channel_checks = channels
+        # Persist in color manager for current channel count
+        try:
+            img = self.viewer.images[self.viewer.current_index]
+            arr = img.get("base_array", img.get("array"))
+            n = arr.shape[2] if getattr(arr, "ndim", 0) >= 3 else 1
+            self.viewer.color_manager.set_checks(n, channels)
+        except Exception:
+            pass
 
         # Refresh display with new channel selection
         if self.viewer.current_index is not None:
@@ -213,6 +228,14 @@ class BrightnessManager:
             colors: List of QColor objects for channel colors
         """
         self.viewer.channel_colors = colors
+        # Persist in color manager for current channel count
+        try:
+            img = self.viewer.images[self.viewer.current_index]
+            arr = img.get("base_array", img.get("array"))
+            n = arr.shape[2] if getattr(arr, "ndim", 0) >= 3 else 1
+            self.viewer.color_manager.set_colors(n, colors)
+        except Exception:
+            pass
 
         # Refresh display with new channel colors
         if self.viewer.current_index is not None:
@@ -224,6 +247,65 @@ class BrightnessManager:
                 self.viewer._analysis_dialog.update_contents()
             except Exception:
                 pass
+
+    def on_mode_1ch_changed(self, mode: str):
+        if mode not in (MODE_1CH_GRAYSCALE, MODE_1CH_JET):
+            return
+        self.viewer.color_manager.set_mode_1ch(mode)
+        if self.viewer.current_index is not None:
+            # Regenerate thumbnail for 1ch images
+            img = self.viewer.images[self.viewer.current_index]
+            base_arr = img.get("base_array", img.get("array"))
+            if (base_arr.ndim == 2) or (base_arr.ndim == 3 and base_arr.shape[2] == 1):
+                try:
+                    from ...core.image_io import numpy_to_qimage
+                    from PySide6.QtGui import QPixmap
+                    from PySide6.QtCore import Qt
+
+                    thumb_arr = self.viewer._prepare_thumbnail_array(base_arr)
+                    thumb_qimg = numpy_to_qimage(thumb_arr)
+                    thumb_pixmap = QPixmap.fromImage(thumb_qimg).scaled(
+                        250, 250, Qt.KeepAspectRatio, Qt.SmoothTransformation
+                    )
+                    img["thumbnail_pixmap"] = thumb_pixmap
+                    if hasattr(self.viewer, "navigator_widget"):
+                        self.viewer.navigator_widget.update_thumbnail()
+                except Exception:
+                    pass
+            self.viewer.display_image(img["array"])
+
+    def on_mode_2ch_changed(self, mode: str):
+
+        if mode not in (MODE_2CH_COMPOSITE, MODE_2CH_FLOW_HSV):
+            return
+        self.viewer.color_manager.set_mode_2ch(mode)
+        # Regenerate thumbnail for current image if it's 2ch
+        if self.viewer.current_index is not None:
+            img = self.viewer.images[self.viewer.current_index]
+            base_arr = img.get("base_array", img.get("array"))
+            if base_arr.ndim == 3 and base_arr.shape[2] == 2:
+                # Regenerate thumbnail with new mode
+                try:
+                    from ...core.image_io import numpy_to_qimage
+                    from PySide6.QtGui import QPixmap
+                    from PySide6.QtCore import Qt
+
+                    thumb_arr = self.viewer._prepare_thumbnail_array(base_arr)
+                    thumb_qimg = numpy_to_qimage(thumb_arr)
+                    thumb_pixmap = QPixmap.fromImage(thumb_qimg).scaled(
+                        250, 250, Qt.KeepAspectRatio, Qt.SmoothTransformation
+                    )
+                    img["thumbnail_pixmap"] = thumb_pixmap
+
+                    # Update navigator if it exists
+                    if hasattr(self.viewer, "navigator_widget"):
+                        self.viewer.navigator_widget.update_thumbnail()
+                except Exception:
+                    pass
+
+            # Use the current displayed array (with brightness adjustment applied)
+            # This is stored in img["array"]
+            self.viewer.display_image(img["array"])
 
     def apply_brightness_adjustment(self, arr: np.ndarray) -> np.ndarray:
         """Apply brightness adjustment to image array.

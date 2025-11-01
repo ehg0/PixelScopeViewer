@@ -1,6 +1,6 @@
-from ..models import FeaturesTableModel, SimpleDictTableModel, AnnotationsTableModel
-from ..proxy import LoadedOnlyProxyModel
-from ..delegate import PlainTextDelegate
+from .tables import FeaturesTableModel, SimpleDictTableModel, AnnotationsTableModel
+from .proxy import LoadedOnlyProxyModel
+from .delegate import PlainTextDelegate
 
 __all__ = [
     "FeaturesTableModel",

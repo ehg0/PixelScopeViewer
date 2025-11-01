@@ -23,9 +23,13 @@ from PySide6.QtWidgets import (
 )
 
 from ...utils.features_manager import FeaturesManager
-from .delegate import PlainTextDelegate
-from .models import FeaturesTableModel, SimpleDictTableModel, AnnotationsTableModel
-from .proxy import LoadedOnlyProxyModel
+from .widgets import (
+    PlainTextDelegate,
+    FeaturesTableModel,
+    SimpleDictTableModel,
+    AnnotationsTableModel,
+    LoadedOnlyProxyModel,
+)
 
 
 class FeaturesDialog(QDialog):

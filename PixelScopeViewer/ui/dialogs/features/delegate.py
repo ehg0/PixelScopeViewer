@@ -1,8 +1,9 @@
-from PySide6.QtWidgets import QStyledItemDelegate, QLineEdit
+"""Backward-compatible shim for moved item delegate.
 
+PlainTextDelegate now lives in
+`PixelScopeViewer.ui.dialogs.features.widgets.delegate`.
+"""
 
-class PlainTextDelegate(QStyledItemDelegate):
-    """Delegate that always uses a plain QLineEdit for editing (no spinbox)."""
+from .widgets.delegate import PlainTextDelegate
 
-    def createEditor(self, parent, option, index):
-        return QLineEdit(parent)
+__all__ = ["PlainTextDelegate"]

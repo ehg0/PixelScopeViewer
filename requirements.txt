@@ -5,3 +5,5 @@ Pillow>=9.5,<10.0
 pyqtgraph>=0.13.3,<0.14
 exifread>=3.0.0,<4.0
 openimageio>=3.0.0,<4.0
+pandas>=2.0,<3.0
+polars>=1.0,<2.0

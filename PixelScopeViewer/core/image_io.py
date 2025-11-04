@@ -18,6 +18,7 @@ from PIL import Image
 from PySide6.QtGui import QImage
 import cv2
 import OpenImageIO as oiio
+import exifread
 
 from .metadata_utils import is_binary_tag, is_printable_text, decode_bytes
 
@@ -262,8 +263,8 @@ def get_image_metadata(path_or_img: Union[str, Path, Image.Image]) -> dict:
             except Exception as e:
                 metadata["Error"] = str(e)
         else:
+            path_str = str(path)
             try:
-                path_str = str(path)
                 arr = cv2_imread_unicode(path_str)
                 if arr is None:
                     raise ValueError(f"Could not load image with OpenCV: {path_str}")
@@ -289,5 +290,45 @@ def get_image_metadata(path_or_img: Union[str, Path, Image.Image]) -> dict:
                         metadata["Mode"] = f"{channels}-channel"
             except Exception as e:
                 metadata["Error (OpenCV)"] = str(e)
+
+            try:
+                with open(path_str, "rb") as f:
+                    # Suppress exifread's debug messages
+                    with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
+                        tags = exifread.process_file(f, details=False)
+
+                    for tag, value in tags.items():
+                        # Skip binary/thumbnail data
+                        if is_binary_tag(tag):
+                            continue
+
+                        try:
+                            value_str = str(value)
+
+                            # Handle byte data with multiple encoding attempts
+                            if isinstance(value.values, bytes):
+                                # Skip large binary data
+                                if len(value.values) > 1000:
+                                    continue
+
+                                # Try decoding with multiple encodings
+                                decoded = decode_bytes(value.values)
+                                if not decoded:
+                                    continue
+                                value_str = decoded
+
+                            # Skip fields with excessive control characters
+                            if not is_printable_text(value_str, min_ratio=0.8):
+                                continue
+
+                            # Store with cleaned tag name
+                            clean_tag = tag.replace(" ", "_")
+                            metadata[clean_tag] = value_str
+
+                        except Exception:
+                            continue
+
+            except Exception as e:
+                metadata["Error (EXIF)"] = str(e)
 
     return metadata

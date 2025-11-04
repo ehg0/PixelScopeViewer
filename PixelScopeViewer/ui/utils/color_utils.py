@@ -88,14 +88,29 @@ def flow_to_hsv(flow: np.ndarray) -> np.ndarray:
     hsv[..., 0] = np.clip(angle / 2, 0, 180).astype(np.uint8)  # Hue: 0〜180
     hsv[..., 1] = 255  # Saturation固定
 
-    # Valueはmagnitudeをロバスト正規化（上位パーセンタイルを最大基準に）
-    # → 小さい動きでも可視化されやすく、全体が暗くなりにくい
-    mag_max = float(np.percentile(magnitude, 99.0)) if magnitude.size > 0 else 0.0
-    if mag_max <= 0.0:
-        hsv[..., 2] = 0
-    else:
-        value = np.clip((magnitude / mag_max) * 255.0, 0, 255).astype(np.uint8)
-        hsv[..., 2] = value
+    if False:
+        # Valueはmagnitudeをロバスト正規化（上位パーセンタイルを最大基準に）
+        # → 小さい動きでも可視化されやすく、全体が暗くなりにくい
+        mag_max = float(np.percentile(magnitude, 99.0)) if magnitude.size > 0 else 0.0
+        if mag_max <= 0.0:
+            hsv[..., 2] = 0
+        else:
+            value = np.clip((magnitude / mag_max) * 255.0, 0, 255).astype(np.uint8)
+            hsv[..., 2] = value
+    if False:
+        # Value の動的スケーリング ---
+        # データの上位1%を基準に255スケーリング
+        # → Viewerで明暗が適度に分かれ、低速も見やすい
+        mag_max = float(np.percentile(magnitude, 99.0))
+        if mag_max < 1e-6:
+            hsv[..., 2] = 0
+        else:
+            hsv[..., 2] = np.clip((magnitude / mag_max) * 255.0, 0, 255).astype(np.uint8)
+
+    if True:
+        # Value: 固定スケール（max_magnitude基準）
+        max_magnitude = 1.0
+        hsv[..., 2] = np.clip((magnitude / max_magnitude) * 255.0, 0, 255).astype(np.uint8)
 
     bgr = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
     return bgr
@@ -188,7 +203,7 @@ def colorbar_flow_hsv(width: int = 256, height: int = 256, with_labels: bool = T
     # Create a square canvas to fit a circle
     size = max(width, height)
     center = size / 2.0
-    radius = size / 2.0
+    radius = 1.0
 
     # Create HSV image with circular gradient
     hsv = np.zeros((size, size, 3), dtype=np.uint8)
@@ -196,8 +211,8 @@ def colorbar_flow_hsv(width: int = 256, height: int = 256, with_labels: bool = T
     # For each pixel, compute angle from center and set hue accordingly
     # Use the same coordinate system as generate_dummy_flow
     y, x = np.mgrid[:size, :size]
-    dx = (x - center) / size  # Normalize like generate_dummy_flow
-    dy = (y - center) / size
+    dx = (x - center) / center  # Normalize like generate_dummy_flow
+    dy = (y - center) / center
 
     # Distance from center (normalized)
     distance = np.sqrt(dx**2 + dy**2)
@@ -210,12 +225,13 @@ def colorbar_flow_hsv(width: int = 256, height: int = 256, with_labels: bool = T
     hue = (angle / 2).astype(np.uint8)
 
     # Create circular mask (include pixels within radius)
-    mask = distance <= 0.5
+    mask = distance <= radius
 
     # Set HSV values: full saturation and value inside circle, black outside
     hsv[mask, 0] = hue[mask]
     hsv[mask, 1] = 255
-    hsv[mask, 2] = 255
+    # hsv[mask, 2] = 255
+    hsv[mask, 2] = np.clip((magnitude[mask] / radius) * 255, 0, 255).astype(np.uint8)
 
     # Convert to BGR then RGB
     bgr = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
@@ -259,8 +275,8 @@ if __name__ == "__main__":
         """テスト用: 円形のベクトルパターンを生成"""
         y, x = np.mgrid[0:h, 0:w]
         cx, cy = w / 2, h / 2
-        fx = (x - cx) / w
-        fy = (y - cy) / h
+        fx = (x - cx) / w * 2
+        fy = (y - cy) / h * 2
         return np.stack((fx, fy), axis=-1).astype(np.float32)
 
     app = QApplication(sys.argv)

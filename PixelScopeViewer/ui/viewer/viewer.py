@@ -332,24 +332,9 @@ class ImageViewer(QMainWindow):
         # 2ch image handling
         if arr.ndim == 3 and arr.shape[2] == 2:
             if self.color_manager.mode_2ch == MODE_2CH_FLOW_HSV:
-                # Apply float-preserving brightness then HSV for consistency
-                try:
-                    try:
-                        self.brightness_manager.ensure_initial_params_for_2ch_hsv(arr)
-                    except Exception:
-                        pass
-                    try:
-                        adjf = apply_brightness_adjustment_float(
-                            arr,
-                            self.brightness_offset,
-                            self.brightness_gain,
-                            self.brightness_saturation,
-                        )
-                        return flow_to_hsv_rgb(adjf)
-                    except Exception:
-                        return flow_to_hsv_rgb(arr)
-                except Exception:
-                    return arr
+                # サムネイルでは明るさ調整をスキップ（元データから直接HSV変換）
+                rgb = flow_to_hsv_rgb(arr)
+                return rgb
             else:
                 # Composite mode: apply brightness then composite with current checks/colors
                 adj = self.apply_brightness_adjustment(arr)

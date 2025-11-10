@@ -253,6 +253,8 @@ class ImageViewer(QMainWindow):
 
         # If dialog already exists, bring it to front
         if self._analysis_dialog is not None:
+            if self._analysis_dialog.isMinimized():
+                self._analysis_dialog.showNormal()
             self._analysis_dialog.raise_()
             self._analysis_dialog.activateWindow()
             if tab is not None:
@@ -421,6 +423,8 @@ class ImageViewer(QMainWindow):
             if last_path:
                 title = f"特徴量表示 - {last_path}"
             self._features_dialog.setWindowTitle(title)
+            if self._features_dialog.isMinimized():
+                self._features_dialog.showNormal()
             self._features_dialog.raise_()
             self._features_dialog.activateWindow()
             return
@@ -859,3 +863,17 @@ class ImageViewer(QMainWindow):
             return
 
         super().keyPressEvent(e)
+
+    def closeEvent(self, event):
+        """Handle window close event to ensure all child dialogs are closed."""
+        # Close all modeless dialogs to ensure the application exits cleanly
+        if self.brightness_dialog and self.brightness_dialog.isVisible():
+            self.brightness_dialog.close()
+        if self._features_dialog and self._features_dialog.isVisible():
+            self._features_dialog.close()
+        if self._analysis_dialog and self._analysis_dialog.isVisible():
+            self._analysis_dialog.close()
+        if self.help_dialog and self.help_dialog.isVisible():
+            self.help_dialog.close()
+
+        event.accept()

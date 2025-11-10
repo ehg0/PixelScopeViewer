@@ -100,6 +100,8 @@ class BrightnessManager:
         # 表示中のダイアログは show() を再実行しない(位置が変わるのを防ぐ)
         if self.viewer.brightness_dialog.isVisible():
             try:
+                if self.viewer.brightness_dialog.isMinimized():
+                    self.viewer.brightness_dialog.showNormal()
                 self.viewer.brightness_dialog.raise_()
                 self.viewer.brightness_dialog.activateWindow()
             except Exception:

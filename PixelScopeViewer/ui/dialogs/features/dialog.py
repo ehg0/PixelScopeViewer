@@ -36,9 +36,14 @@ from .widgets import (
 
 class FeaturesDialog(QDialog):
     def __init__(self, viewer, manager: FeaturesManager):
-        super().__init__(viewer)
+        super().__init__(None)
         self.viewer = viewer
         self.manager = manager
+
+        # Set window flags to allow minimizing and prevent staying on top
+        flags = Qt.Window | Qt.WindowMinimizeButtonHint | Qt.WindowCloseButtonHint
+        self.setWindowFlags(flags)
+        self.setAttribute(Qt.WA_DeleteOnClose)
 
         # Window title with last loaded path if available
         title = "特徴量表示"

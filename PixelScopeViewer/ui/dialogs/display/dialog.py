@@ -65,10 +65,16 @@ class BrightnessDialog(QDialog):
             initial_channels: List of bools for channel visibility
             initial_colors: List of QColor objects for channel colors
         """
-        super().__init__(parent)
+        super().__init__(None)
+        self.parent = parent
         self.setWindowTitle("表示設定 (Display Settings)")
         self.resize(500, 600)
         self.setStyleSheet("QDialog { background-color: #fafafa; }")
+
+        # Set window flags to allow minimizing and prevent staying on top
+        flags = Qt.Window | Qt.WindowMinimizeButtonHint | Qt.WindowCloseButtonHint
+        self.setWindowFlags(flags)
+        self.setAttribute(Qt.WA_DeleteOnClose)
 
         self.image_array = image_array
         self.image_path = image_path

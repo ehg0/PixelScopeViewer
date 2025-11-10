@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QHBoxLayout,
     QTableView,
+    QAbstractItemView,
     QPushButton,
     QLineEdit,
     QComboBox,
@@ -88,13 +89,28 @@ class FeaturesDialog(QDialog):
         self.proxy_images = LoadedOnlyProxyModel(self)
         self.proxy_images.setSourceModel(self.model_images)
         self.proxy_images.setFilterCaseSensitivity(Qt.CaseInsensitive)
-        self.proxy_images.set_viewer(self.viewer)
+        # Avoid dynamic resort/filter on every data change (costly for large datasets)
+        try:
+            self.proxy_images.setDynamicSortFilter(False)
+        except Exception:
+            pass
         self.table_images = QTableView(self)
         self.table_images.setModel(self.proxy_images)
         self.table_images.setSortingEnabled(True)
         self.table_images.doubleClicked.connect(self._on_double_clicked)
         self.table_images.setSelectionBehavior(QTableView.SelectRows)
         self.table_images.setAlternatingRowColors(True)
+        # Performance-related view hints
+        try:
+            # Use uniform row heights for faster layout/painting when rows are same height
+            self.table_images.setUniformRowHeights(True)
+            # Use pixel scrolling for smoother scrolling on large tables
+            self.table_images.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
+            self.table_images.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
+            # Avoid word-wrapping which can force heavy layout work
+            self.table_images.setWordWrap(False)
+        except Exception:
+            pass
         # Use plain text delegate to disable spinbox for numeric cells
         self.table_images.setItemDelegate(PlainTextDelegate(self.table_images))
         # Hide vertical header (row numbers)

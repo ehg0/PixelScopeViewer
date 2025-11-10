@@ -16,6 +16,18 @@ class FeaturesTableModel(QAbstractTableModel):
         self.viewer = viewer
         self.manager = manager
         self._columns = self.manager.get_columns()
+        # Cache resolved loaded image paths and current image path to avoid
+        # repeated expensive resolution/loops during painting.
+        self._loaded_paths = set()
+        self._current_path = None
+        try:
+            # viewer exposes a signal 'image_changed' (used elsewhere); listen
+            # to rebuild our caches when images change.
+            self.viewer.image_changed.connect(self._rebuild_loaded_cache)
+        except Exception:
+            pass
+        # Build initial cache
+        self._rebuild_loaded_cache()
 
     def refresh(self):
         self.beginResetModel()
@@ -47,7 +59,21 @@ class FeaturesTableModel(QAbstractTableModel):
         value = self.manager.get_value(row, col_name)
 
         if role == Qt.DisplayRole or role == Qt.EditRole:
-            return "" if value is None else value
+            # Avoid returning huge literal strings/arrays to the view; instead
+            # return small summaries for long sequences/arrays to keep painting
+            # cheap. For small values, return as-is.
+            if value is None:
+                return ""
+            # If value is a sequence-like (but not string/dict/bytes), summarize
+            try:
+                if not isinstance(value, (str, bytes, bytearray, dict)) and hasattr(value, "__len__"):
+                    length = len(value)
+                    if length > 20:
+                        return f"<{type(value).__name__} len={length}>"
+            except Exception:
+                # Fall back to returning the raw value if any check fails
+                pass
+            return value
 
         if role == Qt.TextAlignmentRole:
             if isinstance(value, (int, float)):
@@ -55,39 +81,41 @@ class FeaturesTableModel(QAbstractTableModel):
             return Qt.AlignLeft | Qt.AlignVCenter
 
         if role == Qt.ToolTipRole:
-            if value is not None and str(value).strip():
-                return str(value)
-            return None
+            # Avoid generating huge tooltip strings for long sequences.
+            if value is None:
+                return None
+            try:
+                if not isinstance(value, (str, bytes, bytearray, dict)) and hasattr(value, "__len__"):
+                    l = len(value)
+                    if l > 100:
+                        return f"<{type(value).__name__} len={l}>"
+            except Exception:
+                pass
+            s = str(value).strip()
+            return s if s else None
 
         if role == Qt.ForegroundRole:
             fp = self.manager.get_value(row, "fullfilepath")
-            is_loaded = False
-            if fp:
-                try:
-                    p = Path(str(fp)).resolve()
-                    for info in self.viewer.images:
-                        if Path(info.get("path", "")).resolve() == p:
-                            is_loaded = True
-                            break
-                except Exception:
-                    is_loaded = False
+            try:
+                if not fp:
+                    return QBrush(QColor("gray"))
+                p = str(Path(str(fp)).resolve())
+                is_loaded = p in self._loaded_paths
+            except Exception:
+                is_loaded = False
             return QBrush(QColor("black" if is_loaded else "gray"))
 
         if role == Qt.BackgroundRole:
             try:
-                cur_img = (
-                    self.viewer.images[self.viewer.current_index] if self.viewer.current_index is not None else None
-                )
-                cur_path = Path(cur_img["path"]).resolve() if cur_img else None
+                fp = self.manager.get_value(row, "fullfilepath")
+                if fp and self._current_path is not None:
+                    try:
+                        if str(Path(str(fp)).resolve()) == self._current_path:
+                            return QBrush(QColor(255, 255, 200))
+                    except Exception:
+                        pass
             except Exception:
-                cur_path = None
-            fp = self.manager.get_value(row, "fullfilepath")
-            if cur_path is not None and fp:
-                try:
-                    if Path(str(fp)).resolve() == cur_path:
-                        return QBrush(QColor(255, 255, 200))
-                except Exception:
-                    pass
+                pass
             return None
 
         return None
@@ -121,6 +149,45 @@ class FeaturesTableModel(QAbstractTableModel):
         self.manager.set_value(index.row(), col_name, value)
         self.dataChanged.emit(index, index, [Qt.DisplayRole, Qt.EditRole])
         return True
+
+    # ---- cache maintenance ----
+    def _rebuild_loaded_cache(self):
+        """Rebuild cached sets for loaded images and current image path.
+
+        This is triggered on viewer.image_changed to avoid per-cell loops.
+        """
+        loaded = set()
+        cur_path = None
+        try:
+            imgs = getattr(self.viewer, "images", None) or []
+            for info in imgs:
+                try:
+                    p = Path(info.get("path", "")).resolve()
+                    loaded.add(str(p))
+                except Exception:
+                    continue
+            if getattr(self.viewer, "current_index", None) is not None:
+                try:
+                    ci = self.viewer.current_index
+                    cur = imgs[ci] if 0 <= ci < len(imgs) else None
+                    if cur:
+                        cur_path = str(Path(cur.get("path", "")).resolve())
+                except Exception:
+                    cur_path = None
+        except Exception:
+            pass
+        self._loaded_paths = loaded
+        self._current_path = cur_path
+        # Notify views that visual roles may have changed
+        try:
+            r = self.rowCount()
+            c = self.columnCount()
+            if r > 0 and c >= 0:
+                tl = self.index(0, 0)
+                br = self.index(r - 1, c - 1) if r > 0 and c > 0 else tl
+                self.dataChanged.emit(tl, br, [Qt.BackgroundRole, Qt.ForegroundRole])
+        except Exception:
+            pass
 
 
 class SimpleDictTableModel(QAbstractTableModel):

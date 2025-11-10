@@ -570,114 +570,87 @@ class ImageViewer(QMainWindow):
                 except Exception:
                     pass
 
+    def _get_displayed_array(self) -> Optional[np.ndarray]:
+        """Return the processed numpy array that is currently being displayed."""
+        if self.current_index is None:
+            return None
+
+        arr = self.images[self.current_index]["array"]
+
+        # The following logic is a copy of display_image, but returns the array
+        # instead of setting it on the label.
+
+        # Special pseudo-color modes
+        try:
+            if arr.ndim == 2 or (arr.ndim == 3 and arr.shape[2] == 1):
+                if self.color_manager.mode_1ch == MODE_1CH_JET:
+                    adj = self.apply_brightness_adjustment(arr)
+                    if adj.ndim == 3 and adj.shape[2] == 1:
+                        adj = adj[..., 0]
+                    return apply_jet_colormap(adj)
+            elif arr.ndim == 3 and arr.shape[2] == 2:
+                if self.color_manager.mode_2ch == MODE_2CH_FLOW_HSV:
+                    return flow_to_hsv_rgb(arr)
+        except Exception:
+            # Fallback to normal processing
+            pass
+
+        # Brightness adjustment
+        apply_adjust = False
+        if np.issubdtype(arr.dtype, np.floating):
+            apply_adjust = True
+        elif self.brightness_offset != 0 or self.brightness_gain != 1.0 or self.brightness_saturation != 255:
+            apply_adjust = True
+
+        if apply_adjust:
+            arr = self.apply_brightness_adjustment(arr)
+
+        # Channel selection and color synthesis
+        if arr.ndim >= 3 and self.channel_checks:
+            n_channels = arr.shape[2]
+            if len(self.channel_checks) < n_channels:
+                self.channel_checks.extend([True] * (n_channels - len(self.channel_checks)))
+            if len(self.channel_colors) != n_channels:
+                self.channel_colors = self.color_manager.get_colors(n_channels)
+            else:
+                self.channel_colors = self.color_manager.resolve_with_existing(n_channels, self.channel_colors)
+
+            selected_channels = [i for i, checked in enumerate(self.channel_checks) if checked]
+            if not selected_channels:
+                return np.zeros((arr.shape[0], arr.shape[1], 3), dtype=np.uint8)
+
+            composite = np.zeros((arr.shape[0], arr.shape[1], 3), dtype=np.float32)
+            for channel_idx in selected_channels:
+                if channel_idx < len(self.channel_colors):
+                    color = self.channel_colors[channel_idx]
+                    r, g, b = color.red() / 255.0, color.green() / 255.0, color.blue() / 255.0
+                    channel_data = arr[:, :, channel_idx].astype(np.float32)
+                    if arr.dtype == np.uint8:
+                        channel_data /= 255.0
+                    elif np.issubdtype(arr.dtype, np.floating):
+                        channel_data = np.clip(channel_data, 0, 1)
+                    elif np.issubdtype(arr.dtype, np.integer):
+                        max_val = np.iinfo(arr.dtype).max
+                        channel_data /= max_val
+                    composite[:, :, 0] += channel_data * r
+                    composite[:, :, 1] += channel_data * g
+                    composite[:, :, 2] += channel_data * b
+            return (np.clip(composite, 0, 1) * 255).astype(np.uint8)
+
+        return arr
+
     def display_image(self, arr):
         """Display image array in the viewer with current zoom and adjustments.
 
         Args:
             arr: NumPy array (H,W[,C]) representing image data
         """
-        # Special pseudo-color modes override normal pipeline
-        try:
-            if arr.ndim == 2 or (arr.ndim == 3 and arr.shape[2] == 1):
-                # 1ch handling
-                if self.color_manager.mode_1ch == MODE_1CH_JET:
-                    # For 1ch jet, apply brightness first then colormap
-                    adj = self.apply_brightness_adjustment(arr)
-                    if adj.ndim == 3 and adj.shape[2] == 1:
-                        adj = adj[..., 0]
-                    rgb = apply_jet_colormap(adj)
-                    qimg = numpy_to_qimage(rgb)
-                    self.image_label.set_image(qimg, self.scale)
-                    self.update_status()
-                    return
-            elif arr.ndim == 3 and arr.shape[2] == 2:
-                if self.color_manager.mode_2ch == MODE_2CH_FLOW_HSV:
-                    # For optical flow HSV, brightness adjustment skews vector semantics.
-                    # Use original 2ch array and map magnitude→Value internally.
-                    try:
-                        rgb = flow_to_hsv_rgb(arr)
-                        qimg = numpy_to_qimage(rgb)
-                        self.image_label.set_image(qimg, self.scale)
-                        self.update_status()
-                        return
-                    except Exception as e:
-                        # Log error but continue to normal pipeline
-                        print(f"Warning: 2ch HSV conversion failed: {e}")
-        except Exception as e:
-            # Log error but continue to normal pipeline
-            print(f"Warning: Pseudo-color mode check failed: {e}")
+        processed_arr = self._get_displayed_array()
+        if processed_arr is None:
+            # Fallback for safety, though _get_displayed_array should handle it
+            processed_arr = arr
 
-        # Apply brightness adjustment:
-        # - Always for float images (to map [0,1] -> [0,255] with sat=1.0 by default)
-        # - Or when parameters deviate from the integer-image defaults
-        apply_adjust = False
-        try:
-            if np.issubdtype(arr.dtype, np.floating):
-                apply_adjust = True
-            else:
-                if self.brightness_offset != 0 or self.brightness_gain != 1.0 or self.brightness_saturation != 255:
-                    apply_adjust = True
-        except Exception:
-            # Fallback to previous behavior
-            if self.brightness_offset != 0 or self.brightness_gain != 1.0 or self.brightness_saturation != 255:
-                apply_adjust = True
-
-        if apply_adjust:
-            arr = self.apply_brightness_adjustment(arr)
-
-        # Apply channel selection and color synthesis if specified
-        if arr.ndim >= 3 and self.channel_checks:
-            # Ensure channel_checks and channel_colors match the number of channels
-            n_channels = arr.shape[2]
-            if len(self.channel_checks) < n_channels:
-                self.channel_checks.extend([True] * (n_channels - len(self.channel_checks)))
-            # Resolve colors via manager; if mismatch, fetch from manager
-            if len(self.channel_colors) != n_channels:
-                self.channel_colors = self.color_manager.get_colors(n_channels)
-            else:
-                # Ensure manager stores current overrides for this n
-                self.channel_colors = self.color_manager.resolve_with_existing(n_channels, self.channel_colors)
-
-            # Check if any channels are selected
-            selected_channels = [i for i, checked in enumerate(self.channel_checks) if checked]
-            if not selected_channels:
-                # If no channels selected, show black image
-                arr = np.zeros((arr.shape[0], arr.shape[1], 3), dtype=np.uint8)
-            else:
-                # Create color composite image
-                composite = np.zeros((arr.shape[0], arr.shape[1], 3), dtype=np.float32)
-
-                for i, channel_idx in enumerate(selected_channels):
-                    if channel_idx < len(self.channel_colors):
-                        color = self.channel_colors[channel_idx]
-                        # Normalize color values to 0-1 range
-                        r = color.red() / 255.0
-                        g = color.green() / 255.0
-                        b = color.blue() / 255.0
-
-                        # Get channel data and normalize to 0-1 range
-                        channel_data = arr[:, :, channel_idx].astype(np.float32)
-
-                        # Normalize to 0-255 range (assuming arr is already uint8 from brightness adjustment)
-                        if arr.dtype == np.uint8:
-                            channel_data = channel_data / 255.0
-                        else:
-                            # For non-uint8, normalize appropriately
-                            if np.issubdtype(arr.dtype, np.floating):
-                                channel_data = np.clip(channel_data, 0, 1)
-                            elif np.issubdtype(arr.dtype, np.integer):
-                                max_val = np.iinfo(arr.dtype).max
-                                channel_data = channel_data / max_val
-
-                        composite[:, :, 0] += channel_data * r
-                        composite[:, :, 1] += channel_data * g
-                        composite[:, :, 2] += channel_data * b
-
-                # Clip to valid range and convert to uint8
-                composite = np.clip(composite, 0, 1)
-                arr = (composite * 255).astype(np.uint8)
-
-        qimg = numpy_to_qimage(arr)
+        qimg = numpy_to_qimage(processed_arr)
         self.image_label.set_image(qimg, self.scale)
         self.update_status()
 
@@ -801,16 +774,36 @@ class ImageViewer(QMainWindow):
         self.roi_changed.emit()
 
     def copy_roi_to_clipboard(self):
-        """Copy ROI region to clipboard."""
-        sel = self.current_roi_rect
-        if not sel or self.current_index is None:
-            QMessageBox.information(self, "コピー", "ROI領域がありません。")
+        """Copy ROI region or the entire displayed image to clipboard."""
+        if self.current_index is None:
+            QMessageBox.information(self, "コピー", "画像がありません。")
             return
 
-        arr = self.images[self.current_index]["array"]
-        x, y, w, h = sel.x(), sel.y(), sel.width(), sel.height()
-        sub = arr[y : y + h, x : x + w]
-        QGuiApplication.clipboard().setImage(numpy_to_qimage(sub))
+        # Get the currently displayed numpy array (with all adjustments)
+        displayed_arr = self._get_displayed_array()
+        if displayed_arr is None:
+            QMessageBox.information(self, "コピー", "表示されている画像データを取得できません。")
+            return
+
+        sel = self.current_roi_rect
+        if sel and not sel.isEmpty():
+            # ROI is in original image coordinates, which matches the array coordinates
+            x, y, w, h = sel.x(), sel.y(), sel.width(), sel.height()
+            # Ensure ROI is within the array bounds before slicing
+            h_arr, w_arr = displayed_arr.shape[:2]
+            if x < w_arr and y < h_arr:
+                sub_arr = displayed_arr[y : y + h, x : x + w]
+                qimg = numpy_to_qimage(sub_arr)
+            else:
+                qimg = None  # ROI is outside the image
+        else:
+            # If no ROI, use the entire displayed array
+            qimg = numpy_to_qimage(displayed_arr)
+
+        if qimg and not qimg.isNull():
+            QGuiApplication.clipboard().setImage(qimg)
+        else:
+            QMessageBox.information(self, "コピー", "クリップボードにコピーする画像を作成できませんでした。")
 
     def set_roi_from_image_rect(self, rect_img: QRect):
         """Set ROI using image coordinates and update label, status, and listeners.
@@ -864,4 +857,5 @@ class ImageViewer(QMainWindow):
             self.image_label.update()
             self.status_roi.setText("")
             return
+
         super().keyPressEvent(e)

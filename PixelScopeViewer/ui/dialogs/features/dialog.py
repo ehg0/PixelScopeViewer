@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QMenuBar,
     QMenu,
+    QScrollArea,
 )
 
 from ...utils.features_manager import FeaturesManager
@@ -268,23 +269,45 @@ class FeaturesDialog(QDialog):
 
         dlg = QDialog(self)
         dlg.setWindowTitle("列表示設定")
-        v = QVBoxLayout(dlg)
+        dlg.resize(300, 400)
+
+        scroll_area = QScrollArea(dlg)
+        scroll_area.setWidgetResizable(True)
+
+        scroll_widget = QWidget()
+        scroll_layout = QVBoxLayout(scroll_widget)
+
         checks = {}
         for c in available:
             chk = QCheckBox(c)
             chk.setChecked(not self.table_images.isColumnHidden(cols.index(c)))
             checks[c] = chk
-            v.addWidget(chk)
+            scroll_layout.addWidget(chk)
 
-        reset_btn = QPushButton("リセット（全列表示）")
+        scroll_area.setWidget(scroll_widget)
+
+        main_layout = QVBoxLayout(dlg)
+        main_layout.addWidget(scroll_area)
+
+        reset_btn = QPushButton("Reset (全列表示)")
+        clear_btn = QPushButton("Clear（全選択解除）")
+
+        hbox = QHBoxLayout()
+        hbox.addWidget(reset_btn)
+        hbox.addWidget(clear_btn)
+        hbox.addStretch(1)
 
         def on_reset():
             for chk in checks.values():
                 chk.setChecked(True)
 
-        reset_btn.clicked.connect(on_reset)
-        v.addWidget(reset_btn)
+        def on_clear():
+            for chk in checks.values():
+                chk.setChecked(False)
 
+        reset_btn.clicked.connect(on_reset)
+        clear_btn.clicked.connect(on_clear)
+        main_layout.addLayout(hbox)
         btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
 
         def on_ok():
@@ -294,7 +317,13 @@ class FeaturesDialog(QDialog):
 
         btns.accepted.connect(on_ok)
         btns.rejected.connect(dlg.reject)
-        v.addWidget(btns)
+
+        # 中央配置のために水平レイアウトで左右にストレッチを入れる
+        h_btns = QHBoxLayout()
+        h_btns.addStretch(1)
+        h_btns.addWidget(btns)
+        h_btns.addStretch(1)
+        main_layout.addLayout(h_btns)
         dlg.exec()
 
     def _on_add_column(self):

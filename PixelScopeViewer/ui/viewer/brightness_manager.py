@@ -179,6 +179,9 @@ class BrightnessManager:
                 self.viewer.brightness_saturation = 255
             self.viewer.update_brightness_status()
 
+        # Save reset values to dtype-specific storage so they persist across image switches
+        self._save_current_dtype_params()
+
         # Refresh display if the dialog didn't already trigger it
         if not handled_by_dialog and self.viewer.current_index is not None:
             self.viewer.display_image(self.viewer.images[self.viewer.current_index]["array"])

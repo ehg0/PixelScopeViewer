@@ -369,6 +369,22 @@ class ImageViewer(QMainWindow):
         # For other cases, return original
         return arr
 
+    def _show_load_error(self, path: str, arr=None, error_msg: str = ""):
+        """Show error message with file details."""
+        filename = Path(path).name
+        details = f"ファイル名: {filename}"
+        if arr is not None:
+            details += f"\n配列形状: {arr.shape}\nデータ型: {arr.dtype}"
+        elif Path(path).suffix.lower() == ".npy":
+            try:
+                arr = np.load(path)
+                details += f"\n配列形状: {arr.shape}\nデータ型: {arr.dtype}"
+            except Exception:
+                pass
+        if error_msg:
+            details += f"\n\nエラー: {error_msg}"
+        QMessageBox.warning(self, "画像読み込みエラー", details)
+
     def _add_images(self, paths: Iterable[str]) -> int:
         """Load image files and append them to the viewer."""
         new_images = []
@@ -377,13 +393,22 @@ class ImageViewer(QMainWindow):
                 continue
             try:
                 arr = load_image(path)
+                # Validate array shape
+                if arr.ndim < 2 or arr.ndim > 3:
+                    self._show_load_error(path, arr, "2次元または3次元の配列が必要です")
+                    continue
+                if arr.ndim == 3 and arr.shape[2] not in [1, 2, 3, 4]:
+                    self._show_load_error(path, arr, "チャンネル数は1, 2, 3, または4である必要があります")
+                    continue
+
                 # Create and cache thumbnail pixmap on load
                 thumb_arr = self._prepare_thumbnail_array(arr)
                 thumb_qimg = numpy_to_qimage(thumb_arr)
                 thumb_pixmap = QPixmap.fromImage(thumb_qimg).scaled(
                     250, 250, Qt.KeepAspectRatio, Qt.SmoothTransformation
                 )
-            except Exception:
+            except Exception as e:
+                self._show_load_error(path, error_msg=str(e))
                 continue
             img_data = {
                 "path": str(Path(path).resolve()),

@@ -1,7 +1,8 @@
 """Display info widget showing current viewport information."""
 
-from PySide6.QtWidgets import QGroupBox, QVBoxLayout, QTableWidget, QTableWidgetItem, QHeaderView
+from PySide6.QtWidgets import QGroupBox, QVBoxLayout, QTableWidget, QTableWidgetItem, QHeaderView, QMenu
 from PySide6.QtCore import Qt, QEvent
+from PySide6.QtGui import QGuiApplication
 
 
 class DisplayInfoWidget(QGroupBox):
@@ -20,7 +21,7 @@ class DisplayInfoWidget(QGroupBox):
         self.table.setHorizontalHeaderLabels(["Property", "Value"])
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.horizontalHeader().setVisible(False)  # Hide header
-        self.table.setRowCount(7)
+        self.table.setRowCount(8)
         # Compact table: smaller font/rows and no vertical scrollbar
         font = self.table.font()
         try:
@@ -33,15 +34,20 @@ class DisplayInfoWidget(QGroupBox):
         self.table.verticalHeader().setVisible(False)  # Hide row header
 
         # Set properties
-        properties = ["X Start", "Y Start", "X End", "Y End", "Width", "Height", "Pixel Count"]
+        properties = ["X Start", "Y Start", "X End", "Y End", "Width", "Height", "Diagonal", "Pixel Count"]
         for i, prop in enumerate(properties):
             item = QTableWidgetItem(prop)
             item.setFlags(item.flags() & ~Qt.ItemIsEditable)
             self.table.setItem(i, 0, item)
 
+        # Enable context menu for copying
+        self.table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self._show_context_menu)
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)  # Remove margins to pack tightly
         layout.addWidget(self.table)
+        layout.addStretch()  # Add stretch to push table to top
 
         # Fix table height to avoid vertical scrolling
         self._fit_table_height()
@@ -79,7 +85,7 @@ class DisplayInfoWidget(QGroupBox):
     def update_info(self):
         """Update the display information."""
         if self.viewer.current_index is None or not self.viewer.images:
-            for i in range(7):
+            for i in range(8):
                 self.table.setItem(i, 1, QTableWidgetItem(""))
             return
 
@@ -105,10 +111,46 @@ class DisplayInfoWidget(QGroupBox):
 
         width = x_end - x_start + 1
         height = y_end - y_start + 1
+        diagonal = (width**2 + height**2) ** 0.5
         pixel_count = width * height
 
-        values = [str(x_start), str(y_start), str(x_end), str(y_end), str(width), str(height), f"{pixel_count:,}"]
+        values = [
+            str(x_start),
+            str(y_start),
+            str(x_end),
+            str(y_end),
+            str(width),
+            str(height),
+            f"{diagonal:.2f}",
+            f"{pixel_count:,}",
+        ]
         for i, value in enumerate(values):
             item = QTableWidgetItem(value)
             item.setFlags(item.flags() & ~Qt.ItemIsEditable)
             self.table.setItem(i, 1, item)
+
+    def _show_context_menu(self, pos):
+        """Show context menu with copy option."""
+        menu = QMenu()
+        copy_action = menu.addAction("コピー")
+        action = menu.exec_(self.table.mapToGlobal(pos))
+        if action == copy_action:
+            self._copy_selection()
+
+    def _copy_selection(self):
+        """Copy selected cells to clipboard in comma-separated format."""
+        selection = self.table.selectedRanges()
+        if not selection:
+            return
+
+        rows = []
+        for sel_range in selection:
+            for row in range(sel_range.topRow(), sel_range.bottomRow() + 1):
+                cols = []
+                for col in range(sel_range.leftColumn(), sel_range.rightColumn() + 1):
+                    item = self.table.item(row, col)
+                    cols.append(item.text() if item else "")
+                rows.append(",".join(cols))
+
+        text = "\n".join(rows)
+        QGuiApplication.clipboard().setText(text)

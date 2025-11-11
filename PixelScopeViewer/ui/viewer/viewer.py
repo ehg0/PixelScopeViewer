@@ -166,17 +166,29 @@ class ImageViewer(QMainWindow):
         self.info_dock.setWidget(self.info_tabs)
         self.addDockWidget(Qt.RightDockWidgetArea, self.info_dock)
 
+        # Status bar
         self.status = QStatusBar()
         self.setStatusBar(self.status)
         self.statusBar().setStyleSheet("font-size: 11pt;")
         self.status_pixel = QLabel()
-        self.status_roi = QLabel()
-        self.status_brightness = QLabel()  # Changed from status_shift to status_brightness
+        self.status_brightness = QLabel()
         self.status_scale = QLabel()
-        self.status.addPermanentWidget(self.status_pixel, 2)
-        self.status.addPermanentWidget(self.status_roi, 3)
-        self.status.addPermanentWidget(self.status_brightness, 2)  # Display brightness params
-        self.status.addPermanentWidget(self.status_scale, 1)
+
+        left_container = QWidget()
+        left_layout = QHBoxLayout(left_container)
+        left_layout.setContentsMargins(15, 0, 15, 0)
+        left_layout.addWidget(self.status_pixel)
+        self.status.addWidget(left_container)
+
+        right_container = QWidget()
+        right_layout = QHBoxLayout(right_container)
+        right_layout.setContentsMargins(15, 0, 15, 0)
+        right_layout.setSpacing(8)
+        right_layout.addWidget(QLabel("|"))
+        right_layout.addWidget(self.status_brightness)
+        right_layout.addWidget(QLabel("|"))
+        right_layout.addWidget(self.status_scale)
+        self.status.addPermanentWidget(right_container)
 
         self.help_dialog = HelpDialog(self)
         self.brightness_dialog = None  # Will be created when needed
@@ -237,9 +249,6 @@ class ImageViewer(QMainWindow):
     def update_brightness_status(self):
         self.status_updater.update_brightness_status()
 
-    def update_roi_status(self, rect=None):
-        self.status_updater.update_roi_status(rect)
-
     # Image loading and navigation
     def show_analysis_dialog(self, tab: Optional[str] = None):
         """Show analysis dialog for current image and ROI."""
@@ -253,6 +262,8 @@ class ImageViewer(QMainWindow):
 
         # If dialog already exists, bring it to front
         if self._analysis_dialog is not None:
+            if self._analysis_dialog.isMinimized():
+                self._analysis_dialog.showNormal()
             self._analysis_dialog.raise_()
             self._analysis_dialog.activateWindow()
             if tab is not None:
@@ -367,6 +378,22 @@ class ImageViewer(QMainWindow):
         # For other cases, return original
         return arr
 
+    def _show_load_error(self, path: str, arr=None, error_msg: str = ""):
+        """Show error message with file details."""
+        filename = Path(path).name
+        details = f"ファイル名: {filename}"
+        if arr is not None:
+            details += f"\n配列形状: {arr.shape}\nデータ型: {arr.dtype}"
+        elif Path(path).suffix.lower() == ".npy":
+            try:
+                arr = np.load(path)
+                details += f"\n配列形状: {arr.shape}\nデータ型: {arr.dtype}"
+            except Exception:
+                pass
+        if error_msg:
+            details += f"\n\nエラー: {error_msg}"
+        QMessageBox.warning(self, "画像読み込みエラー", details)
+
     def _add_images(self, paths: Iterable[str]) -> int:
         """Load image files and append them to the viewer."""
         new_images = []
@@ -375,13 +402,22 @@ class ImageViewer(QMainWindow):
                 continue
             try:
                 arr = load_image(path)
+                # Validate array shape
+                if arr.ndim < 2 or arr.ndim > 3:
+                    self._show_load_error(path, arr, "2次元または3次元の配列が必要です")
+                    continue
+                if arr.ndim == 3 and arr.shape[2] not in [1, 2, 3, 4]:
+                    self._show_load_error(path, arr, "チャンネル数は1, 2, 3, または4である必要があります")
+                    continue
+
                 # Create and cache thumbnail pixmap on load
                 thumb_arr = self._prepare_thumbnail_array(arr)
                 thumb_qimg = numpy_to_qimage(thumb_arr)
                 thumb_pixmap = QPixmap.fromImage(thumb_qimg).scaled(
                     250, 250, Qt.KeepAspectRatio, Qt.SmoothTransformation
                 )
-            except Exception:
+            except Exception as e:
+                self._show_load_error(path, error_msg=str(e))
                 continue
             img_data = {
                 "path": str(Path(path).resolve()),
@@ -421,6 +457,8 @@ class ImageViewer(QMainWindow):
             if last_path:
                 title = f"特徴量表示 - {last_path}"
             self._features_dialog.setWindowTitle(title)
+            if self._features_dialog.isMinimized():
+                self._features_dialog.showNormal()
             self._features_dialog.raise_()
             self._features_dialog.activateWindow()
             return
@@ -432,9 +470,9 @@ class ImageViewer(QMainWindow):
     def update_image_list_menu(self):
         """Update the image list menu with current loaded images."""
         self.img_menu.clear()
-        # Menu entries for navigation (shortcuts are provided as application-level actions)
-        self.img_menu.addAction(QAction("次の画像", self, triggered=self.next_image))
-        self.img_menu.addAction(QAction("前の画像", self, triggered=self.prev_image))
+        # Add navigation actions (defined in menu_builder with shortcuts)
+        self.img_menu.addAction(self.next_image_action)
+        self.img_menu.addAction(self.prev_image_action)
         self.img_menu.addSeparator()
 
         group = QActionGroup(self)
@@ -557,7 +595,6 @@ class ImageViewer(QMainWindow):
             )
             self.image_label.roi_rect = rect
             self.image_label.update()
-            self.update_roi_status(rect)
 
         # notify any open modeless AnalysisDialogs so they can refresh for new image
         if self._analysis_dialog:
@@ -570,114 +607,87 @@ class ImageViewer(QMainWindow):
                 except Exception:
                     pass
 
+    def _get_displayed_array(self) -> Optional[np.ndarray]:
+        """Return the processed numpy array that is currently being displayed."""
+        if self.current_index is None:
+            return None
+
+        arr = self.images[self.current_index]["array"]
+
+        # The following logic is a copy of display_image, but returns the array
+        # instead of setting it on the label.
+
+        # Special pseudo-color modes
+        try:
+            if arr.ndim == 2 or (arr.ndim == 3 and arr.shape[2] == 1):
+                if self.color_manager.mode_1ch == MODE_1CH_JET:
+                    adj = self.apply_brightness_adjustment(arr)
+                    if adj.ndim == 3 and adj.shape[2] == 1:
+                        adj = adj[..., 0]
+                    return apply_jet_colormap(adj)
+            elif arr.ndim == 3 and arr.shape[2] == 2:
+                if self.color_manager.mode_2ch == MODE_2CH_FLOW_HSV:
+                    return flow_to_hsv_rgb(arr)
+        except Exception:
+            # Fallback to normal processing
+            pass
+
+        # Brightness adjustment
+        apply_adjust = False
+        if np.issubdtype(arr.dtype, np.floating):
+            apply_adjust = True
+        elif self.brightness_offset != 0 or self.brightness_gain != 1.0 or self.brightness_saturation != 255:
+            apply_adjust = True
+
+        if apply_adjust:
+            arr = self.apply_brightness_adjustment(arr)
+
+        # Channel selection and color synthesis
+        if arr.ndim >= 3 and self.channel_checks:
+            n_channels = arr.shape[2]
+            if len(self.channel_checks) < n_channels:
+                self.channel_checks.extend([True] * (n_channels - len(self.channel_checks)))
+            if len(self.channel_colors) != n_channels:
+                self.channel_colors = self.color_manager.get_colors(n_channels)
+            else:
+                self.channel_colors = self.color_manager.resolve_with_existing(n_channels, self.channel_colors)
+
+            selected_channels = [i for i, checked in enumerate(self.channel_checks) if checked]
+            if not selected_channels:
+                return np.zeros((arr.shape[0], arr.shape[1], 3), dtype=np.uint8)
+
+            composite = np.zeros((arr.shape[0], arr.shape[1], 3), dtype=np.float32)
+            for channel_idx in selected_channels:
+                if channel_idx < len(self.channel_colors):
+                    color = self.channel_colors[channel_idx]
+                    r, g, b = color.red() / 255.0, color.green() / 255.0, color.blue() / 255.0
+                    channel_data = arr[:, :, channel_idx].astype(np.float32)
+                    if arr.dtype == np.uint8:
+                        channel_data /= 255.0
+                    elif np.issubdtype(arr.dtype, np.floating):
+                        channel_data = np.clip(channel_data, 0, 1)
+                    elif np.issubdtype(arr.dtype, np.integer):
+                        max_val = np.iinfo(arr.dtype).max
+                        channel_data /= max_val
+                    composite[:, :, 0] += channel_data * r
+                    composite[:, :, 1] += channel_data * g
+                    composite[:, :, 2] += channel_data * b
+            return (np.clip(composite, 0, 1) * 255).astype(np.uint8)
+
+        return arr
+
     def display_image(self, arr):
         """Display image array in the viewer with current zoom and adjustments.
 
         Args:
             arr: NumPy array (H,W[,C]) representing image data
         """
-        # Special pseudo-color modes override normal pipeline
-        try:
-            if arr.ndim == 2 or (arr.ndim == 3 and arr.shape[2] == 1):
-                # 1ch handling
-                if self.color_manager.mode_1ch == MODE_1CH_JET:
-                    # For 1ch jet, apply brightness first then colormap
-                    adj = self.apply_brightness_adjustment(arr)
-                    if adj.ndim == 3 and adj.shape[2] == 1:
-                        adj = adj[..., 0]
-                    rgb = apply_jet_colormap(adj)
-                    qimg = numpy_to_qimage(rgb)
-                    self.image_label.set_image(qimg, self.scale)
-                    self.update_status()
-                    return
-            elif arr.ndim == 3 and arr.shape[2] == 2:
-                if self.color_manager.mode_2ch == MODE_2CH_FLOW_HSV:
-                    # For optical flow HSV, brightness adjustment skews vector semantics.
-                    # Use original 2ch array and map magnitude→Value internally.
-                    try:
-                        rgb = flow_to_hsv_rgb(arr)
-                        qimg = numpy_to_qimage(rgb)
-                        self.image_label.set_image(qimg, self.scale)
-                        self.update_status()
-                        return
-                    except Exception as e:
-                        # Log error but continue to normal pipeline
-                        print(f"Warning: 2ch HSV conversion failed: {e}")
-        except Exception as e:
-            # Log error but continue to normal pipeline
-            print(f"Warning: Pseudo-color mode check failed: {e}")
+        processed_arr = self._get_displayed_array()
+        if processed_arr is None:
+            # Fallback for safety, though _get_displayed_array should handle it
+            processed_arr = arr
 
-        # Apply brightness adjustment:
-        # - Always for float images (to map [0,1] -> [0,255] with sat=1.0 by default)
-        # - Or when parameters deviate from the integer-image defaults
-        apply_adjust = False
-        try:
-            if np.issubdtype(arr.dtype, np.floating):
-                apply_adjust = True
-            else:
-                if self.brightness_offset != 0 or self.brightness_gain != 1.0 or self.brightness_saturation != 255:
-                    apply_adjust = True
-        except Exception:
-            # Fallback to previous behavior
-            if self.brightness_offset != 0 or self.brightness_gain != 1.0 or self.brightness_saturation != 255:
-                apply_adjust = True
-
-        if apply_adjust:
-            arr = self.apply_brightness_adjustment(arr)
-
-        # Apply channel selection and color synthesis if specified
-        if arr.ndim >= 3 and self.channel_checks:
-            # Ensure channel_checks and channel_colors match the number of channels
-            n_channels = arr.shape[2]
-            if len(self.channel_checks) < n_channels:
-                self.channel_checks.extend([True] * (n_channels - len(self.channel_checks)))
-            # Resolve colors via manager; if mismatch, fetch from manager
-            if len(self.channel_colors) != n_channels:
-                self.channel_colors = self.color_manager.get_colors(n_channels)
-            else:
-                # Ensure manager stores current overrides for this n
-                self.channel_colors = self.color_manager.resolve_with_existing(n_channels, self.channel_colors)
-
-            # Check if any channels are selected
-            selected_channels = [i for i, checked in enumerate(self.channel_checks) if checked]
-            if not selected_channels:
-                # If no channels selected, show black image
-                arr = np.zeros((arr.shape[0], arr.shape[1], 3), dtype=np.uint8)
-            else:
-                # Create color composite image
-                composite = np.zeros((arr.shape[0], arr.shape[1], 3), dtype=np.float32)
-
-                for i, channel_idx in enumerate(selected_channels):
-                    if channel_idx < len(self.channel_colors):
-                        color = self.channel_colors[channel_idx]
-                        # Normalize color values to 0-1 range
-                        r = color.red() / 255.0
-                        g = color.green() / 255.0
-                        b = color.blue() / 255.0
-
-                        # Get channel data and normalize to 0-1 range
-                        channel_data = arr[:, :, channel_idx].astype(np.float32)
-
-                        # Normalize to 0-255 range (assuming arr is already uint8 from brightness adjustment)
-                        if arr.dtype == np.uint8:
-                            channel_data = channel_data / 255.0
-                        else:
-                            # For non-uint8, normalize appropriately
-                            if np.issubdtype(arr.dtype, np.floating):
-                                channel_data = np.clip(channel_data, 0, 1)
-                            elif np.issubdtype(arr.dtype, np.integer):
-                                max_val = np.iinfo(arr.dtype).max
-                                channel_data = channel_data / max_val
-
-                        composite[:, :, 0] += channel_data * r
-                        composite[:, :, 1] += channel_data * g
-                        composite[:, :, 2] += channel_data * b
-
-                # Clip to valid range and convert to uint8
-                composite = np.clip(composite, 0, 1)
-                arr = (composite * 255).astype(np.uint8)
-
-        qimg = numpy_to_qimage(arr)
+        qimg = numpy_to_qimage(processed_arr)
         self.image_label.set_image(qimg, self.scale)
         self.update_status()
 
@@ -784,7 +794,6 @@ class ImageViewer(QMainWindow):
             int(rect.width() / s),
             int(rect.height() / s),
         )
-        self.update_roi_status(rect)
         # notify any open modeless AnalysisDialogs so they can refresh for new ROI
         if self._analysis_dialog:
             # Get current image data
@@ -801,16 +810,36 @@ class ImageViewer(QMainWindow):
         self.roi_changed.emit()
 
     def copy_roi_to_clipboard(self):
-        """Copy ROI region to clipboard."""
-        sel = self.current_roi_rect
-        if not sel or self.current_index is None:
-            QMessageBox.information(self, "コピー", "ROI領域がありません。")
+        """Copy ROI region or the entire displayed image to clipboard."""
+        if self.current_index is None:
+            QMessageBox.information(self, "コピー", "画像がありません。")
             return
 
-        arr = self.images[self.current_index]["array"]
-        x, y, w, h = sel.x(), sel.y(), sel.width(), sel.height()
-        sub = arr[y : y + h, x : x + w]
-        QGuiApplication.clipboard().setImage(numpy_to_qimage(sub))
+        # Get the currently displayed numpy array (with all adjustments)
+        displayed_arr = self._get_displayed_array()
+        if displayed_arr is None:
+            QMessageBox.information(self, "コピー", "表示されている画像データを取得できません。")
+            return
+
+        sel = self.current_roi_rect
+        if sel and not sel.isEmpty():
+            # ROI is in original image coordinates, which matches the array coordinates
+            x, y, w, h = sel.x(), sel.y(), sel.width(), sel.height()
+            # Ensure ROI is within the array bounds before slicing
+            h_arr, w_arr = displayed_arr.shape[:2]
+            if x < w_arr and y < h_arr:
+                sub_arr = displayed_arr[y : y + h, x : x + w]
+                qimg = numpy_to_qimage(sub_arr)
+            else:
+                qimg = None  # ROI is outside the image
+        else:
+            # If no ROI, use the entire displayed array
+            qimg = numpy_to_qimage(displayed_arr)
+
+        if qimg and not qimg.isNull():
+            QGuiApplication.clipboard().setImage(qimg)
+        else:
+            QMessageBox.information(self, "コピー", "クリップボードにコピーする画像を作成できませんでした。")
 
     def set_roi_from_image_rect(self, rect_img: QRect):
         """Set ROI using image coordinates and update label, status, and listeners.
@@ -830,8 +859,6 @@ class ImageViewer(QMainWindow):
             )
             self.image_label.roi_rect = rect_label
             self.image_label.update()
-            # Update status based on canonical image ROI
-            self.update_roi_status()
 
             # Notify any open modeless AnalysisDialogs
             if self._analysis_dialog:
@@ -862,6 +889,35 @@ class ImageViewer(QMainWindow):
         if e.key() == Qt.Key_Escape:
             self.image_label.roi_rect = None
             self.image_label.update()
-            self.status_roi.setText("")
             return
+
         super().keyPressEvent(e)
+
+    def closeEvent(self, event):
+        """Handle window close event to ensure all child dialogs are closed."""
+        # Close all modeless dialogs to ensure the application exits cleanly
+        try:
+            if self.brightness_dialog and self.brightness_dialog.isVisible():
+                self.brightness_dialog.close()
+        except RuntimeError:
+            pass  # Dialog already deleted by Qt
+
+        try:
+            if self._features_dialog and self._features_dialog.isVisible():
+                self._features_dialog.close()
+        except RuntimeError:
+            pass  # Dialog already deleted by Qt
+
+        try:
+            if self._analysis_dialog and self._analysis_dialog.isVisible():
+                self._analysis_dialog.close()
+        except RuntimeError:
+            pass  # Dialog already deleted by Qt
+
+        try:
+            if self.help_dialog and self.help_dialog.isVisible():
+                self.help_dialog.close()
+        except RuntimeError:
+            pass  # Dialog already deleted by Qt
+
+        event.accept()

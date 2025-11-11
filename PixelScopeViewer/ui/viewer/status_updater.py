@@ -83,7 +83,7 @@ class StatusUpdater:
             return
         p = self.viewer.images[self.viewer.current_index]["path"]
 
-        # Update title bar with filename and index
+        # Update title bar with filename, size, and index
         filename = Path(p).name
         img = self.viewer.images[self.viewer.current_index]
         arr = img.get("base_array", img.get("array"))
@@ -92,7 +92,26 @@ class StatusUpdater:
             c = 1
         else:
             h, w, c = arr.shape[:3]
-        title = f"[{self.viewer.current_index+1}/{len(self.viewer.images)}]  {filename} — {w}×{h}, {c}ch"
+
+        # Get file size
+        file_size_str = ""
+        try:
+            file_size = Path(p).stat().st_size
+            if file_size < 1024:
+                file_size_str = f"{file_size}B"
+            elif file_size < 1024 * 1024:
+                file_size_str = f"{file_size / 1024:.1f}KB"
+            elif file_size < 1024 * 1024 * 1024:
+                file_size_str = f"{file_size / (1024 * 1024):.1f}MB"
+            else:
+                file_size_str = f"{file_size / (1024 * 1024 * 1024):.2f}GB"
+        except Exception:
+            file_size_str = ""
+
+        if file_size_str:
+            title = f"[{self.viewer.current_index+1}/{len(self.viewer.images)}]  {filename} ({file_size_str}) — {w}×{h}, {c}ch"
+        else:
+            title = f"[{self.viewer.current_index+1}/{len(self.viewer.images)}]  {filename} — {w}×{h}, {c}ch"
         self.viewer.setWindowTitle(title)
 
         # display current scale
@@ -136,32 +155,3 @@ class StatusUpdater:
             self.viewer.status_brightness.setText(brightness_text)
         except Exception as e:
             self.viewer.status_brightness.setText("")
-
-    def update_roi_status(self, rect=None):
-        """Update status bar with ROI rectangle information.
-
-        Args:
-            rect: ROI rectangle (QRect, None uses current ROI)
-        """
-        # Prefer the canonical image-coordinate ROI for consistent display
-        if self.viewer.current_roi_rect is not None and not self.viewer.current_roi_rect.isNull():
-            x0 = self.viewer.current_roi_rect.x()
-            y0 = self.viewer.current_roi_rect.y()
-            w = self.viewer.current_roi_rect.width()
-            h = self.viewer.current_roi_rect.height()
-            x1 = x0 + w - 1
-            y1 = y0 + h - 1
-            self.viewer.status_roi.setText(f"({x0}, {y0}) - ({x1}, {y1}), w: {w}, h: {h}")
-            return
-        # Fallback: derive from provided label-rect when current ROI is missing
-        if rect is None or rect.isNull():
-            self.viewer.status_roi.setText("")
-            return
-        s = self.viewer.scale if hasattr(self.viewer, "scale") else 1.0
-        x0 = int(rect.left() / s)
-        y0 = int(rect.top() / s)
-        x1 = int(rect.right() / s)
-        y1 = int(rect.bottom() / s)
-        w = x1 - x0 + 1
-        h = y1 - y0 + 1
-        self.viewer.status_roi.setText(f"({x0}, {y0}) - ({x1}, {y1}), w: {w}, h: {h}")

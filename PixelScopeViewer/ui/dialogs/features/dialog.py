@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QHBoxLayout,
     QTableView,
+    QAbstractItemView,
     QPushButton,
     QLineEdit,
     QComboBox,
@@ -20,6 +21,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QMenuBar,
     QMenu,
+    QScrollArea,
 )
 
 from ...utils.features_manager import FeaturesManager
@@ -34,9 +36,14 @@ from .widgets import (
 
 class FeaturesDialog(QDialog):
     def __init__(self, viewer, manager: FeaturesManager):
-        super().__init__(viewer)
+        super().__init__(None)
         self.viewer = viewer
         self.manager = manager
+
+        # Set window flags to allow minimizing and prevent staying on top
+        flags = Qt.Window | Qt.WindowMinimizeButtonHint | Qt.WindowCloseButtonHint
+        self.setWindowFlags(flags)
+        self.setAttribute(Qt.WA_DeleteOnClose)
 
         # Window title with last loaded path if available
         title = "特徴量表示"
@@ -87,13 +94,28 @@ class FeaturesDialog(QDialog):
         self.proxy_images = LoadedOnlyProxyModel(self)
         self.proxy_images.setSourceModel(self.model_images)
         self.proxy_images.setFilterCaseSensitivity(Qt.CaseInsensitive)
-        self.proxy_images.set_viewer(self.viewer)
+        # Avoid dynamic resort/filter on every data change (costly for large datasets)
+        try:
+            self.proxy_images.setDynamicSortFilter(False)
+        except Exception:
+            pass
         self.table_images = QTableView(self)
         self.table_images.setModel(self.proxy_images)
         self.table_images.setSortingEnabled(True)
         self.table_images.doubleClicked.connect(self._on_double_clicked)
         self.table_images.setSelectionBehavior(QTableView.SelectRows)
         self.table_images.setAlternatingRowColors(True)
+        # Performance-related view hints
+        try:
+            # Use uniform row heights for faster layout/painting when rows are same height
+            self.table_images.setUniformRowHeights(True)
+            # Use pixel scrolling for smoother scrolling on large tables
+            self.table_images.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
+            self.table_images.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
+            # Avoid word-wrapping which can force heavy layout work
+            self.table_images.setWordWrap(False)
+        except Exception:
+            pass
         # Use plain text delegate to disable spinbox for numeric cells
         self.table_images.setItemDelegate(PlainTextDelegate(self.table_images))
         # Hide vertical header (row numbers)
@@ -268,23 +290,45 @@ class FeaturesDialog(QDialog):
 
         dlg = QDialog(self)
         dlg.setWindowTitle("列表示設定")
-        v = QVBoxLayout(dlg)
+        dlg.resize(300, 400)
+
+        scroll_area = QScrollArea(dlg)
+        scroll_area.setWidgetResizable(True)
+
+        scroll_widget = QWidget()
+        scroll_layout = QVBoxLayout(scroll_widget)
+
         checks = {}
         for c in available:
             chk = QCheckBox(c)
             chk.setChecked(not self.table_images.isColumnHidden(cols.index(c)))
             checks[c] = chk
-            v.addWidget(chk)
+            scroll_layout.addWidget(chk)
 
-        reset_btn = QPushButton("リセット（全列表示）")
+        scroll_area.setWidget(scroll_widget)
+
+        main_layout = QVBoxLayout(dlg)
+        main_layout.addWidget(scroll_area)
+
+        reset_btn = QPushButton("Reset (全列表示)")
+        clear_btn = QPushButton("Clear（全選択解除）")
+
+        hbox = QHBoxLayout()
+        hbox.addWidget(reset_btn)
+        hbox.addWidget(clear_btn)
+        hbox.addStretch(1)
 
         def on_reset():
             for chk in checks.values():
                 chk.setChecked(True)
 
-        reset_btn.clicked.connect(on_reset)
-        v.addWidget(reset_btn)
+        def on_clear():
+            for chk in checks.values():
+                chk.setChecked(False)
 
+        reset_btn.clicked.connect(on_reset)
+        clear_btn.clicked.connect(on_clear)
+        main_layout.addLayout(hbox)
         btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
 
         def on_ok():
@@ -294,7 +338,13 @@ class FeaturesDialog(QDialog):
 
         btns.accepted.connect(on_ok)
         btns.rejected.connect(dlg.reject)
-        v.addWidget(btns)
+
+        # 中央配置のために水平レイアウトで左右にストレッチを入れる
+        h_btns = QHBoxLayout()
+        h_btns.addStretch(1)
+        h_btns.addWidget(btns)
+        h_btns.addStretch(1)
+        main_layout.addLayout(h_btns)
         dlg.exec()
 
     def _on_add_column(self):

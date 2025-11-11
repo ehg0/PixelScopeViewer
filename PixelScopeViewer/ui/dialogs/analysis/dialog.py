@@ -122,9 +122,16 @@ class AnalysisDialog(QDialog):
         image_rect: Optional[QRect] = None,
         image_path: Optional[str] = None,
     ):
-        super().__init__(parent)
+        super().__init__(None)
+        self.parent = parent
         self.setWindowTitle("Analysis")
         self.resize(900, 600)
+
+        # Set window flags to allow minimizing and prevent staying on top
+        flags = Qt.Window | Qt.WindowMinimizeButtonHint | Qt.WindowCloseButtonHint
+        self.setWindowFlags(flags)
+        self.setAttribute(Qt.WA_DeleteOnClose)
+
         self.image_array = image_array
         self.image_rect = image_rect
         self.image_path = image_path
@@ -492,8 +499,8 @@ class AnalysisDialog(QDialog):
             # Prepare data in order: Basic info first, then EXIF tags
             rows = []
 
-            # 1. Basic information (from PIL)
-            basic_keys = ["Filepath", "Format", "Size", "Channels", "DataType"]
+            # 1. Basic information
+            basic_keys = ["Filepath", "Format", "FileSize", "Size", "Channels", "DataType"]
             for key in basic_keys:
                 if key in metadata:
                     value_str = str(metadata[key])

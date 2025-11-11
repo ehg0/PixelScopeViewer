@@ -155,32 +155,3 @@ class StatusUpdater:
             self.viewer.status_brightness.setText(brightness_text)
         except Exception as e:
             self.viewer.status_brightness.setText("")
-
-    def update_roi_status(self, rect=None):
-        """Update status bar with ROI rectangle information.
-
-        Args:
-            rect: ROI rectangle (QRect, None uses current ROI)
-        """
-        # Prefer the canonical image-coordinate ROI for consistent display
-        if self.viewer.current_roi_rect is not None and not self.viewer.current_roi_rect.isNull():
-            x0 = self.viewer.current_roi_rect.x()
-            y0 = self.viewer.current_roi_rect.y()
-            w = self.viewer.current_roi_rect.width()
-            h = self.viewer.current_roi_rect.height()
-            x1 = x0 + w - 1
-            y1 = y0 + h - 1
-            self.viewer.status_roi.setText(f"({x0}, {y0}) - ({x1}, {y1}), w: {w}, h: {h}")
-            return
-        # Fallback: derive from provided label-rect when current ROI is missing
-        if rect is None or rect.isNull():
-            self.viewer.status_roi.setText("")
-            return
-        s = self.viewer.scale if hasattr(self.viewer, "scale") else 1.0
-        x0 = int(rect.left() / s)
-        y0 = int(rect.top() / s)
-        x1 = int(rect.right() / s)
-        y1 = int(rect.bottom() / s)
-        w = x1 - x0 + 1
-        h = y1 - y0 + 1
-        self.viewer.status_roi.setText(f"({x0}, {y0}) - ({x1}, {y1}), w: {w}, h: {h}")

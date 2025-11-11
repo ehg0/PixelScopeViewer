@@ -166,17 +166,29 @@ class ImageViewer(QMainWindow):
         self.info_dock.setWidget(self.info_tabs)
         self.addDockWidget(Qt.RightDockWidgetArea, self.info_dock)
 
+        # Status bar
         self.status = QStatusBar()
         self.setStatusBar(self.status)
         self.statusBar().setStyleSheet("font-size: 11pt;")
         self.status_pixel = QLabel()
-        self.status_roi = QLabel()
-        self.status_brightness = QLabel()  # Changed from status_shift to status_brightness
+        self.status_brightness = QLabel()
         self.status_scale = QLabel()
-        self.status.addPermanentWidget(self.status_pixel, 2)
-        self.status.addPermanentWidget(self.status_roi, 3)
-        self.status.addPermanentWidget(self.status_brightness, 2)  # Display brightness params
-        self.status.addPermanentWidget(self.status_scale, 1)
+
+        left_container = QWidget()
+        left_layout = QHBoxLayout(left_container)
+        left_layout.setContentsMargins(15, 0, 15, 0)
+        left_layout.addWidget(self.status_pixel)
+        self.status.addWidget(left_container)
+
+        right_container = QWidget()
+        right_layout = QHBoxLayout(right_container)
+        right_layout.setContentsMargins(15, 0, 15, 0)
+        right_layout.setSpacing(8)
+        right_layout.addWidget(QLabel("|"))
+        right_layout.addWidget(self.status_brightness)
+        right_layout.addWidget(QLabel("|"))
+        right_layout.addWidget(self.status_scale)
+        self.status.addPermanentWidget(right_container)
 
         self.help_dialog = HelpDialog(self)
         self.brightness_dialog = None  # Will be created when needed
@@ -236,9 +248,6 @@ class ImageViewer(QMainWindow):
 
     def update_brightness_status(self):
         self.status_updater.update_brightness_status()
-
-    def update_roi_status(self, rect=None):
-        self.status_updater.update_roi_status(rect)
 
     # Image loading and navigation
     def show_analysis_dialog(self, tab: Optional[str] = None):
@@ -586,7 +595,6 @@ class ImageViewer(QMainWindow):
             )
             self.image_label.roi_rect = rect
             self.image_label.update()
-            self.update_roi_status(rect)
 
         # notify any open modeless AnalysisDialogs so they can refresh for new image
         if self._analysis_dialog:
@@ -786,7 +794,6 @@ class ImageViewer(QMainWindow):
             int(rect.width() / s),
             int(rect.height() / s),
         )
-        self.update_roi_status(rect)
         # notify any open modeless AnalysisDialogs so they can refresh for new ROI
         if self._analysis_dialog:
             # Get current image data
@@ -852,8 +859,6 @@ class ImageViewer(QMainWindow):
             )
             self.image_label.roi_rect = rect_label
             self.image_label.update()
-            # Update status based on canonical image ROI
-            self.update_roi_status()
 
             # Notify any open modeless AnalysisDialogs
             if self._analysis_dialog:
@@ -884,7 +889,6 @@ class ImageViewer(QMainWindow):
         if e.key() == Qt.Key_Escape:
             self.image_label.roi_rect = None
             self.image_label.update()
-            self.status_roi.setText("")
             return
 
         super().keyPressEvent(e)

@@ -92,7 +92,7 @@ def create_menus(viewer):
 
     # Help menu
     help_menu = menubar.addMenu("ヘルプ")
-    help_menu.addAction(QAction("キーボードショートカット", viewer, triggered=viewer.help_dialog.show))
+    help_menu.addAction(QAction("その他キーボードショートカット", viewer, triggered=viewer.help_dialog.show))
 
     # Add global application-level shortcuts
     _create_global_shortcuts(viewer)

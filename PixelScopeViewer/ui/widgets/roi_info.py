@@ -1,7 +1,17 @@
 """ROI info widget showing and editing ROI information."""
 
-from PySide6.QtWidgets import QGroupBox, QVBoxLayout, QTableWidget, QTableWidgetItem, QSpinBox, QHBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QGroupBox,
+    QVBoxLayout,
+    QTableWidget,
+    QTableWidgetItem,
+    QSpinBox,
+    QHBoxLayout,
+    QWidget,
+    QMenu,
+)
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QGuiApplication
 
 
 class ROIInfoWidget(QGroupBox):
@@ -21,7 +31,7 @@ class ROIInfoWidget(QGroupBox):
         self.table.setHorizontalHeaderLabels(["Property", "Value"])
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.horizontalHeader().setVisible(False)  # Hide header
-        self.table.setRowCount(7)
+        self.table.setRowCount(8)
         # Compact table and editors
         font = self.table.font()
         try:
@@ -34,7 +44,7 @@ class ROIInfoWidget(QGroupBox):
         self.table.verticalHeader().setVisible(False)  # Hide row header
 
         # Set properties
-        properties = ["X Start", "Y Start", "X End", "Y End", "Width", "Height", "Pixel Count"]
+        properties = ["X Start", "Y Start", "X End", "Y End", "Width", "Height", "Diagonal", "Pixel Count"]
         for i, prop in enumerate(properties):
             item = QTableWidgetItem(prop)
             item.setFlags(item.flags() & ~Qt.ItemIsEditable)
@@ -42,7 +52,7 @@ class ROIInfoWidget(QGroupBox):
 
         # Create spin boxes for editable fields
         self.spin_boxes = {}
-        editable_rows = [0, 1, 2, 3, 4, 5]  # All except pixel count
+        editable_rows = [0, 1, 2, 3, 4, 5]  # All except diagonal and pixel count
 
         for row in editable_rows:
             spin_box = QSpinBox()
@@ -60,9 +70,14 @@ class ROIInfoWidget(QGroupBox):
             layout.setContentsMargins(0, 0, 0, 0)
             self.table.setCellWidget(row, 1, widget)
 
+        # Enable context menu for copying
+        self.table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self._show_context_menu)
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)  # Remove margins to pack tightly
         layout.addWidget(self.table)
+        layout.addStretch()  # Add stretch to push table to top
 
         # Fix table height to avoid vertical scrolling
         self._fit_table_height()
@@ -165,6 +180,7 @@ class ROIInfoWidget(QGroupBox):
                 for spin_box in self.spin_boxes.values():
                     spin_box.setValue(0)
                 self.table.setItem(6, 1, QTableWidgetItem(""))
+                self.table.setItem(7, 1, QTableWidgetItem(""))
                 return
 
             img = self.viewer.images[self.viewer.current_index]["array"]
@@ -175,6 +191,7 @@ class ROIInfoWidget(QGroupBox):
                 for spin_box in self.spin_boxes.values():
                     spin_box.setValue(0)
                 self.table.setItem(6, 1, QTableWidgetItem(""))
+                self.table.setItem(7, 1, QTableWidgetItem(""))
                 return
 
             x = current_rect.x()
@@ -205,10 +222,51 @@ class ROIInfoWidget(QGroupBox):
                 self.spin_boxes[i].setValue(value)
                 self.spin_boxes[i].blockSignals(False)
 
-            # Update pixel count
+            # Update diagonal (read-only)
+            diagonal = (w**2 + h**2) ** 0.5
+            diagonal_item = QTableWidgetItem(f"{diagonal:.2f}")
+            diagonal_item.setFlags(diagonal_item.flags() & ~Qt.ItemIsEditable)
+            self.table.setItem(6, 1, diagonal_item)
+
+            # Update pixel count (read-only)
             pixel_count = w * h if 0 <= x < img_w and 0 <= y < img_h else 0
-            item = QTableWidgetItem(f"{pixel_count:,}")
-            item.setFlags(item.flags() & ~Qt.ItemIsEditable)
-            self.table.setItem(6, 1, item)
+            pixel_count_item = QTableWidgetItem(f"{pixel_count:,}")
+            pixel_count_item.setFlags(pixel_count_item.flags() & ~Qt.ItemIsEditable)
+            self.table.setItem(7, 1, pixel_count_item)
         finally:
             self._updating = False
+
+    def _show_context_menu(self, pos):
+        """Show context menu with copy option."""
+        menu = QMenu()
+        copy_action = menu.addAction("コピー")
+        action = menu.exec_(self.table.mapToGlobal(pos))
+        if action == copy_action:
+            self._copy_selection()
+
+    def _copy_selection(self):
+        """Copy selected cells to clipboard in comma-separated format."""
+        selection = self.table.selectedRanges()
+        if not selection:
+            return
+
+        rows = []
+        for sel_range in selection:
+            for row in range(sel_range.topRow(), sel_range.bottomRow() + 1):
+                cols = []
+                for col in range(sel_range.leftColumn(), sel_range.rightColumn() + 1):
+                    # For rows with spin boxes, get the spin box value
+                    if row in self.spin_boxes:
+                        widget = self.table.cellWidget(row, col)
+                        if widget and col == 1:  # Value column with spin box
+                            cols.append(str(self.spin_boxes[row].value()))
+                        else:
+                            item = self.table.item(row, col)
+                            cols.append(item.text() if item else "")
+                    else:
+                        item = self.table.item(row, col)
+                        cols.append(item.text() if item else "")
+                rows.append(",".join(cols))
+
+        text = "\n".join(rows)
+        QGuiApplication.clipboard().setText(text)

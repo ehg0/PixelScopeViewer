@@ -83,7 +83,7 @@ class StatusUpdater:
             return
         p = self.viewer.images[self.viewer.current_index]["path"]
 
-        # Update title bar with filename and index
+        # Update title bar with filename, size, and index
         filename = Path(p).name
         img = self.viewer.images[self.viewer.current_index]
         arr = img.get("base_array", img.get("array"))
@@ -92,7 +92,26 @@ class StatusUpdater:
             c = 1
         else:
             h, w, c = arr.shape[:3]
-        title = f"[{self.viewer.current_index+1}/{len(self.viewer.images)}]  {filename} — {w}×{h}, {c}ch"
+
+        # Get file size
+        file_size_str = ""
+        try:
+            file_size = Path(p).stat().st_size
+            if file_size < 1024:
+                file_size_str = f"{file_size}B"
+            elif file_size < 1024 * 1024:
+                file_size_str = f"{file_size / 1024:.1f}KB"
+            elif file_size < 1024 * 1024 * 1024:
+                file_size_str = f"{file_size / (1024 * 1024):.1f}MB"
+            else:
+                file_size_str = f"{file_size / (1024 * 1024 * 1024):.2f}GB"
+        except Exception:
+            file_size_str = ""
+
+        if file_size_str:
+            title = f"[{self.viewer.current_index+1}/{len(self.viewer.images)}]  {filename} ({file_size_str}) — {w}×{h}, {c}ch"
+        else:
+            title = f"[{self.viewer.current_index+1}/{len(self.viewer.images)}]  {filename} — {w}×{h}, {c}ch"
         self.viewer.setWindowTitle(title)
 
         # display current scale

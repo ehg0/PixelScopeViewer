@@ -77,6 +77,8 @@ class BrightnessManager:
             )
             self.viewer.brightness_dialog.mode_1ch_changed.connect(self.viewer.brightness_manager.on_mode_1ch_changed)
             self.viewer.brightness_dialog.mode_2ch_changed.connect(self.viewer.brightness_manager.on_mode_2ch_changed)
+            # Clear reference when dialog is closed
+            self.viewer.brightness_dialog.finished.connect(lambda: setattr(self.viewer, "brightness_dialog", None))
             # Initialize status bar with current parameters
             params = self.viewer.brightness_dialog.get_brightness()
             self.viewer.brightness_offset = params[0]

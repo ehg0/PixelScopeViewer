@@ -461,9 +461,9 @@ class ImageViewer(QMainWindow):
     def update_image_list_menu(self):
         """Update the image list menu with current loaded images."""
         self.img_menu.clear()
-        # Menu entries for navigation (shortcuts are provided as application-level actions)
-        self.img_menu.addAction(QAction("次の画像", self, triggered=self.next_image))
-        self.img_menu.addAction(QAction("前の画像", self, triggered=self.prev_image))
+        # Add navigation actions (defined in menu_builder with shortcuts)
+        self.img_menu.addAction(self.next_image_action)
+        self.img_menu.addAction(self.prev_image_action)
         self.img_menu.addSeparator()
 
         group = QActionGroup(self)
@@ -892,13 +892,28 @@ class ImageViewer(QMainWindow):
     def closeEvent(self, event):
         """Handle window close event to ensure all child dialogs are closed."""
         # Close all modeless dialogs to ensure the application exits cleanly
-        if self.brightness_dialog and self.brightness_dialog.isVisible():
-            self.brightness_dialog.close()
-        if self._features_dialog and self._features_dialog.isVisible():
-            self._features_dialog.close()
-        if self._analysis_dialog and self._analysis_dialog.isVisible():
-            self._analysis_dialog.close()
-        if self.help_dialog and self.help_dialog.isVisible():
-            self.help_dialog.close()
+        try:
+            if self.brightness_dialog and self.brightness_dialog.isVisible():
+                self.brightness_dialog.close()
+        except RuntimeError:
+            pass  # Dialog already deleted by Qt
+
+        try:
+            if self._features_dialog and self._features_dialog.isVisible():
+                self._features_dialog.close()
+        except RuntimeError:
+            pass  # Dialog already deleted by Qt
+
+        try:
+            if self._analysis_dialog and self._analysis_dialog.isVisible():
+                self._analysis_dialog.close()
+        except RuntimeError:
+            pass  # Dialog already deleted by Qt
+
+        try:
+            if self.help_dialog and self.help_dialog.isVisible():
+                self.help_dialog.close()
+        except RuntimeError:
+            pass  # Dialog already deleted by Qt
 
         event.accept()

@@ -499,8 +499,8 @@ class AnalysisDialog(QDialog):
             # Prepare data in order: Basic info first, then EXIF tags
             rows = []
 
-            # 1. Basic information (from PIL)
-            basic_keys = ["Filepath", "Format", "Size", "Channels", "DataType"]
+            # 1. Basic information
+            basic_keys = ["Filepath", "Format", "FileSize", "Size", "Channels", "DataType"]
             for key in basic_keys:
                 if key in metadata:
                     value_str = str(metadata[key])

@@ -18,20 +18,7 @@ class HelpDialog(QDialog):
         text = QTextEdit(self)
         text.setReadOnly(True)
 
-        content = """Keyboard shortcuts:
-- 読み込み : Ctrl + O
-- 画像全体をROI : Ctrl + A
-- ROI領域の画像をコピー : Ctrl + C
-- 閉じる : Ctrl + W
-- すべて閉じる : Ctrl + Shift + W
-- 表示設定ダイアログを開く : D
-- 解析ダイアログを開く : A
-- 特徴量表示ダイアログを開く : T
-- 次の画像 : n
-- 前の画像 : b
-- 拡大 : +
-- 縮小 : -
-- ゲイン0.5（暗く） : <
+        content = """- ゲイン0.5（暗く） : <
 - ゲイン2（明るく） : >
 - ROI解除 : ESC
 - Fit / 直前の拡大率をトグル : f

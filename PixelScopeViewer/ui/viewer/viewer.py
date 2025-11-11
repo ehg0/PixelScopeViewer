@@ -166,17 +166,29 @@ class ImageViewer(QMainWindow):
         self.info_dock.setWidget(self.info_tabs)
         self.addDockWidget(Qt.RightDockWidgetArea, self.info_dock)
 
+        # Status bar
         self.status = QStatusBar()
         self.setStatusBar(self.status)
         self.statusBar().setStyleSheet("font-size: 11pt;")
         self.status_pixel = QLabel()
-        self.status_roi = QLabel()
-        self.status_brightness = QLabel()  # Changed from status_shift to status_brightness
+        self.status_brightness = QLabel()
         self.status_scale = QLabel()
-        self.status.addPermanentWidget(self.status_pixel, 2)
-        self.status.addPermanentWidget(self.status_roi, 3)
-        self.status.addPermanentWidget(self.status_brightness, 2)  # Display brightness params
-        self.status.addPermanentWidget(self.status_scale, 1)
+
+        left_container = QWidget()
+        left_layout = QHBoxLayout(left_container)
+        left_layout.setContentsMargins(15, 0, 15, 0)
+        left_layout.addWidget(self.status_pixel)
+        self.status.addWidget(left_container)
+
+        right_container = QWidget()
+        right_layout = QHBoxLayout(right_container)
+        right_layout.setContentsMargins(15, 0, 15, 0)
+        right_layout.setSpacing(8)
+        right_layout.addWidget(QLabel("|"))
+        right_layout.addWidget(self.status_brightness)
+        right_layout.addWidget(QLabel("|"))
+        right_layout.addWidget(self.status_scale)
+        self.status.addPermanentWidget(right_container)
 
         self.help_dialog = HelpDialog(self)
         self.brightness_dialog = None  # Will be created when needed
@@ -236,9 +248,6 @@ class ImageViewer(QMainWindow):
 
     def update_brightness_status(self):
         self.status_updater.update_brightness_status()
-
-    def update_roi_status(self, rect=None):
-        self.status_updater.update_roi_status(rect)
 
     # Image loading and navigation
     def show_analysis_dialog(self, tab: Optional[str] = None):
@@ -369,6 +378,22 @@ class ImageViewer(QMainWindow):
         # For other cases, return original
         return arr
 
+    def _show_load_error(self, path: str, arr=None, error_msg: str = ""):
+        """Show error message with file details."""
+        filename = Path(path).name
+        details = f"ファイル名: {filename}"
+        if arr is not None:
+            details += f"\n配列形状: {arr.shape}\nデータ型: {arr.dtype}"
+        elif Path(path).suffix.lower() == ".npy":
+            try:
+                arr = np.load(path)
+                details += f"\n配列形状: {arr.shape}\nデータ型: {arr.dtype}"
+            except Exception:
+                pass
+        if error_msg:
+            details += f"\n\nエラー: {error_msg}"
+        QMessageBox.warning(self, "画像読み込みエラー", details)
+
     def _add_images(self, paths: Iterable[str]) -> int:
         """Load image files and append them to the viewer."""
         new_images = []
@@ -377,13 +402,22 @@ class ImageViewer(QMainWindow):
                 continue
             try:
                 arr = load_image(path)
+                # Validate array shape
+                if arr.ndim < 2 or arr.ndim > 3:
+                    self._show_load_error(path, arr, "2次元または3次元の配列が必要です")
+                    continue
+                if arr.ndim == 3 and arr.shape[2] not in [1, 2, 3, 4]:
+                    self._show_load_error(path, arr, "チャンネル数は1, 2, 3, または4である必要があります")
+                    continue
+
                 # Create and cache thumbnail pixmap on load
                 thumb_arr = self._prepare_thumbnail_array(arr)
                 thumb_qimg = numpy_to_qimage(thumb_arr)
                 thumb_pixmap = QPixmap.fromImage(thumb_qimg).scaled(
                     250, 250, Qt.KeepAspectRatio, Qt.SmoothTransformation
                 )
-            except Exception:
+            except Exception as e:
+                self._show_load_error(path, error_msg=str(e))
                 continue
             img_data = {
                 "path": str(Path(path).resolve()),
@@ -436,9 +470,9 @@ class ImageViewer(QMainWindow):
     def update_image_list_menu(self):
         """Update the image list menu with current loaded images."""
         self.img_menu.clear()
-        # Menu entries for navigation (shortcuts are provided as application-level actions)
-        self.img_menu.addAction(QAction("次の画像", self, triggered=self.next_image))
-        self.img_menu.addAction(QAction("前の画像", self, triggered=self.prev_image))
+        # Add navigation actions (defined in menu_builder with shortcuts)
+        self.img_menu.addAction(self.next_image_action)
+        self.img_menu.addAction(self.prev_image_action)
         self.img_menu.addSeparator()
 
         group = QActionGroup(self)
@@ -561,7 +595,6 @@ class ImageViewer(QMainWindow):
             )
             self.image_label.roi_rect = rect
             self.image_label.update()
-            self.update_roi_status(rect)
 
         # notify any open modeless AnalysisDialogs so they can refresh for new image
         if self._analysis_dialog:
@@ -761,7 +794,6 @@ class ImageViewer(QMainWindow):
             int(rect.width() / s),
             int(rect.height() / s),
         )
-        self.update_roi_status(rect)
         # notify any open modeless AnalysisDialogs so they can refresh for new ROI
         if self._analysis_dialog:
             # Get current image data
@@ -827,8 +859,6 @@ class ImageViewer(QMainWindow):
             )
             self.image_label.roi_rect = rect_label
             self.image_label.update()
-            # Update status based on canonical image ROI
-            self.update_roi_status()
 
             # Notify any open modeless AnalysisDialogs
             if self._analysis_dialog:
@@ -859,7 +889,6 @@ class ImageViewer(QMainWindow):
         if e.key() == Qt.Key_Escape:
             self.image_label.roi_rect = None
             self.image_label.update()
-            self.status_roi.setText("")
             return
 
         super().keyPressEvent(e)
@@ -867,13 +896,28 @@ class ImageViewer(QMainWindow):
     def closeEvent(self, event):
         """Handle window close event to ensure all child dialogs are closed."""
         # Close all modeless dialogs to ensure the application exits cleanly
-        if self.brightness_dialog and self.brightness_dialog.isVisible():
-            self.brightness_dialog.close()
-        if self._features_dialog and self._features_dialog.isVisible():
-            self._features_dialog.close()
-        if self._analysis_dialog and self._analysis_dialog.isVisible():
-            self._analysis_dialog.close()
-        if self.help_dialog and self.help_dialog.isVisible():
-            self.help_dialog.close()
+        try:
+            if self.brightness_dialog and self.brightness_dialog.isVisible():
+                self.brightness_dialog.close()
+        except RuntimeError:
+            pass  # Dialog already deleted by Qt
+
+        try:
+            if self._features_dialog and self._features_dialog.isVisible():
+                self._features_dialog.close()
+        except RuntimeError:
+            pass  # Dialog already deleted by Qt
+
+        try:
+            if self._analysis_dialog and self._analysis_dialog.isVisible():
+                self._analysis_dialog.close()
+        except RuntimeError:
+            pass  # Dialog already deleted by Qt
+
+        try:
+            if self.help_dialog and self.help_dialog.isVisible():
+                self.help_dialog.close()
+        except RuntimeError:
+            pass  # Dialog already deleted by Qt
 
         event.accept()

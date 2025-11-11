@@ -77,6 +77,8 @@ class BrightnessManager:
             )
             self.viewer.brightness_dialog.mode_1ch_changed.connect(self.viewer.brightness_manager.on_mode_1ch_changed)
             self.viewer.brightness_dialog.mode_2ch_changed.connect(self.viewer.brightness_manager.on_mode_2ch_changed)
+            # Clear reference when dialog is closed
+            self.viewer.brightness_dialog.finished.connect(lambda: setattr(self.viewer, "brightness_dialog", None))
             # Initialize status bar with current parameters
             params = self.viewer.brightness_dialog.get_brightness()
             self.viewer.brightness_offset = params[0]
@@ -176,6 +178,9 @@ class BrightnessManager:
             else:
                 self.viewer.brightness_saturation = 255
             self.viewer.update_brightness_status()
+
+        # Save reset values to dtype-specific storage so they persist across image switches
+        self._save_current_dtype_params()
 
         # Refresh display if the dialog didn't already trigger it
         if not handled_by_dialog and self.viewer.current_index is not None:

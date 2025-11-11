@@ -19,10 +19,11 @@ class NavigatorWidget(QGroupBox):
 
         self.thumbnail_label = QLabel()
         self.thumbnail_label.setFixedSize(250, 250)
-        self.thumbnail_label.setAlignment(Qt.AlignCenter)
+        self.thumbnail_label.setAlignment(Qt.AlignTop | Qt.AlignHCenter)
 
         layout = QVBoxLayout(self)
         layout.addWidget(self.thumbnail_label)
+        layout.addStretch()  # Add stretch to push thumbnail to top
 
         # Connect to viewer signals
         # Assuming viewer has a signal for image/zoom changes

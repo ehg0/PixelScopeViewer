@@ -232,6 +232,22 @@ def get_image_metadata(path_or_img: Union[str, Path, Image.Image]) -> dict:
     # Extract basic information based on file type
     if path:
         path_obj = Path(path)
+
+        # Add file size for all file types
+        try:
+            file_size = path_obj.stat().st_size
+            if file_size < 1024:
+                size_str = f"{file_size} B"
+            elif file_size < 1024 * 1024:
+                size_str = f"{file_size / 1024:.1f} KB"
+            elif file_size < 1024 * 1024 * 1024:
+                size_str = f"{file_size / (1024 * 1024):.1f} MB"
+            else:
+                size_str = f"{file_size / (1024 * 1024 * 1024):.2f} GB"
+            metadata["FileSize"] = size_str
+        except Exception:
+            pass
+
         ext = path_obj.suffix.lower()
         if ext in (".exr", ".npy"):
             try:

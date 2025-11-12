@@ -35,9 +35,10 @@ def determine_dtype_defaults(image_array=None, image_path=None):
 
     # Check for .bin file special case
     if image_path and image_path.lower().endswith(".bin"):
+        result["dtype_key"] = "uint16"
         result["initial_saturation"] = 1023
-        result["saturation_range"] = (1, 4095)
-        result["offset_range"] = (-1023, 1023)
+        result["saturation_range"] = (1, 65535)
+        result["offset_range"] = (-32767, 32767)
 
     # Override with actual image dtype if available
     if image_array is not None:
@@ -48,15 +49,14 @@ def determine_dtype_defaults(image_array=None, image_path=None):
             result["initial_saturation"] = 1.0
             result["saturation_range"] = (0.001, 10.0)
             result["offset_range"] = (-1.0, 1.0)
-            result["gain_range"] = (0.1, 10.0)
         elif np.issubdtype(dtype, np.integer):
             info = np.iinfo(dtype)
             max_val = info.max
             if max_val > 255:
                 result["dtype_key"] = "uint16"
-                result["initial_saturation"] = min(max_val, 4095)
-                result["saturation_range"] = (1, max_val)
-                result["offset_range"] = (-max_val // 2, max_val // 2)
+                result["initial_saturation"] = 1023
+                result["saturation_range"] = 65535
+                result["offset_range"] = (-32767, 32767)
 
     return result
 

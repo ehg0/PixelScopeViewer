@@ -458,5 +458,20 @@ class FeaturesDialog(QDialog):
             else:
                 self.table_annotations.clearSelection()
             event.accept()
+        elif event.key() in (Qt.Key_Return, Qt.Key_Enter):
+            # Handle Enter key to load image from selected row
+            i = self.tabs.currentIndex()
+            if i == 0:  # Images tab
+                # Get current selection
+                selection = self.table_images.selectionModel()
+                if selection and selection.hasSelection():
+                    indexes = selection.selectedRows()
+                    if indexes:
+                        # Load the first selected row
+                        proxy_index = indexes[0]
+                        self._on_double_clicked(proxy_index)
+                        event.accept()
+                        return
+            super().keyPressEvent(event)
         else:
             super().keyPressEvent(event)

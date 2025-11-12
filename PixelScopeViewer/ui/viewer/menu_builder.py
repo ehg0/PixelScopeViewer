@@ -25,8 +25,19 @@ def create_menus(viewer):
         QAction("ROI領域の画像をコピー", viewer, shortcut="Ctrl+C", triggered=viewer.copy_roi_to_clipboard)
     )
     file_menu.addSeparator()
-    file_menu.addAction(QAction("閉じる", viewer, shortcut="Ctrl+W", triggered=viewer.close_current_image))
-    file_menu.addAction(QAction("すべて閉じる", viewer, shortcut="Ctrl+Shift+W", triggered=viewer.close_all_images))
+
+    # Close actions with application-level shortcuts
+    viewer.close_current_action = QAction("閉じる", viewer, shortcut="Ctrl+W")
+    viewer.close_current_action.setShortcutContext(Qt.ApplicationShortcut)
+    viewer.close_current_action.triggered.connect(viewer.close_current_image)
+    viewer.addAction(viewer.close_current_action)
+    file_menu.addAction(viewer.close_current_action)
+
+    viewer.close_all_action = QAction("すべて閉じる", viewer, shortcut="Ctrl+Shift+W")
+    viewer.close_all_action.setShortcutContext(Qt.ApplicationShortcut)
+    viewer.close_all_action.triggered.connect(viewer.close_all_images)
+    viewer.addAction(viewer.close_all_action)
+    file_menu.addAction(viewer.close_all_action)
 
     # Create actions that will be used in multiple menus and as global shortcuts
     # These must be defined before menus that use them

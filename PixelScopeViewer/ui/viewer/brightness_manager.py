@@ -8,6 +8,7 @@ from PySide6.QtWidgets import QMessageBox
 from ..dialogs import BrightnessDialog
 from ..utils import MODE_1CH_GRAYSCALE, MODE_1CH_JET, MODE_2CH_COMPOSITE, MODE_2CH_FLOW_HSV
 from ..dialogs.display.core import apply_brightness_adjustment as apply_brightness_core
+from ..dialogs.display.tabs.logic.brightness_utils import determine_dtype_defaults
 
 
 class BrightnessManager:
@@ -164,19 +165,18 @@ class BrightnessManager:
             # Reset brightness parameters manually when dialog is closed
             self.viewer.brightness_offset = 0
             self.viewer.brightness_gain = 1.0
-            # Default saturation depends on image dtype: 1.0 for float, 255 for integer
+            self.viewer.brightness_saturation = 255
             if self.viewer.current_index is not None:
                 try:
                     img = self.viewer.images[self.viewer.current_index]
                     base_arr = img.get("base_array", img.get("array"))
-                    if np.issubdtype(base_arr.dtype, np.floating):
-                        self.viewer.brightness_saturation = 1.0
-                    else:
-                        self.viewer.brightness_saturation = 255
+                    img_path = img.get("path")
+                    dtype_defaults = determine_dtype_defaults(base_arr, img_path)
+                    self.viewer.brightness_offset = dtype_defaults.get("initial_offset", 0)
+                    self.viewer.brightness_gain = dtype_defaults.get("initial_gain", 1.0)
+                    self.viewer.brightness_saturation = dtype_defaults.get("initial_saturation", 255)
                 except Exception:
-                    self.viewer.brightness_saturation = 255
-            else:
-                self.viewer.brightness_saturation = 255
+                    pass
             self.viewer.update_brightness_status()
 
         # Save reset values to dtype-specific storage so they persist across image switches

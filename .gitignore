@@ -164,4 +164,4 @@ cython_debug/
 
 sample/golden_gate_hills_4k.exr
 memo.md
-sample/sample
+sample/sample*

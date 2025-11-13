@@ -55,7 +55,7 @@ def determine_dtype_defaults(image_array=None, image_path=None):
             if max_val > 255:
                 result["dtype_key"] = "uint16"
                 result["initial_saturation"] = 1023
-                result["saturation_range"] = 65535
+                result["saturation_range"] = (1, 65535)
                 result["offset_range"] = (-32767, 32767)
 
     return result

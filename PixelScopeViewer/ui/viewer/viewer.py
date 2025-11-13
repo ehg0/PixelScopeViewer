@@ -291,9 +291,30 @@ class ImageViewer(QMainWindow):
 
     def open_files(self):
         """Open file dialog to load image files."""
-        files, _ = QFileDialog.getOpenFileNames(
-            self, "画像を開く", "", "Images (*.png *.jpg *.tif *.bmp *.jpeg *.exr *.npy)"
-        )
+        # Standard extensions
+        standard_exts = "*.png *.jpg *.tif *.bmp *.jpeg *.exr *.npy *.hdr *.tiff *.gif *.webp"
+
+        # Get custom extensions from registry
+        from ...core.image_io import ImageLoaderRegistry
+
+        registry = ImageLoaderRegistry.get_instance()
+        custom_exts, has_wildcard = registry.get_supported_extensions()
+
+        # Build filter string
+        all_exts = standard_exts
+        if custom_exts:
+            # Add custom extensions
+            custom_patterns = " ".join(f"*{ext}" for ext in sorted(custom_exts))
+            all_exts += " " + custom_patterns
+
+        # Create filter string
+        if has_wildcard:
+            # If wildcard loader exists, show "All Files" prominently
+            filter_str = f"All Files (*.*);;Images ({all_exts})"
+        else:
+            filter_str = f"Images ({all_exts});;All Files (*.*)"
+
+        files, _ = QFileDialog.getOpenFileNames(self, "画像を開く", "", filter_str)
         new_count = self._add_images(files)
         self._finalize_image_addition(new_count)
 
@@ -394,20 +415,51 @@ class ImageViewer(QMainWindow):
             details += f"\n\nエラー: {error_msg}"
         QMessageBox.warning(self, "画像読み込みエラー", details)
 
+    def _show_bulk_load_errors(self, failed_files):
+        """Show multiple file load errors in a single dialog."""
+        if len(failed_files) == 1:
+            path, error = failed_files[0]
+            self._show_load_error(path, error_msg=error)
+            return
+
+        # Multiple files failed
+        msg = f"{len(failed_files)}個のファイルの読み込みに失敗しました:\n\n"
+        for path, error in failed_files[:5]:  # Show first 5 only
+            filename = Path(path).name
+            # Truncate long error messages
+            error_short = error if len(error) < 60 else error[:57] + "..."
+            msg += f"• {filename}\n  {error_short}\n\n"
+
+        if len(failed_files) > 5:
+            msg += f"... 他 {len(failed_files) - 5} 件\n\n"
+
+        msg += "\nヒント: カスタムローダーを登録することで対応できる可能性があります。\n"
+        msg += "詳細は custom_loaders/README.md を参照してください。"
+
+        QMessageBox.warning(self, "画像読み込みエラー", msg)
+
     def _add_images(self, paths: Iterable[str]) -> int:
         """Load image files and append them to the viewer."""
         new_images = []
+        failed_files = []
+
         for path in paths or []:
             if not path:
                 continue
             try:
                 arr = load_image(path)
+
+                # Check if custom loader returned None (couldn't handle the file)
+                if arr is None:
+                    failed_files.append((path, "カスタムローダーで処理できませんでした"))
+                    continue
+
                 # Validate array shape
                 if arr.ndim < 2 or arr.ndim > 3:
-                    self._show_load_error(path, arr, "2次元または3次元の配列が必要です")
+                    failed_files.append((path, "2次元または3次元の配列が必要です"))
                     continue
                 if arr.ndim == 3 and arr.shape[2] not in [1, 2, 3, 4]:
-                    self._show_load_error(path, arr, "チャンネル数は1, 2, 3, または4である必要があります")
+                    failed_files.append((path, "チャンネル数は1, 2, 3, または4である必要があります"))
                     continue
 
                 # Create and cache thumbnail pixmap on load
@@ -416,16 +468,22 @@ class ImageViewer(QMainWindow):
                 thumb_pixmap = QPixmap.fromImage(thumb_qimg).scaled(
                     250, 250, Qt.KeepAspectRatio, Qt.SmoothTransformation
                 )
+
+                img_data = {
+                    "path": str(Path(path).resolve()),
+                    "array": arr,
+                    "base_array": arr.copy(),
+                    "thumbnail_pixmap": thumb_pixmap,  # Cache thumbnail
+                }
+                new_images.append(img_data)
+
             except Exception as e:
-                self._show_load_error(path, error_msg=str(e))
+                failed_files.append((path, str(e)))
                 continue
-            img_data = {
-                "path": str(Path(path).resolve()),
-                "array": arr,
-                "base_array": arr.copy(),
-                "thumbnail_pixmap": thumb_pixmap,  # Cache thumbnail
-            }
-            new_images.append(img_data)
+
+        # Show bulk errors if any
+        if failed_files:
+            self._show_bulk_load_errors(failed_files)
 
         if not new_images:
             return 0

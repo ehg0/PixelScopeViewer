@@ -176,6 +176,70 @@ CSV は Polars で読み込み、列の自動推定と並び替え/フィルタ�
   - チャンネル数: 1 (グレースケール), 3 (RGB), 4 (RGBA/RGBIR)
   - データ型: uint8, uint16, float32など
 
+### カスタムフォーマット対応（プラグイン機能）
+
+PixelScopeViewerは、**カスタムローダープラグイン**により、標準でサポートされていない画像フォーマットにも対応できます。
+
+#### 概要
+- 独自のバイナリ形式（.dat, .raw など）
+- カスタム構造のNPZファイル
+- その他の非標準フォーマット
+
+これらのフォーマットに対応するため、ユーザーが独自のローダー関数を作成し、`custom_loaders/` ディレクトリに配置することで、アプリケーション起動時に自動的に読み込まれます。
+
+#### 使い方
+1. `custom_loaders/` ディレクトリに移動
+2. サンプル (`_example_loader.py`) をコピーして新しいファイルを作成
+3. ローダー関数を実装
+4. アプリケーションを起動すると自動的に読み込まれます
+
+**詳細は `custom_loaders/README.md` を参照してください。**
+
+#### クイックスタート例
+
+```python
+# custom_loaders/my_loader.py
+import numpy as np
+from PixelScopeViewer.core.image_io import ImageLoaderRegistry
+
+def my_custom_loader(path: str):
+    if not path.endswith('.myformat'):
+        return None
+    # あなたの読み込み処理
+    data = load_my_format(path)
+    return data
+
+# 登録
+ImageLoaderRegistry.get_instance().register(
+    my_custom_loader,
+    extensions=['.myformat'],
+    priority=10
+)
+```
+
+これだけで `.myformat` ファイルが開けるようになります！
+
+### マルチフレーム画像（4次元配列）の扱い
+
+4次元配列 `(H, W, C, N)` を含むファイル（例: ビデオフレーム、時系列データ）を扱う場合は、事前展開ツールを使用してください。
+
+#### 使い方
+
+```powershell
+# 4D配列を個別のフレームファイルに展開
+python custom_loaders/multiframe/expand_multiframe.py input.npy output_frames/
+```
+
+これにより、`input.npy` (shape: H×W×C×N) が以下のように展開されます:
+- `output_frames/frame_0000.npy`
+- `output_frames/frame_0001.npy`
+- `output_frames/frame_0002.npy`
+- ...
+
+その後、PixelScopeViewerでこれらのファイルをすべて開くことで、`n`/`b`キーでフレーム間を移動できます。
+
+**詳細は `custom_loaders/multiframe/multiframe_guide.md` と `custom_loaders/multiframe/example_expand_multiframe.py` を参照してください。**
+
 
 
 ## アーキテクチャ

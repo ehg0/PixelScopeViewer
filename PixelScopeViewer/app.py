@@ -32,6 +32,21 @@ def main(argv=None):
     """
     if argv is None:
         argv = sys.argv
+
+    # Load custom image loaders before creating the application
+    try:
+        # Add project root to path to find custom_loaders
+        project_root = Path(__file__).parent.parent
+        if str(project_root) not in sys.path:
+            sys.path.insert(0, str(project_root))
+
+        # Import and load custom loaders
+        from custom_loaders import load_custom_loaders
+
+        load_custom_loaders()
+    except Exception as e:
+        print(f"Note: Custom loaders not loaded: {e}")
+
     app = QApplication(argv)
 
     # Set application icon (prefer ICO for better Windows taskbar support)

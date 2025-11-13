@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QMessageBox,
 )
-from PySide6.QtCore import Qt, Signal, QRect, QTimer
+from PySide6.QtCore import Qt, Signal, QRect
 from PySide6.QtGui import QShortcut, QKeySequence, QGuiApplication
 
 from .selection_dialog import TileSelectionDialog
@@ -167,7 +167,6 @@ class TilingComparisonDialog(QDialog):
             # Connect scrollbars for sync - use ONLY sliderMoved to avoid signal conflicts
             if tile.scroll_area.horizontalScrollBar():
                 hsb = tile.scroll_area.horizontalScrollBar()
-                print(f"[Setup] Tile{i} hsb connected")
                 # sliderMoved: user dragging scrollbar thumb
                 hsb.sliderMoved.connect(lambda val, idx=i: self._on_scroll(idx, "h", val, "sliderMoved"))
                 # rangeChanged: zoom or image change
@@ -176,7 +175,6 @@ class TilingComparisonDialog(QDialog):
                 )
             if tile.scroll_area.verticalScrollBar():
                 vsb = tile.scroll_area.verticalScrollBar()
-                print(f"[Setup] Tile{i} vsb connected")
                 # sliderMoved: user dragging scrollbar thumb
                 vsb.sliderMoved.connect(lambda val, idx=i: self._on_scroll(idx, "v", val, "sliderMoved"))
                 # rangeChanged: zoom or image change
@@ -404,9 +402,6 @@ class TilingComparisonDialog(QDialog):
         Uses (value + pageStep/2) / (maximum + pageStep) to keep visible region aligned
         across different content sizes and viewport dimensions.
         """
-        print(
-            f"[SyncScroll] Called: source={source_index}, dir={direction}, val={value}, syncing={self._syncing_scroll}"
-        )
         if self._syncing_scroll:
             return
         # Get source scrollbar and compute normalized center ratio
@@ -416,12 +411,10 @@ class TilingComparisonDialog(QDialog):
             else self.tiles[source_index].scroll_area.verticalScrollBar()
         )
         if src_sb is None:
-            print(f"[SyncScroll] Source scrollbar is None")
             return
         src_max = src_sb.maximum()
         src_page = src_sb.pageStep()
         denom = src_max + src_page
-        print(f"[SyncScroll] Source: max={src_max}, page={src_page}, denom={denom}")
         if denom <= 0:
             # No scrollable range; do not force others
             return
@@ -430,7 +423,6 @@ class TilingComparisonDialog(QDialog):
         # Center position ratio in [0,1]
         center_pos = src_val + (src_page / 2.0)
         ratio = max(0.0, min(1.0, center_pos / float(denom)))
-        print(f"[SyncScroll] Ratio={ratio:.4f}")
 
         self._syncing_scroll = True
         try:
@@ -459,22 +451,11 @@ class TilingComparisonDialog(QDialog):
                 if tgt_sb.value() == tgt_val:
                     continue
 
-                print(f"[SyncScroll]   Tile{i} {direction}: {tgt_sb.value()} -> {tgt_val}")
-
-                # Use a single shot timer to avoid potential recursive signal storms
-                # and to allow the current event processing to finish.
-                # This can help with UI update consistency.
-                def create_setter(target_scrollbar, value_to_set):
-                    def setter():
-                        target_scrollbar.blockSignals(True)
-                        target_scrollbar.setValue(value_to_set)
-                        target_scrollbar.blockSignals(False)
-                        # Force immediate viewport update
-                        tile.scroll_area.viewport().update()
-
-                    return setter
-
-                QTimer.singleShot(0, create_setter(tgt_sb, tgt_val))
+                # Set immediately within syncing window to avoid later overrides
+                tgt_sb.blockSignals(True)
+                tgt_sb.setValue(tgt_val)
+                tgt_sb.blockSignals(False)
+                tile.scroll_area.viewport().update()
 
         finally:
             self._syncing_scroll = False

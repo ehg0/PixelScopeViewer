@@ -446,12 +446,13 @@ class TilingComparisonDialog(QDialog):
                 # Set value directly - _syncing_scroll flag prevents recursion
                 # Do NOT use blockSignals as it prevents viewport updates
                 tgt_sb.setValue(tgt_val)
-                
+
                 # Force the scroll area to process the change immediately
                 tile.scroll_area.update()
                 tile.scroll_area.viewport().update()
                 # Process pending events to ensure scroll takes effect
                 from PySide6.QtCore import QCoreApplication
+
                 QCoreApplication.processEvents()
 
         finally:

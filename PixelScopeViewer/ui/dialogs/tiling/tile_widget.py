@@ -105,29 +105,34 @@ class TileWidget(QWidget):
                     self._on_zoom_requested(factor)
                     return True
             # No Ctrl => allow default scrolling, then trigger sync manually
-            dy = event.pixelDelta().y() if not event.pixelDelta().isNull() else event.angleDelta().y()
-            dx = event.pixelDelta().x() if not event.pixelDelta().isNull() else event.angleDelta().x()
             vsb = self.scroll_area.verticalScrollBar()
             hsb = self.scroll_area.horizontalScrollBar()
-            
+
             # Store current scroll positions before event
             old_v = vsb.value() if vsb else 0
             old_h = hsb.value() if hsb else 0
-            
-            # Let default handling occur first (this actually scrolls)
-            result = super().eventFilter(obj, event)
-            
-            # After wheel scroll, manually trigger sync ONLY if scrollbar actually moved
-            if dy != 0 and vsb and vsb.value() != old_v:
-                try:
-                    self.parent_dialog.sync_scroll(self.tile_index, "v", vsb.value())
-                except Exception:
-                    pass
-            if dx != 0 and hsb and hsb.value() != old_h:
-                try:
-                    self.parent_dialog.sync_scroll(self.tile_index, "h", hsb.value())
-                except Exception:
-                    pass
+
+            # Let the event propagate to trigger actual scrolling
+            # Don't accept it here, so it reaches the scroll area
+            result = False  # Let event continue to be processed
+
+            # Use a timer to check after the event has been fully processed
+            from PySide6.QtCore import QTimer
+
+            def check_and_sync():
+                # After wheel scroll, manually trigger sync ONLY if scrollbar actually moved
+                if vsb and vsb.value() != old_v:
+                    try:
+                        self.parent_dialog.sync_scroll(self.tile_index, "v", vsb.value())
+                    except Exception:
+                        pass
+                if hsb and hsb.value() != old_h:
+                    try:
+                        self.parent_dialog.sync_scroll(self.tile_index, "h", hsb.value())
+                    except Exception:
+                        pass
+
+            QTimer.singleShot(0, check_and_sync)
             return result
         return super().eventFilter(obj, event)
 

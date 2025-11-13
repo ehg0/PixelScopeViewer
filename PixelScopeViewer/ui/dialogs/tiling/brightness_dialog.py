@@ -6,13 +6,14 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QHBoxLayout,
     QLabel,
-    QSlider,
     QDoubleSpinBox,
     QPushButton,
     QGroupBox,
     QCheckBox,
 )
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Signal
+
+from PixelScopeViewer.ui.dialogs.display.tabs.logic import get_dtype_defaults
 
 
 class TilingBrightnessDialog(QDialog):
@@ -54,14 +55,9 @@ class TilingBrightnessDialog(QDialog):
         gain_control_layout = QHBoxLayout()
         gain_control_layout.addWidget(QLabel("Gain:"))
 
-        self.gain_slider = QSlider(Qt.Horizontal)
-        self.gain_slider.setRange(1, 500)  # 0.01 to 5.00
-        self.gain_slider.setValue(int(self.common_gain * 100))
-        self.gain_slider.valueChanged.connect(self._on_gain_changed)
-        gain_control_layout.addWidget(self.gain_slider)
-
         self.gain_spinbox = QDoubleSpinBox()
-        self.gain_spinbox.setRange(0.01, 5.0)
+        self.gain_spinbox.setRange(0.0078125, 1024.0)  # 2^-7 to 2^10
+        self.gain_spinbox.setDecimals(6)
         self.gain_spinbox.setSingleStep(0.01)
         self.gain_spinbox.setValue(self.common_gain)
         self.gain_spinbox.valueChanged.connect(self._on_gain_spinbox_changed)
@@ -77,19 +73,21 @@ class TilingBrightnessDialog(QDialog):
             group_box = QGroupBox(f"{dtype_group} パラメータ")
             group_layout = QVBoxLayout(group_box)
 
+            # Get ranges from centralized defaults
+            defaults = get_dtype_defaults(dtype_group)
+            offset_range = defaults["offset_range"]
+            sat_range = defaults["saturation_range"]
+            is_float = defaults["is_float_type"]
+            decimals = 5 if is_float else 0
+
             # Offset control
             offset_layout = QHBoxLayout()
             offset_layout.addWidget(QLabel("Offset:"))
 
-            offset_slider = QSlider(Qt.Horizontal)
-            offset_slider.setRange(-1000, 1000)
-            offset_slider.setValue(0)
-            offset_slider.valueChanged.connect(lambda v, dg=dtype_group: self._on_offset_changed(dg, v))
-            offset_layout.addWidget(offset_slider)
-
             offset_spinbox = QDoubleSpinBox()
-            offset_spinbox.setRange(-1.0, 1.0)
-            offset_spinbox.setSingleStep(0.01)
+            offset_spinbox.setRange(offset_range[0], offset_range[1])
+            offset_spinbox.setDecimals(decimals)
+            offset_spinbox.setSingleStep(0.01 if is_float else 1.0)
             offset_spinbox.setValue(0.0)
             offset_spinbox.valueChanged.connect(lambda v, dg=dtype_group: self._on_offset_spinbox_changed(dg, v))
             offset_layout.addWidget(offset_spinbox)
@@ -100,16 +98,11 @@ class TilingBrightnessDialog(QDialog):
             sat_layout = QHBoxLayout()
             sat_layout.addWidget(QLabel("Saturation:"))
 
-            sat_slider = QSlider(Qt.Horizontal)
-            sat_slider.setRange(1, 500)  # 0.01 to 5.00
-            sat_slider.setValue(100)
-            sat_slider.valueChanged.connect(lambda v, dg=dtype_group: self._on_saturation_changed(dg, v))
-            sat_layout.addWidget(sat_slider)
-
             sat_spinbox = QDoubleSpinBox()
-            sat_spinbox.setRange(0.01, 5.0)
-            sat_spinbox.setSingleStep(0.01)
-            sat_spinbox.setValue(1.0)
+            sat_spinbox.setRange(sat_range[0], sat_range[1])
+            sat_spinbox.setDecimals(decimals)
+            sat_spinbox.setSingleStep(0.01 if is_float else 1.0)
+            sat_spinbox.setValue(defaults["initial_saturation"])
             sat_spinbox.valueChanged.connect(lambda v, dg=dtype_group: self._on_saturation_spinbox_changed(dg, v))
             sat_layout.addWidget(sat_spinbox)
 
@@ -119,9 +112,7 @@ class TilingBrightnessDialog(QDialog):
 
             # Store controls for later updates
             self.dtype_controls[dtype_group] = {
-                "offset_slider": offset_slider,
                 "offset_spinbox": offset_spinbox,
-                "sat_slider": sat_slider,
                 "sat_spinbox": sat_spinbox,
             }
 
@@ -151,11 +142,8 @@ class TilingBrightnessDialog(QDialog):
     def _update_values_from_params(self):
         """Update UI controls from current parameters."""
         # Update gain
-        self.gain_slider.blockSignals(True)
         self.gain_spinbox.blockSignals(True)
-        self.gain_slider.setValue(int(self.common_gain * 100))
         self.gain_spinbox.setValue(self.common_gain)
-        self.gain_slider.blockSignals(False)
         self.gain_spinbox.blockSignals(False)
 
         # Update dtype-specific params
@@ -165,50 +153,18 @@ class TilingBrightnessDialog(QDialog):
             offset = params["offset"]
             saturation = params["saturation"]
 
-            controls["offset_slider"].blockSignals(True)
             controls["offset_spinbox"].blockSignals(True)
-            controls["sat_slider"].blockSignals(True)
             controls["sat_spinbox"].blockSignals(True)
 
-            controls["offset_slider"].setValue(int(offset * 1000))
             controls["offset_spinbox"].setValue(offset)
-            controls["sat_slider"].setValue(int(saturation * 100))
             controls["sat_spinbox"].setValue(saturation)
 
-            controls["offset_slider"].blockSignals(False)
             controls["offset_spinbox"].blockSignals(False)
-            controls["sat_slider"].blockSignals(False)
             controls["sat_spinbox"].blockSignals(False)
-
-    def _on_gain_changed(self, value: int):
-        """Handle gain slider change."""
-        self.common_gain = value / 100.0
-        self.gain_spinbox.blockSignals(True)
-        self.gain_spinbox.setValue(self.common_gain)
-        self.gain_spinbox.blockSignals(False)
-
-        if self.auto_apply_checkbox.isChecked():
-            self._emit_brightness_changed()
 
     def _on_gain_spinbox_changed(self, value: float):
         """Handle gain spinbox change."""
         self.common_gain = value
-        self.gain_slider.blockSignals(True)
-        self.gain_slider.setValue(int(value * 100))
-        self.gain_slider.blockSignals(False)
-
-        if self.auto_apply_checkbox.isChecked():
-            self._emit_brightness_changed()
-
-    def _on_offset_changed(self, dtype_group: str, value: int):
-        """Handle offset slider change."""
-        offset = value / 1000.0
-        self.brightness_params_by_dtype[dtype_group]["offset"] = offset
-
-        controls = self.dtype_controls[dtype_group]
-        controls["offset_spinbox"].blockSignals(True)
-        controls["offset_spinbox"].setValue(offset)
-        controls["offset_spinbox"].blockSignals(False)
 
         if self.auto_apply_checkbox.isChecked():
             self._emit_brightness_changed()
@@ -217,35 +173,12 @@ class TilingBrightnessDialog(QDialog):
         """Handle offset spinbox change."""
         self.brightness_params_by_dtype[dtype_group]["offset"] = value
 
-        controls = self.dtype_controls[dtype_group]
-        controls["offset_slider"].blockSignals(True)
-        controls["offset_slider"].setValue(int(value * 1000))
-        controls["offset_slider"].blockSignals(False)
-
-        if self.auto_apply_checkbox.isChecked():
-            self._emit_brightness_changed()
-
-    def _on_saturation_changed(self, dtype_group: str, value: int):
-        """Handle saturation slider change."""
-        saturation = value / 100.0
-        self.brightness_params_by_dtype[dtype_group]["saturation"] = saturation
-
-        controls = self.dtype_controls[dtype_group]
-        controls["sat_spinbox"].blockSignals(True)
-        controls["sat_spinbox"].setValue(saturation)
-        controls["sat_spinbox"].blockSignals(False)
-
         if self.auto_apply_checkbox.isChecked():
             self._emit_brightness_changed()
 
     def _on_saturation_spinbox_changed(self, dtype_group: str, value: float):
         """Handle saturation spinbox change."""
         self.brightness_params_by_dtype[dtype_group]["saturation"] = value
-
-        controls = self.dtype_controls[dtype_group]
-        controls["sat_slider"].blockSignals(True)
-        controls["sat_slider"].setValue(int(value * 100))
-        controls["sat_slider"].blockSignals(False)
 
         if self.auto_apply_checkbox.isChecked():
             self._emit_brightness_changed()
@@ -255,9 +188,12 @@ class TilingBrightnessDialog(QDialog):
         self.common_gain = 1.0
 
         for dtype_group in self.brightness_params_by_dtype:
+            # Get defaults from centralized function
+            defaults = get_dtype_defaults(dtype_group)
+
             self.brightness_params_by_dtype[dtype_group] = {
-                "offset": 0.0,
-                "saturation": 1.0,
+                "offset": defaults["initial_offset"],
+                "saturation": defaults["initial_saturation"],
             }
 
         self._update_values_from_params()

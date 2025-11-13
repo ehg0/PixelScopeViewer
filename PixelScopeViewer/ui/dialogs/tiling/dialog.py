@@ -142,6 +142,11 @@ class TilingComparisonDialog(QDialog):
         change_images_action = file_menu.addAction("比較画像変更(&C)...")
         change_images_action.triggered.connect(self.change_comparison_images)
 
+        # View menu
+        view_menu = menu_bar.addMenu("表示(&V)")
+        brightness_action = view_menu.addAction("輝度調整(&B)...")
+        brightness_action.triggered.connect(self.show_brightness_dialog)
+
         # Help menu
         help_menu = menu_bar.addMenu("ヘルプ(&H)")
         help_action = help_menu.addAction("キーボードショートカット(&K)")
@@ -169,7 +174,6 @@ class TilingComparisonDialog(QDialog):
         # Create initial tiles
         self._rebuild_tiles()
 
-
     def _clear_tiles(self):
         """Clear all existing tiles from the grid."""
         # Disconnect and remove all tiles
@@ -185,17 +189,17 @@ class TilingComparisonDialog(QDialog):
                     tile.scroll_area.verticalScrollBar().sliderMoved.disconnect()
             except:
                 pass
-            
+
             # Remove from grid
             self.grid_layout.removeWidget(tile)
             tile.setParent(None)
             tile.deleteLater()
-        
+
         # Clear lists
         self.tiles.clear()
         self.tile_dtype_groups.clear()
         self.displayed_image_data.clear()
-        
+
         # Clear ROI
         self.common_roi_rect = None
 
@@ -253,32 +257,32 @@ class TilingComparisonDialog(QDialog):
         """Show selection dialog to change comparison images."""
         # Show selection dialog
         selection_dialog = TileSelectionDialog(self, self.all_images)
-        
+
         # Pre-select current grid size in combo box
         for idx in range(selection_dialog.grid_combo.count()):
             if selection_dialog.grid_combo.itemData(idx) == self.grid_size:
                 selection_dialog.grid_combo.setCurrentIndex(idx)
                 break
-        
+
         # Pre-check currently selected images
         for idx in self.selected_indices:
             if idx < selection_dialog.image_list_widget.count():
                 item = selection_dialog.image_list_widget.item(idx)
                 if item:
                     item.setCheckState(Qt.Checked)
-        
+
         if selection_dialog.exec() != QDialog.Accepted:
             return
-        
+
         grid_size, selected_indices = selection_dialog.get_selection()
         if not selected_indices:
             QMessageBox.warning(self, "比較画像変更", "画像が選択されていません。")
             return
-        
+
         # Update settings
         self.grid_size = grid_size
         self.selected_indices = selected_indices
-        
+
         # Rebuild tiles
         self._clear_tiles()
         self._rebuild_tiles()

@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QStatusBar,
     QLabel,
     QMessageBox,
+    QMenuBar,
 )
 from PySide6.QtCore import Qt, Signal, QRect
 from PySide6.QtGui import QShortcut, QKeySequence, QGuiApplication
@@ -19,6 +20,7 @@ from PySide6.QtGui import QShortcut, QKeySequence, QGuiApplication
 from .selection_dialog import TileSelectionDialog
 from .tile_widget import TileWidget
 from .brightness_dialog import TilingBrightnessDialog
+from .help_dialog import TilingHelpDialog
 from PixelScopeViewer.core.image_io import numpy_to_qimage
 
 
@@ -71,6 +73,7 @@ class TilingComparisonDialog(QDialog):
         """
         super().__init__(None)
         self.setWindowTitle("タイリング比較")
+        self.setFocusPolicy(Qt.StrongFocus)
         self.parent_viewer = parent
         self.all_images = image_list
 
@@ -122,11 +125,28 @@ class TilingComparisonDialog(QDialog):
         # Resize dialog
         self.resize(1200, 800)
 
+        # Set focus to dialog for keyboard input
+        self.setFocus()
+
     def _build_ui(self):
         """Build the user interface."""
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
         layout.setSpacing(4)
+
+        # Menu bar
+        menu_bar = QMenuBar(self)
+        
+        # File menu
+        file_menu = menu_bar.addMenu("ファイル(&F)")
+        change_images_action = file_menu.addAction("比較画像変更(&C)...")
+        change_images_action.triggered.connect(self.change_comparison_images)
+        
+        # Help menu
+        help_menu = menu_bar.addMenu("ヘルプ(&H)")
+        help_action = help_menu.addAction("キーボードショートカット(&K)")
+        help_action.triggered.connect(self.show_help)
+        layout.setMenuBar(menu_bar)
 
         # Grid layout for tiles
         grid_widget = QWidget()
@@ -226,6 +246,9 @@ class TilingComparisonDialog(QDialog):
 
     def _setup_shortcuts(self):
         """Setup keyboard shortcuts."""
+        # Help
+        QShortcut(QKeySequence("F1"), self).activated.connect(self.show_help)
+
         # Zoom
         QShortcut(QKeySequence("+"), self).activated.connect(lambda: self.adjust_zoom(2.0))
         QShortcut(QKeySequence("-"), self).activated.connect(lambda: self.adjust_zoom(0.5))
@@ -244,6 +267,16 @@ class TilingComparisonDialog(QDialog):
         # ROI operations
         QShortcut(QKeySequence("Ctrl+A"), self).activated.connect(self.select_all_roi)
         QShortcut(QKeySequence("Esc"), self).activated.connect(self.clear_roi)
+
+        # Arrow key scrolling (synchronized)
+        QShortcut(QKeySequence("Left"), self).activated.connect(lambda: self._scroll_by_key(-10, 0, False))
+        QShortcut(QKeySequence("Right"), self).activated.connect(lambda: self._scroll_by_key(10, 0, False))
+        QShortcut(QKeySequence("Up"), self).activated.connect(lambda: self._scroll_by_key(0, -10, False))
+        QShortcut(QKeySequence("Down"), self).activated.connect(lambda: self._scroll_by_key(0, 10, False))
+        QShortcut(QKeySequence("Shift+Left"), self).activated.connect(lambda: self._scroll_by_key(-50, 0, True))
+        QShortcut(QKeySequence("Shift+Right"), self).activated.connect(lambda: self._scroll_by_key(50, 0, True))
+        QShortcut(QKeySequence("Shift+Up"), self).activated.connect(lambda: self._scroll_by_key(0, -50, True))
+        QShortcut(QKeySequence("Shift+Down"), self).activated.connect(lambda: self._scroll_by_key(0, 50, True))
         QShortcut(QKeySequence("Ctrl+C"), self).activated.connect(self.copy_active_tile_roi)
 
         # Tile rotation
@@ -332,6 +365,15 @@ class TilingComparisonDialog(QDialog):
         self._brightness_dialog.show()
         self._brightness_dialog.raise_()
         self._brightness_dialog.activateWindow()
+
+    def show_help(self):
+        """Show help dialog with keyboard shortcuts."""
+        if not hasattr(self, "_help_dialog") or self._help_dialog is None:
+            self._help_dialog = TilingHelpDialog(self)
+
+        self._help_dialog.show()
+        self._help_dialog.raise_()
+        self._help_dialog.activateWindow()
 
     def on_brightness_dialog_changed(self, full_params: Dict):
         """Handle brightness change from dialog.
@@ -624,13 +666,35 @@ class TilingComparisonDialog(QDialog):
 
         self.status_label.setText(" | ".join(status_parts))
 
-    def keyPressEvent(self, event):
-        """Handle key press events."""
-        # Forward arrow keys to active tile for ROI editing
-        if self.tiles and 0 <= self.active_tile_index < len(self.tiles):
-            if event.key() in (Qt.Key_Left, Qt.Key_Right, Qt.Key_Up, Qt.Key_Down):
-                active_tile = self.tiles[self.active_tile_index]
-                active_tile.image_label.keyPressEvent(event)
-                return
+    def _scroll_by_key(self, dx: int, dy: int, is_shift: bool):
+        """Scroll all tiles synchronously by arrow keys.
+        
+        Args:
+            dx: Horizontal scroll delta (positive = right)
+            dy: Vertical scroll delta (positive = down)
+            is_shift: Whether Shift modifier is pressed
+        """
+        if not self.tiles or self.active_tile_index >= len(self.tiles):
+            return
+        
+        active_tile = self.tiles[self.active_tile_index]
+        scroll_area = active_tile.scroll_area
+        
+        # Apply horizontal scroll
+        if dx != 0:
+            hsb = scroll_area.horizontalScrollBar()
+            if hsb:
+                new_val = hsb.value() + dx
+                new_val = max(hsb.minimum(), min(hsb.maximum(), new_val))
+                hsb.setValue(new_val)
+                self.sync_scroll(self.active_tile_index, "h", new_val)
+        
+        # Apply vertical scroll
+        if dy != 0:
+            vsb = scroll_area.verticalScrollBar()
+            if vsb:
+                new_val = vsb.value() + dy
+                new_val = max(vsb.minimum(), min(vsb.maximum(), new_val))
+                vsb.setValue(new_val)
+                self.sync_scroll(self.active_tile_index, "v", new_val)
 
-        super().keyPressEvent(event)

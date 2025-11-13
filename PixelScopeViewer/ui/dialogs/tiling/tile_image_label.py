@@ -421,26 +421,12 @@ class TileImageLabel(QLabel):
             self.setCursor(Qt.ArrowCursor)
 
     def keyPressEvent(self, event: QKeyEvent):
-        """Support nudging ROI with arrow keys (1px, Shift:10px)."""
-        if self.roi_rect is None or self.qimage is None:
-            super().keyPressEvent(event)
+        """Arrow keys are handled by parent dialog for synchronized scrolling."""
+        # Arrow keys handled by parent for scroll sync; no ROI editing in tiling mode
+        if event.key() in (Qt.Key_Left, Qt.Key_Right, Qt.Key_Up, Qt.Key_Down):
+            event.ignore()  # Let parent handle it
             return
-        step = 10 if event.modifiers() & Qt.ShiftModifier else 1
-        x, y, w, h = self.roi_rect
-        if event.key() == Qt.Key_Left:
-            x = max(0, x - step)
-        elif event.key() == Qt.Key_Right:
-            x = min(self.qimage.width() - w, x + step)
-        elif event.key() == Qt.Key_Up:
-            y = max(0, y - step)
-        elif event.key() == Qt.Key_Down:
-            y = min(self.qimage.height() - h, y + step)
-        else:
-            super().keyPressEvent(event)
-            return
-        self.roi_rect = [x, y, w, h]
-        self.roi_changed.emit(self.roi_rect)
-        self.update()
+        super().keyPressEvent(event)
 
     def wheelEvent(self, event: QWheelEvent):
         """Handle Ctrl+wheel for zoom; otherwise defer to default (scroll)."""

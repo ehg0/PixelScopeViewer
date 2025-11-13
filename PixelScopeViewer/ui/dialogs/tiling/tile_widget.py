@@ -109,15 +109,21 @@ class TileWidget(QWidget):
             dx = event.pixelDelta().x() if not event.pixelDelta().isNull() else event.angleDelta().x()
             vsb = self.scroll_area.verticalScrollBar()
             hsb = self.scroll_area.horizontalScrollBar()
-            # Let default handling occur first
+            
+            # Store current scroll positions before event
+            old_v = vsb.value() if vsb else 0
+            old_h = hsb.value() if hsb else 0
+            
+            # Let default handling occur first (this actually scrolls)
             result = super().eventFilter(obj, event)
-            # After wheel scroll, manually trigger sync based on which scrollbar moved
-            if dy != 0 and vsb:
+            
+            # After wheel scroll, manually trigger sync ONLY if scrollbar actually moved
+            if dy != 0 and vsb and vsb.value() != old_v:
                 try:
                     self.parent_dialog.sync_scroll(self.tile_index, "v", vsb.value())
                 except Exception:
                     pass
-            if dx != 0 and hsb:
+            if dx != 0 and hsb and hsb.value() != old_h:
                 try:
                     self.parent_dialog.sync_scroll(self.tile_index, "h", hsb.value())
                 except Exception:

@@ -169,18 +169,10 @@ class TilingComparisonDialog(QDialog):
                 hsb = tile.scroll_area.horizontalScrollBar()
                 # sliderMoved: user dragging scrollbar thumb
                 hsb.sliderMoved.connect(lambda val, idx=i: self._on_scroll(idx, "h", val, "sliderMoved"))
-                # rangeChanged: zoom or image change
-                hsb.rangeChanged.connect(
-                    lambda _min, _max, idx=i, bar=hsb: self._on_scroll(idx, "h", bar.value(), "rangeChanged")
-                )
             if tile.scroll_area.verticalScrollBar():
                 vsb = tile.scroll_area.verticalScrollBar()
                 # sliderMoved: user dragging scrollbar thumb
                 vsb.sliderMoved.connect(lambda val, idx=i: self._on_scroll(idx, "v", val, "sliderMoved"))
-                # rangeChanged: zoom or image change
-                vsb.rangeChanged.connect(
-                    lambda _min, _max, idx=i, bar=vsb: self._on_scroll(idx, "v", bar.value(), "rangeChanged")
-                )
 
         layout.addWidget(grid_widget, 1)
 
@@ -451,11 +443,16 @@ class TilingComparisonDialog(QDialog):
                 if tgt_sb.value() == tgt_val:
                     continue
 
-                # Set immediately within syncing window to avoid later overrides
-                tgt_sb.blockSignals(True)
+                # Set value directly - _syncing_scroll flag prevents recursion
+                # Do NOT use blockSignals as it prevents viewport updates
                 tgt_sb.setValue(tgt_val)
-                tgt_sb.blockSignals(False)
+                
+                # Force the scroll area to process the change immediately
+                tile.scroll_area.update()
                 tile.scroll_area.viewport().update()
+                # Process pending events to ensure scroll takes effect
+                from PySide6.QtCore import QCoreApplication
+                QCoreApplication.processEvents()
 
         finally:
             self._syncing_scroll = False

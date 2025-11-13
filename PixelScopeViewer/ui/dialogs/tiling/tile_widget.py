@@ -55,6 +55,23 @@ class TileWidget(QWidget):
         frame_layout.setContentsMargins(0, 0, 0, 0)
         frame_layout.setSpacing(0)
 
+        # Status bar at top showing filename
+        self.status_label = QLabel("")
+        self.status_label.setAlignment(Qt.AlignCenter)
+        self.status_label.setMaximumHeight(24)
+        self.status_label.setStyleSheet(
+            """
+            QLabel {
+                background-color: rgba(50, 50, 50, 200);
+                color: white;
+                padding: 4px;
+                font-size: 12px;
+                font-weight: bold;
+            }
+        """
+        )
+        frame_layout.addWidget(self.status_label)
+
         # Scroll area + Image label
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(False)
@@ -71,22 +88,6 @@ class TileWidget(QWidget):
         self.scroll_area.viewport().installEventFilter(self)
         self.scroll_area.installEventFilter(self)
         frame_layout.addWidget(self.scroll_area)
-
-        # Status bar
-        self.status_label = QLabel("")
-        self.status_label.setAlignment(Qt.AlignCenter)
-        self.status_label.setMaximumHeight(20)
-        self.status_label.setStyleSheet(
-            """
-            QLabel {
-                background-color: rgba(0, 0, 0, 180);
-                color: white;
-                padding: 2px;
-                font-size: 10px;
-            }
-        """
-        )
-        frame_layout.addWidget(self.status_label)
 
         layout.addWidget(self.frame)
 

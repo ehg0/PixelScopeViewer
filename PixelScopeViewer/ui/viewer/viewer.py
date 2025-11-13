@@ -833,6 +833,16 @@ class ImageViewer(QMainWindow):
         self.current_index = len(self.images) - 1
         self.show_current_image()
 
+    def show_tiling_comparison_dialog(self):
+        """Show tiling comparison dialog."""
+        if len(self.images) < 2:
+            QMessageBox.information(self, "タイリング比較", "比較する画像が2枚以上必要です。")
+            return
+        from ..dialogs.tiling import TilingComparisonDialog
+
+        dlg = TilingComparisonDialog(self, image_list=self.images)
+        dlg.exec()
+
     # ROI operations
     def select_all(self):
         """Set entire image as ROI and notify related dialogs."""

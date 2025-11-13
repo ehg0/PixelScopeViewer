@@ -5,6 +5,7 @@ import numpy as np
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
+    QHBoxLayout,
     QLabel,
     QFrame,
     QScrollArea,
@@ -55,22 +56,50 @@ class TileWidget(QWidget):
         frame_layout.setContentsMargins(0, 0, 0, 0)
         frame_layout.setSpacing(0)
 
-        # Status bar at top showing filename
-        self.status_label = QLabel("")
-        self.status_label.setAlignment(Qt.AlignCenter)
-        self.status_label.setMaximumHeight(24)
-        self.status_label.setStyleSheet(
+        # Status bar at top with filename (left) and pixel value (right)
+        status_widget = QWidget()
+        status_widget.setMaximumHeight(24)
+        status_widget.setStyleSheet(
             """
-            QLabel {
+            QWidget {
                 background-color: rgba(50, 50, 50, 200);
-                color: white;
-                padding: 4px;
-                font-size: 12px;
-                font-weight: bold;
             }
         """
         )
-        frame_layout.addWidget(self.status_label)
+        status_layout = QHBoxLayout(status_widget)
+        status_layout.setContentsMargins(4, 4, 4, 4)
+        status_layout.setSpacing(8)
+        
+        # Filename label (left-aligned)
+        self.filename_label = QLabel("")
+        self.filename_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.filename_label.setStyleSheet(
+            """
+            QLabel {
+                color: white;
+                font-size: 12px;
+                font-weight: bold;
+                background-color: transparent;
+            }
+        """
+        )
+        status_layout.addWidget(self.filename_label, 1)
+        
+        # Pixel value label (right-aligned)
+        self.pixel_value_label = QLabel("")
+        self.pixel_value_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.pixel_value_label.setStyleSheet(
+            """
+            QLabel {
+                color: white;
+                font-size: 12px;
+                background-color: transparent;
+            }
+        """
+        )
+        status_layout.addWidget(self.pixel_value_label, 0)
+        
+        frame_layout.addWidget(status_widget)
 
         # Scroll area + Image label
         self.scroll_area = QScrollArea()
@@ -82,6 +111,8 @@ class TileWidget(QWidget):
         self.image_label.clicked.connect(lambda: self.activated.emit(self.tile_index))
         # Ctrl+wheel zoom request from label
         self.image_label.zoom_requested.connect(self._on_zoom_requested)
+        # Connect hover info to display pixel value
+        self.image_label.hover_info.connect(self._on_hover_info)
         self.scroll_area.setWidget(self.image_label)
         # Catch wheel events from multiple surfaces to ensure sync
         self.image_label.installEventFilter(self)
@@ -189,6 +220,19 @@ class TileWidget(QWidget):
         """Handle ROI change from image label."""
         self.roi_changed.emit(roi_rect)
 
+    def _on_hover_info(self, ix: int, iy: int, value_text: str):
+        """Handle hover info from image label and display in pixel value label.
+        
+        Args:
+            ix: Image x coordinate
+            iy: Image y coordinate
+            value_text: Formatted pixel value text
+        """
+        if value_text:
+            self.pixel_value_label.setText(value_text)
+        else:
+            self.pixel_value_label.setText("")
+
     def set_image(self, array: np.ndarray, gain: float, offset: float, saturation: float):
         """Set image data with brightness parameters.
 
@@ -222,12 +266,12 @@ class TileWidget(QWidget):
 
         self.image_label.set_image(arr, gain, params["offset"], params["saturation"])
 
-        # Update status
+        # Update filename display
         path = self.image_data.get("path", f"Image {self.tile_index + 1}")
         from pathlib import Path
 
         filename = Path(path).name if path else f"Image {self.tile_index + 1}"
-        self.status_label.setText(filename)
+        self.filename_label.setText(filename)
 
     def get_displayed_array(self) -> np.ndarray:
         """Get currently displayed array.
@@ -238,12 +282,12 @@ class TileWidget(QWidget):
         return self.image_data.get("base_array")
 
     def update_status(self, text: str):
-        """Update status bar text.
+        """Update pixel value display.
 
         Args:
-            text: Status text to display
+            text: Pixel value text to display
         """
-        self.status_label.setText(text)
+        self.pixel_value_label.setText(text)
 
     def set_roi(self, roi_rect: Optional[list]):
         """Set ROI rectangle.

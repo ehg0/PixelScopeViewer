@@ -195,12 +195,12 @@ class TilingComparisonDialog(QDialog):
         self.sync_scroll(source_index, direction, value)
 
     def _on_hover_info(self, tile_idx: int, ix: int, iy: int, value_text: str):
-        """On hover in any tile, show values from all tiles at (ix, iy)."""
-        values = []
+        """On hover in any tile, update all tiles' pixel value displays and show coordinates in status bar."""
+        # Update each tile's pixel value display with value at (ix, iy)
         for i, data in enumerate(self.displayed_image_data):
             arr = data.get("base_array", data.get("array"))
             if arr is None:
-                values.append(f"T{i+1}=NA")
+                self.tiles[i].update_status("")
                 continue
             h, w = arr.shape[:2]
             if 0 <= ix < w and 0 <= iy < h:
@@ -208,21 +208,21 @@ class TilingComparisonDialog(QDialog):
                     v = arr[iy, ix]
                     if hasattr(v, "shape") and len(getattr(v, "shape", ())) > 0:
                         flat = np.array(v).ravel().tolist()
-                        preview = ", ".join(str(x) for x in flat[:3])
-                        txt = f"[{preview}{', …' if len(flat) > 3 else ''}]"
+                        preview = ", ".join(str(x) for x in flat[:4])
+                        txt = f"[{preview}{', …' if len(flat) > 4 else ''}]"
                     else:
                         txt = str(v)
+                    # Truncate if too long
+                    if len(txt) > 50:
+                        txt = txt[:47] + "…"
                 except Exception:
                     txt = "NA"
             else:
-                txt = "--"
-            values.append(f"T{i+1}={txt}")
-        # Keep the label concise
-        grid_pos = f"({ix},{iy})"
-        summary = f"{grid_pos} " + " | ".join(values)
-        if len(summary) > 160:
-            summary = summary[:157] + "…"
-        self.hover_label.setText(summary)
+                txt = ""
+            self.tiles[i].update_status(txt)
+        
+        # Show only coordinates in status bar
+        self.hover_label.setText(f"({ix}, {iy})")
 
     def _setup_shortcuts(self):
         """Setup keyboard shortcuts."""

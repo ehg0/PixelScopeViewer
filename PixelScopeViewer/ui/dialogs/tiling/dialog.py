@@ -136,12 +136,12 @@ class TilingComparisonDialog(QDialog):
 
         # Menu bar
         menu_bar = QMenuBar(self)
-        
+
         # File menu
         file_menu = menu_bar.addMenu("ファイル(&F)")
         change_images_action = file_menu.addAction("比較画像変更(&C)...")
         change_images_action.triggered.connect(self.change_comparison_images)
-        
+
         # Help menu
         help_menu = menu_bar.addMenu("ヘルプ(&H)")
         help_action = help_menu.addAction("キーボードショートカット(&K)")
@@ -153,6 +153,54 @@ class TilingComparisonDialog(QDialog):
         self.grid_layout = QGridLayout(grid_widget)
         self.grid_layout.setSpacing(4)
 
+        layout.addWidget(grid_widget, 1)
+
+        # Status bar
+        self.status_bar = QStatusBar()
+        self.status_label = QLabel()
+        self.hover_label = QLabel()
+        self.status_bar.addWidget(self.status_label, 1)
+        self.status_bar.addPermanentWidget(self.hover_label)
+        layout.addWidget(self.status_bar)
+
+        # Setup shortcuts
+        self._setup_shortcuts()
+
+        # Create initial tiles
+        self._rebuild_tiles()
+
+
+    def _clear_tiles(self):
+        """Clear all existing tiles from the grid."""
+        # Disconnect and remove all tiles
+        for tile in self.tiles:
+            # Disconnect signals
+            try:
+                tile.activated.disconnect()
+                tile.roi_changed.disconnect()
+                tile.image_label.hover_info.disconnect()
+                if tile.scroll_area.horizontalScrollBar():
+                    tile.scroll_area.horizontalScrollBar().sliderMoved.disconnect()
+                if tile.scroll_area.verticalScrollBar():
+                    tile.scroll_area.verticalScrollBar().sliderMoved.disconnect()
+            except:
+                pass
+            
+            # Remove from grid
+            self.grid_layout.removeWidget(tile)
+            tile.setParent(None)
+            tile.deleteLater()
+        
+        # Clear lists
+        self.tiles.clear()
+        self.tile_dtype_groups.clear()
+        self.displayed_image_data.clear()
+        
+        # Clear ROI
+        self.common_roi_rect = None
+
+    def _rebuild_tiles(self):
+        """Rebuild tiles based on current selection."""
         rows, cols = self.grid_size
 
         # Create tiles
@@ -194,21 +242,46 @@ class TilingComparisonDialog(QDialog):
                 # sliderMoved: user dragging scrollbar thumb
                 vsb.sliderMoved.connect(lambda val, idx=i: self._on_scroll(idx, "v", val, "sliderMoved"))
 
-        layout.addWidget(grid_widget, 1)
+        # Set initial active tile
+        if self.tiles:
+            self.set_active_tile(0)
 
-        # Status bar
-        self.status_bar = QStatusBar()
-        self.status_label = QLabel()
-        self.hover_label = QLabel()
-        self.status_bar.addWidget(self.status_label, 1)
-        self.status_bar.addPermanentWidget(self.hover_label)
-        layout.addWidget(self.status_bar)
-
-        # Setup shortcuts
-        self._setup_shortcuts()
-
-        # Initial display
+        # Update display
         self.update_status_bar()
+
+    def change_comparison_images(self):
+        """Show selection dialog to change comparison images."""
+        # Show selection dialog
+        selection_dialog = TileSelectionDialog(self, self.all_images)
+        
+        # Pre-select current grid size in combo box
+        for idx in range(selection_dialog.grid_combo.count()):
+            if selection_dialog.grid_combo.itemData(idx) == self.grid_size:
+                selection_dialog.grid_combo.setCurrentIndex(idx)
+                break
+        
+        # Pre-check currently selected images
+        for idx in self.selected_indices:
+            if idx < selection_dialog.image_list_widget.count():
+                item = selection_dialog.image_list_widget.item(idx)
+                if item:
+                    item.setCheckState(Qt.Checked)
+        
+        if selection_dialog.exec() != QDialog.Accepted:
+            return
+        
+        grid_size, selected_indices = selection_dialog.get_selection()
+        if not selected_indices:
+            QMessageBox.warning(self, "比較画像変更", "画像が選択されていません。")
+            return
+        
+        # Update settings
+        self.grid_size = grid_size
+        self.selected_indices = selected_indices
+        
+        # Rebuild tiles
+        self._clear_tiles()
+        self._rebuild_tiles()
 
     def _on_scroll(self, source_index: int, direction: str, value: int, signal_name: str):
         """Handle scroll events with debug logging."""
@@ -668,7 +741,7 @@ class TilingComparisonDialog(QDialog):
 
     def _scroll_by_key(self, dx: int, dy: int, is_shift: bool):
         """Scroll all tiles synchronously by arrow keys.
-        
+
         Args:
             dx: Horizontal scroll delta (positive = right)
             dy: Vertical scroll delta (positive = down)
@@ -676,10 +749,10 @@ class TilingComparisonDialog(QDialog):
         """
         if not self.tiles or self.active_tile_index >= len(self.tiles):
             return
-        
+
         active_tile = self.tiles[self.active_tile_index]
         scroll_area = active_tile.scroll_area
-        
+
         # Apply horizontal scroll
         if dx != 0:
             hsb = scroll_area.horizontalScrollBar()
@@ -688,7 +761,7 @@ class TilingComparisonDialog(QDialog):
                 new_val = max(hsb.minimum(), min(hsb.maximum(), new_val))
                 hsb.setValue(new_val)
                 self.sync_scroll(self.active_tile_index, "h", new_val)
-        
+
         # Apply vertical scroll
         if dy != 0:
             vsb = scroll_area.verticalScrollBar()
@@ -697,4 +770,3 @@ class TilingComparisonDialog(QDialog):
                 new_val = max(vsb.minimum(), min(vsb.maximum(), new_val))
                 vsb.setValue(new_val)
                 self.sync_scroll(self.active_tile_index, "v", new_val)
-

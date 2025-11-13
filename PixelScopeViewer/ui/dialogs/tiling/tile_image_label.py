@@ -49,6 +49,7 @@ class TileImageLabel(QLabel):
         # Tracking
         self._drag_start = None
         self._original_roi = None
+        self._roi_drag_mode = None  # 'create', 'move', or None
 
     def set_image(self, array: np.ndarray, gain: float, offset: float, saturation: float):
         """Set image data with brightness parameters.
@@ -188,34 +189,83 @@ class TileImageLabel(QLabel):
             if self.roi_editable and self.qimage is not None:
                 self._drag_start = event.pos()
                 self._original_roi = self.roi_rect.copy() if self.roi_rect else None
+                self._roi_drag_mode = "create"
                 # Start a new ROI at the clicked point
                 ix, iy = self._widget_to_image_coords(event.pos())
                 self.roi_rect = [ix, iy, 0, 0]
                 self.roi_changed.emit(self.roi_rect)
                 self.update()
                 return
+        elif event.button() == Qt.RightButton:
+            if self.roi_editable and self.roi_rect is not None and self.qimage is not None:
+                # Check if click is inside existing ROI
+                ix, iy = self._widget_to_image_coords(event.pos())
+                rx, ry, rw, rh = self.roi_rect
+                if rx <= ix < rx + rw and ry <= iy < ry + rh:
+                    # Start moving the ROI
+                    self._drag_start = event.pos()
+                    self._original_roi = self.roi_rect.copy()
+                    self._roi_drag_mode = "move"
+                    return
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event: QMouseEvent):
-        """Handle mouse move for ROI editing (drag to create/resize)."""
+        """Handle mouse move for ROI editing (drag to create/resize or move)."""
         if self.roi_editable and self._drag_start is not None and self.qimage is not None:
-            x0, y0 = self._widget_to_image_coords(self._drag_start)
-            x1, y1 = self._widget_to_image_coords(event.pos())
-            x = min(x0, x1)
-            y = min(y0, y1)
-            w = abs(x1 - x0)
-            h = abs(y1 - y0)
-            self.roi_rect = [x, y, w, h]
-            self.roi_changed.emit(self.roi_rect)
-            self.update()
-            return
+            if self._roi_drag_mode == "create":
+                # Creating/resizing ROI
+                x0, y0 = self._widget_to_image_coords(self._drag_start)
+                x1, y1 = self._widget_to_image_coords(event.pos())
+                x = min(x0, x1)
+                y = min(y0, y1)
+                w = abs(x1 - x0)
+                h = abs(y1 - y0)
+                self.roi_rect = [x, y, w, h]
+                self.roi_changed.emit(self.roi_rect)
+                self.update()
+                return
+            elif self._roi_drag_mode == "move" and self._original_roi is not None:
+                # Moving existing ROI
+                start_ix, start_iy = self._widget_to_image_coords(self._drag_start)
+                curr_ix, curr_iy = self._widget_to_image_coords(event.pos())
+                dx = curr_ix - start_ix
+                dy = curr_iy - start_iy
+
+                orig_x, orig_y, orig_w, orig_h = self._original_roi
+                new_x = max(0, min(self.qimage.width() - orig_w, orig_x + dx))
+                new_y = max(0, min(self.qimage.height() - orig_h, orig_y + dy))
+
+                self.roi_rect = [new_x, new_y, orig_w, orig_h]
+                self.roi_changed.emit(self.roi_rect)
+                self.update()
+                return
+
+        # Hover info emit (always active when not dragging ROI)
+        if self.qimage is not None and self.array is not None:
+            ix, iy = self._widget_to_image_coords(event.pos())
+            try:
+                val = self.array[iy, ix]
+                if isinstance(val, np.ndarray) or (hasattr(val, "shape") and len(getattr(val, "shape", ())) > 0):
+                    flat = np.array(val).ravel().tolist()
+                    preview = ", ".join(str(x) for x in flat[:4])
+                    text = f"[{preview}{', …' if len(flat) > 4 else ''}]"
+                else:
+                    text = str(val)
+                # Truncate overly long text
+                if len(text) > 60:
+                    text = text[:57] + "…"
+            except Exception:
+                text = ""
+            self.hover_info.emit(int(ix), int(iy), text)
+
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event: QMouseEvent):
         """Handle mouse release to finalize ROI."""
-        if self.roi_editable and event.button() == Qt.LeftButton:
+        if self.roi_editable and (event.button() == Qt.LeftButton or event.button() == Qt.RightButton):
             self._drag_start = None
             self._original_roi = None
+            self._roi_drag_mode = None
             self.update()
             return
         super().mouseReleaseEvent(event)
@@ -283,34 +333,3 @@ class TileImageLabel(QLabel):
             return
         # Let parent scroll area handle scrolling
         event.ignore()
-
-    def mouseMoveEvent(self, event: QMouseEvent):
-        # ROI drag handling (as before)
-        if self.roi_editable and self._drag_start is not None and self.qimage is not None:
-            x0, y0 = self._widget_to_image_coords(self._drag_start)
-            x1, y1 = self._widget_to_image_coords(event.pos())
-            x = min(x0, x1)
-            y = min(y0, y1)
-            w = abs(x1 - x0)
-            h = abs(y1 - y0)
-            self.roi_rect = [x, y, w, h]
-            self.roi_changed.emit(self.roi_rect)
-            self.update()
-        # Hover info emit
-        if self.qimage is not None and self.array is not None:
-            ix, iy = self._widget_to_image_coords(event.pos())
-            try:
-                val = self.array[iy, ix]
-                if isinstance(val, np.ndarray) or (hasattr(val, "shape") and len(getattr(val, "shape", ())) > 0):
-                    flat = np.array(val).ravel().tolist()
-                    preview = ", ".join(str(x) for x in flat[:4])
-                    text = f"[{preview}{', …' if len(flat) > 4 else ''}]"
-                else:
-                    text = str(val)
-                # Truncate overly long text
-                if len(text) > 60:
-                    text = text[:57] + "…"
-            except Exception:
-                text = ""
-            self.hover_info.emit(int(ix), int(iy), text)
-        super().mouseMoveEvent(event)

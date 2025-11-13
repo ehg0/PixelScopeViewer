@@ -69,7 +69,7 @@ class TileWidget(QWidget):
         status_layout = QHBoxLayout(status_widget)
         status_layout.setContentsMargins(4, 4, 4, 4)
         status_layout.setSpacing(8)
-        
+
         # Filename label (left-aligned)
         self.filename_label = QLabel("")
         self.filename_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
@@ -84,7 +84,7 @@ class TileWidget(QWidget):
         """
         )
         status_layout.addWidget(self.filename_label, 1)
-        
+
         # Pixel value label (right-aligned)
         self.pixel_value_label = QLabel("")
         self.pixel_value_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
@@ -98,7 +98,7 @@ class TileWidget(QWidget):
         """
         )
         status_layout.addWidget(self.pixel_value_label, 0)
-        
+
         frame_layout.addWidget(status_widget)
 
         # Scroll area + Image label
@@ -222,7 +222,7 @@ class TileWidget(QWidget):
 
     def _on_hover_info(self, ix: int, iy: int, value_text: str):
         """Handle hover info from image label and display in pixel value label.
-        
+
         Args:
             ix: Image x coordinate
             iy: Image y coordinate

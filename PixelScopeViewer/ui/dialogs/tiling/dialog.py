@@ -220,7 +220,7 @@ class TilingComparisonDialog(QDialog):
             else:
                 txt = ""
             self.tiles[i].update_status(txt)
-        
+
         # Show only coordinates in status bar
         self.hover_label.setText(f"({ix}, {iy})")
 

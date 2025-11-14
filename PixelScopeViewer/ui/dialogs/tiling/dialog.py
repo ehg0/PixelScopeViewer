@@ -66,6 +66,7 @@ class TilingComparisonDialog(QDialog):
         self._brightness_dialog = None
         self._help_dialog = None
         self._analysis_dialog = None
+        self._comparison_dialog = None
 
         # Show selection dialog first
         selection_dialog = TileSelectionDialog(self, image_list)
@@ -146,7 +147,18 @@ class TilingComparisonDialog(QDialog):
         profile_action.triggered.connect(lambda: self.show_analysis_dialog(tab="Profile"))
 
         metadata_action = analysis_menu.addAction("メタデータ(&M)...")
-        metadata_action.triggered.connect(lambda: self.show_analysis_dialog(tab="Metadata"))  # Help menu
+        metadata_action.triggered.connect(lambda: self.show_analysis_dialog(tab="Metadata"))
+
+        analysis_menu.addSeparator()
+
+        comparison_action = analysis_menu.addAction("タイル比較(&C)...")
+        comparison_action.triggered.connect(self.show_comparison_dialog)
+
+        comparison_table_action = analysis_menu.addAction("比較テーブル(&T)...")
+        comparison_table_action.setShortcut("Ctrl+Shift+A")
+        comparison_table_action.triggered.connect(lambda: self.show_comparison_dialog(tab="Metadata"))
+
+        # Help menu
         help_menu = menu_bar.addMenu("ヘルプ(&H)")
         help_action = help_menu.addAction("キーボードショートカット(&K)")
         help_action.triggered.connect(self.show_help)
@@ -243,10 +255,13 @@ class TilingComparisonDialog(QDialog):
         self.grid_size = grid_size
         self.selected_indices = selected_indices
 
-        # Close analysis dialog before rebuilding tiles to avoid stale references
+        # Close dialogs before rebuilding tiles to avoid stale references
         if self._analysis_dialog is not None:
             self._analysis_dialog.close()
             self._analysis_dialog = None
+        if self._comparison_dialog is not None:
+            self._comparison_dialog.close()
+            self._comparison_dialog = None
 
         # Rebuild tiles
         self._clear_tiles()
@@ -440,6 +455,9 @@ class TilingComparisonDialog(QDialog):
         if self._analysis_dialog is not None:
             self._analysis_dialog.close()
             self._analysis_dialog = None
+        if self._comparison_dialog is not None:
+            self._comparison_dialog.close()
+            self._comparison_dialog = None
 
         # Accept the close event
         super().closeEvent(event)
@@ -577,6 +595,84 @@ class TilingComparisonDialog(QDialog):
 
         return image_array, roi_rect, file_path
 
+    def get_all_tiles_data(self):
+        """Get data from all tiles for comparison.
+
+        Returns:
+            list: List of dicts with keys:
+                - 'array': numpy array of displayed image
+                - 'rect': QRect of ROI (or None)
+                - 'path': file path
+                - 'index': tile index
+                - 'color': (r, g, b) tuple for plotting
+        """
+        if not self.tile_manager:
+            return []
+
+        tiles = self.tile_manager.get_tiles()
+        tiles_data = []
+
+        # Common ROI
+        roi_rect = None
+        if self.roi_manager:
+            roi_rect = self.roi_manager.common_roi_rect
+
+        # Generate distinct colors for each tile
+        num_tiles = len(tiles)
+        colors = self._generate_tile_colors(num_tiles)
+
+        for i, tile in enumerate(tiles):
+            # Get displayed image array
+            image_array = tile.get_displayed_array()
+
+            # Skip if invalid
+            if image_array is None or image_array.size == 0:
+                continue
+
+            # Get file path
+            file_path = None
+            if hasattr(tile, "image_data") and tile.image_data:
+                file_path = tile.image_data.get("path")
+
+            tiles_data.append(
+                {"array": image_array, "rect": roi_rect, "path": file_path, "index": i, "color": colors[i]}
+            )
+
+        return tiles_data
+
+    def _generate_tile_colors(self, num_tiles: int):
+        """Generate distinct colors for tiles.
+
+        Args:
+            num_tiles: Number of colors to generate
+
+        Returns:
+            list: List of (r, g, b) tuples (values 0-255)
+        """
+        if num_tiles == 0:
+            return []
+
+        # Use evenly spaced hues in HSV color space
+        colors = []
+        for i in range(num_tiles):
+            hue = i / num_tiles
+            # Convert HSV to RGB (simple approximation)
+            if hue < 1 / 6:
+                r, g, b = 255, int(255 * 6 * hue), 0
+            elif hue < 2 / 6:
+                r, g, b = int(255 * (2 - 6 * hue)), 255, 0
+            elif hue < 3 / 6:
+                r, g, b = 0, 255, int(255 * (6 * hue - 2))
+            elif hue < 4 / 6:
+                r, g, b = 0, int(255 * (4 - 6 * hue)), 255
+            elif hue < 5 / 6:
+                r, g, b = int(255 * (6 * hue - 4)), 0, 255
+            else:
+                r, g, b = 255, 0, int(255 * (6 - 6 * hue))
+            colors.append((r, g, b))
+
+        return colors
+
     def show_analysis_dialog(self, tab=None):
         """Show analysis dialog for the active tile.
 
@@ -621,6 +717,46 @@ class TilingComparisonDialog(QDialog):
             # Raise and activate the window
             self._analysis_dialog.raise_()
             self._analysis_dialog.activateWindow()
+
+    def show_comparison_dialog(self, tab=None):
+        """Show tiling comparison dialog for all tiles.
+
+        Args:
+            tab: Optional tab name to open ('Histogram', 'Profile', 'Metadata')
+        """
+        from .comparison_dialog import TilingComparisonDialog
+
+        # Get all tiles data
+        tiles_data = self.get_all_tiles_data()
+
+        if not tiles_data:
+            QMessageBox.warning(self, "比較", "比較する画像がありません。")
+            return
+
+        # Create or show existing comparison dialog
+        if self._comparison_dialog is None or not self._comparison_dialog.isVisible():
+            self._comparison_dialog = TilingComparisonDialog(parent=self, tiles_data=tiles_data)
+
+            # Clean up reference when dialog is closed
+            self._comparison_dialog.finished.connect(lambda: setattr(self, "_comparison_dialog", None))
+
+            # Set the requested tab
+            if tab:
+                self._comparison_dialog.set_current_tab(tab)
+
+            self._comparison_dialog.show()
+        else:
+            # Dialog already exists and is visible
+            # Update with current data
+            self._comparison_dialog.update_tiles_data(tiles_data)
+
+            # Set the requested tab
+            if tab:
+                self._comparison_dialog.set_current_tab(tab)
+
+            # Raise and activate the window
+            self._comparison_dialog.raise_()
+            self._comparison_dialog.activateWindow()
 
     def sync_scroll(self, source_index: int, direction: str, value: int):
         """Synchronize scrolls based on viewport-centered normalized position.

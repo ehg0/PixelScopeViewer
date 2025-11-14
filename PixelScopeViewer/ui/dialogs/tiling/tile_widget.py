@@ -288,12 +288,14 @@ class TileWidget(QWidget):
 
         self.image_label.set_image(arr, gain, params["offset"], params["saturation"])
 
-        # Update filename display
+        # Update filename display with tile number
         path = self.image_data.get("path", f"Image {self.tile_index + 1}")
         from pathlib import Path
 
         filename = Path(path).name if path else f"Image {self.tile_index + 1}"
-        self.filename_label.setText(filename)
+        # Add tile number to the display (1-indexed)
+        display_text = f"Tile {self.tile_index + 1}: {filename}"
+        self.filename_label.setText(display_text)
 
     def get_displayed_array(self) -> np.ndarray:
         """Get currently displayed array.

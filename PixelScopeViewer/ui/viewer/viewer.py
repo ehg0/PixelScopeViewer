@@ -1025,7 +1025,18 @@ class ImageViewer(QMainWindow):
         super().keyPressEvent(e)
 
     def closeEvent(self, event):
-        """Handle window close event to ensure all child dialogs are closed."""
+        """Handle window close event to ensure all child dialogs are closed.
+
+        When the main window is closed, all child windows including tiling dialog
+        are also closed to prevent the application from becoming unusable.
+        """
+        # Close tiling dialog first if it exists
+        try:
+            if hasattr(self, "_tiling_dialog") and self._tiling_dialog is not None:
+                self._tiling_dialog.close()
+        except RuntimeError:
+            pass  # Dialog already deleted by Qt
+
         # Close all modeless dialogs to ensure the application exits cleanly
         try:
             if self.brightness_dialog and self.brightness_dialog.isVisible():

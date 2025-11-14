@@ -181,9 +181,9 @@ class TileImageLabel(QLabel):
         roi_w = int(self.roi_rect[2] * scale)
         roi_h = int(self.roi_rect[3] * scale)
 
-        # Draw ROI border: active=red, inactive=gray
+        # Draw ROI border: active=green (same as main viewer), inactive=gray
         if self.roi_editable:
-            pen = QPen(QColor(255, 51, 51), 2, Qt.SolidLine)  # Red for active
+            pen = QPen(QColor(51, 255, 102), 2, Qt.SolidLine)  # Green for active
         else:
             pen = QPen(QColor(170, 170, 170), 2, Qt.SolidLine)  # Gray for inactive
 

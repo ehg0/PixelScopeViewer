@@ -35,7 +35,12 @@ class TileImageLabel(QLabel):
         # Image data
         self.array = None
         self.qimage = None
+        self.original_qimage = None  # Store full resolution for ROI calculations
         self.zoom_factor = 1.0
+
+        # Cache for brightness-adjusted image
+        self._cached_brightness_qimage = None
+        self._cached_brightness_params = None
 
         # Brightness parameters
         self.gain = 1.0
@@ -75,24 +80,39 @@ class TileImageLabel(QLabel):
             self.clear()
             return
 
-        # Apply brightness adjustment
-        adjusted = apply_brightness_adjustment(
-            self.array, gain=self.gain, offset=self.offset, saturation=self.saturation
-        )
+        # Check if brightness parameters changed
+        current_brightness_params = (self.gain, self.offset, self.saturation)
+        brightness_changed = self._cached_brightness_params != current_brightness_params
 
-        # Convert to QImage
-        self.qimage = numpy_to_qimage(adjusted)
+        # Only recalculate brightness if parameters changed
+        if brightness_changed or self._cached_brightness_qimage is None:
+            # Apply brightness adjustment to full array
+            adjusted = apply_brightness_adjustment(
+                self.array, gain=self.gain, offset=self.offset, saturation=self.saturation
+            )
 
-        if self.qimage is None:
-            self.clear()
-            return
+            # Convert to QImage (full resolution)
+            self._cached_brightness_qimage = numpy_to_qimage(adjusted)
+            self._cached_brightness_params = current_brightness_params
 
-        # Create pixmap and apply current zoom
-        pixmap = QPixmap.fromImage(self.qimage)
+            if self._cached_brightness_qimage is None:
+                self.clear()
+                return
+
+        # Use cached brightness-adjusted image
+        self.original_qimage = self._cached_brightness_qimage
+        self.qimage = self.original_qimage
+
+        # Calculate target display size
+        target_w = max(1, int(self.original_qimage.width() * self.zoom_factor))
+        target_h = max(1, int(self.original_qimage.height() * self.zoom_factor))
+
+        # Create pixmap without interpolation (FastTransformation = nearest neighbor)
+        # This preserves exact pixel values for accurate comparison
+        pixmap = QPixmap.fromImage(self.original_qimage)
         if self.zoom_factor != 1.0:
-            w = max(1, int(self.qimage.width() * self.zoom_factor))
-            h = max(1, int(self.qimage.height() * self.zoom_factor))
-            pixmap = pixmap.scaled(w, h, Qt.IgnoreAspectRatio, Qt.FastTransformation)
+            pixmap = pixmap.scaled(target_w, target_h, Qt.IgnoreAspectRatio, Qt.FastTransformation)
+
         self.setPixmap(pixmap)
         # Ensure scroll area can scroll
         self.setFixedSize(pixmap.size())

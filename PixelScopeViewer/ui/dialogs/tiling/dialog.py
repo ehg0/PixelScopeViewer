@@ -103,6 +103,8 @@ class TilingComparisonDialog(QDialog):
 
         # Common state
         self.scale = 1.0
+        self._is_fit_zoom = False
+        self._previous_zoom = 1.0
         self.common_roi_rect = None  # QRect in image coordinates
         self.active_tile_index = 0
         self._syncing_scroll = False
@@ -369,6 +371,10 @@ class TilingComparisonDialog(QDialog):
         self.scale *= factor
         self.scale = max(0.1, min(self.scale, 20.0))
 
+        # Manual zoom adjustment exits fit mode
+        if hasattr(self, "_is_fit_zoom"):
+            self._is_fit_zoom = False
+
         for tile in self.tiles:
             tile.set_zoom(self.scale)
 
@@ -386,12 +392,51 @@ class TilingComparisonDialog(QDialog):
 
     def toggle_fit_zoom(self):
         """Toggle between fit-to-window and original zoom."""
-        # For scroll-based tiles, fit acts like reset zoom
-        self.scale = 1.0
+        if not self.tiles:
+            return
+
+        # Check if currently at fit zoom
+        if hasattr(self, "_is_fit_zoom") and self._is_fit_zoom:
+            # Return to previous zoom
+            if hasattr(self, "_previous_zoom"):
+                self.scale = self._previous_zoom
+            else:
+                self.scale = 1.0
+            self._is_fit_zoom = False
+        else:
+            # Save current zoom and fit to window
+            self._previous_zoom = self.scale
+
+            # Calculate fit zoom based on scroll area size and image size
+            active_tile = (
+                self.tiles[self.active_tile_index] if self.active_tile_index < len(self.tiles) else self.tiles[0]
+            )
+            scroll_area = active_tile.scroll_area
+            viewport = scroll_area.viewport()
+
+            # Get image dimensions
+            image_label = active_tile.image_label
+            if image_label.qimage:
+                img_width = image_label.qimage.width()
+                img_height = image_label.qimage.height()
+                viewport_width = viewport.width()
+                viewport_height = viewport.height()
+
+                # Calculate scale to fit both dimensions
+                scale_w = viewport_width / img_width if img_width > 0 else 1.0
+                scale_h = viewport_height / img_height if img_height > 0 else 1.0
+                self.scale = min(scale_w, scale_h, 1.0)  # Don't zoom beyond 1.0
+            else:
+                self.scale = 1.0
+
+            self._is_fit_zoom = True
+
+        # Apply zoom to all tiles
         for tile in self.tiles:
             tile.set_zoom(self.scale)
-        # Re-sync after zoom reset
-        if self.tiles and 0 <= self.active_tile_index < len(self.tiles):
+
+        # Re-sync after zoom change
+        if 0 <= self.active_tile_index < len(self.tiles):
             src_area = self.tiles[self.active_tile_index].scroll_area
             hsb = src_area.horizontalScrollBar()
             vsb = src_area.verticalScrollBar()
@@ -399,6 +444,7 @@ class TilingComparisonDialog(QDialog):
                 self.sync_scroll(self.active_tile_index, "h", hsb.value())
             if vsb:
                 self.sync_scroll(self.active_tile_index, "v", vsb.value())
+
         self.update_status_bar()
 
     def adjust_gain(self, factor):
@@ -506,6 +552,9 @@ class TilingComparisonDialog(QDialog):
 
         if self.common_roi_rect:
             self.common_roi_changed.emit(self.common_roi_rect)
+
+        # Update status bar to show ROI dimensions
+        self.update_status_bar()
 
     def sync_scroll(self, source_index: int, direction: str, value: int):
         """Synchronize scrolls based on viewport-centered normalized position.
@@ -627,7 +676,6 @@ class TilingComparisonDialog(QDialog):
 
         if qimg and not qimg.isNull():
             QGuiApplication.clipboard().setImage(qimg)
-            self.status_bar.showMessage(f"タイル{self.active_tile_index + 1}のROI領域をコピーしました", 2000)
 
     def rotate_tiles_forward(self):
         """Rotate tiles forward (right rotation)."""

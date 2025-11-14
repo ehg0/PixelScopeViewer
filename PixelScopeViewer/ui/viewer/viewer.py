@@ -125,6 +125,10 @@ class ImageViewer(QMainWindow):
         self.channel_checks = []
         self.channel_colors = []
 
+        # Cache for brightness-adjusted display array
+        self._cached_display_array = None
+        self._cached_display_params = None
+
         central = QWidget(self)
         self.setCentralWidget(central)
         h_layout = QHBoxLayout(central)
@@ -580,6 +584,10 @@ class ImageViewer(QMainWindow):
         self.original_zoom_scale = 1.0
         self.original_center_coords = None
 
+        # Clear display cache when switching images
+        self._cached_display_array = None
+        self._cached_display_params = None
+
         # Initialize channel checks and colors for new image
         img = self.images[self.current_index]
         arr = img["array"]
@@ -672,6 +680,22 @@ class ImageViewer(QMainWindow):
 
         arr = self.images[self.current_index]["array"]
 
+        # Build cache key from all parameters that affect display
+        cache_key = (
+            self.current_index,
+            self.brightness_offset,
+            self.brightness_gain,
+            self.brightness_saturation,
+            tuple(self.channel_checks) if self.channel_checks else None,
+            tuple(id(c) for c in self.channel_colors) if self.channel_colors else None,
+            self.color_manager.mode_1ch,
+            self.color_manager.mode_2ch,
+        )
+
+        # Return cached result if parameters haven't changed
+        if self._cached_display_params == cache_key and self._cached_display_array is not None:
+            return self._cached_display_array
+
         # The following logic is a copy of display_image, but returns the array
         # instead of setting it on the label.
 
@@ -682,10 +706,18 @@ class ImageViewer(QMainWindow):
                     adj = self.apply_brightness_adjustment(arr)
                     if adj.ndim == 3 and adj.shape[2] == 1:
                         adj = adj[..., 0]
-                    return apply_jet_colormap(adj)
+                    result = apply_jet_colormap(adj)
+                    # Cache the result
+                    self._cached_display_array = result
+                    self._cached_display_params = cache_key
+                    return result
             elif arr.ndim == 3 and arr.shape[2] == 2:
                 if self.color_manager.mode_2ch == MODE_2CH_FLOW_HSV:
-                    return flow_to_hsv_rgb(arr)
+                    result = flow_to_hsv_rgb(arr)
+                    # Cache the result
+                    self._cached_display_array = result
+                    self._cached_display_params = cache_key
+                    return result
         except Exception:
             # Fallback to normal processing
             pass
@@ -730,8 +762,15 @@ class ImageViewer(QMainWindow):
                     composite[:, :, 0] += channel_data * r
                     composite[:, :, 1] += channel_data * g
                     composite[:, :, 2] += channel_data * b
-            return (np.clip(composite, 0, 1) * 255).astype(np.uint8)
+            result = (np.clip(composite, 0, 1) * 255).astype(np.uint8)
+            # Cache the result
+            self._cached_display_array = result
+            self._cached_display_params = cache_key
+            return result
 
+        # Cache the result
+        self._cached_display_array = arr
+        self._cached_display_params = cache_key
         return arr
 
     def display_image(self, arr):

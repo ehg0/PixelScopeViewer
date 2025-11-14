@@ -7,6 +7,7 @@ from PySide6.QtGui import QPixmap, QPainter, QPen, QImage, QColor, QMouseEvent, 
 from PySide6.QtCore import Qt, QRect, Signal
 
 from PixelScopeViewer.core.image_io import numpy_to_qimage
+from PixelScopeViewer.core.constants import MIN_ZOOM_SCALE, MAX_ZOOM_SCALE
 from PixelScopeViewer.ui.dialogs.display.core.compute import apply_brightness_adjustment
 
 
@@ -21,7 +22,7 @@ class TileImageLabel(QLabel):
     # Signals
     roi_changed = Signal(object)  # Emits [x, y, w, h] or None
     clicked = Signal()  # Emits on left click
-    zoom_requested = Signal(float)  # Emits zoom factor (e.g., 2.0 or 0.5)
+    zoom_requested = Signal(float, object)  # Emits (zoom factor, mouse_pos_or_none)
     hover_info = Signal(int, int, str)  # Emits (ix, iy, valueText)
 
     def __init__(self):
@@ -35,7 +36,12 @@ class TileImageLabel(QLabel):
         # Image data
         self.array = None
         self.qimage = None
+        self.original_qimage = None  # Store full resolution for ROI calculations
         self.zoom_factor = 1.0
+
+        # Cache for brightness-adjusted image
+        self._cached_brightness_qimage = None
+        self._cached_brightness_params = None
 
         # Brightness parameters
         self.gain = 1.0
@@ -75,24 +81,39 @@ class TileImageLabel(QLabel):
             self.clear()
             return
 
-        # Apply brightness adjustment
-        adjusted = apply_brightness_adjustment(
-            self.array, gain=self.gain, offset=self.offset, saturation=self.saturation
-        )
+        # Check if brightness parameters changed
+        current_brightness_params = (self.gain, self.offset, self.saturation)
+        brightness_changed = self._cached_brightness_params != current_brightness_params
 
-        # Convert to QImage
-        self.qimage = numpy_to_qimage(adjusted)
+        # Only recalculate brightness if parameters changed
+        if brightness_changed or self._cached_brightness_qimage is None:
+            # Apply brightness adjustment to full array
+            adjusted = apply_brightness_adjustment(
+                self.array, gain=self.gain, offset=self.offset, saturation=self.saturation
+            )
 
-        if self.qimage is None:
-            self.clear()
-            return
+            # Convert to QImage (full resolution)
+            self._cached_brightness_qimage = numpy_to_qimage(adjusted)
+            self._cached_brightness_params = current_brightness_params
 
-        # Create pixmap and apply current zoom
-        pixmap = QPixmap.fromImage(self.qimage)
+            if self._cached_brightness_qimage is None:
+                self.clear()
+                return
+
+        # Use cached brightness-adjusted image
+        self.original_qimage = self._cached_brightness_qimage
+        self.qimage = self.original_qimage
+
+        # Calculate target display size
+        target_w = max(1, int(self.original_qimage.width() * self.zoom_factor))
+        target_h = max(1, int(self.original_qimage.height() * self.zoom_factor))
+
+        # Create pixmap without interpolation (FastTransformation = nearest neighbor)
+        # This preserves exact pixel values for accurate comparison
+        pixmap = QPixmap.fromImage(self.original_qimage)
         if self.zoom_factor != 1.0:
-            w = max(1, int(self.qimage.width() * self.zoom_factor))
-            h = max(1, int(self.qimage.height() * self.zoom_factor))
-            pixmap = pixmap.scaled(w, h, Qt.IgnoreAspectRatio, Qt.FastTransformation)
+            pixmap = pixmap.scaled(target_w, target_h, Qt.IgnoreAspectRatio, Qt.FastTransformation)
+
         self.setPixmap(pixmap)
         # Ensure scroll area can scroll
         self.setFixedSize(pixmap.size())
@@ -160,9 +181,9 @@ class TileImageLabel(QLabel):
         roi_w = int(self.roi_rect[2] * scale)
         roi_h = int(self.roi_rect[3] * scale)
 
-        # Draw ROI border: active=red, inactive=gray
+        # Draw ROI border: active=green (same as main viewer), inactive=gray
         if self.roi_editable:
-            pen = QPen(QColor(255, 51, 51), 2, Qt.SolidLine)  # Red for active
+            pen = QPen(QColor(51, 255, 102), 2, Qt.SolidLine)  # Green for active
         else:
             pen = QPen(QColor(170, 170, 170), 2, Qt.SolidLine)  # Gray for inactive
 
@@ -329,7 +350,7 @@ class TileImageLabel(QLabel):
         Args:
             factor: Zoom factor (currently not used in fit-to-tile mode)
         """
-        self.zoom_factor = max(0.1, min(32.0, float(factor)))
+        self.zoom_factor = max(MIN_ZOOM_SCALE, min(MAX_ZOOM_SCALE, float(factor)))
         # Rebuild pixmap at new scale
         if self.qimage is not None:
             self._update_display()

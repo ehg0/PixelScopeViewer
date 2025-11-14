@@ -22,6 +22,7 @@ class TileWidget(QWidget):
     # Signals
     activated = Signal(int)  # Emitted when tile is clicked (passes tile index)
     roi_changed = Signal(object)  # Emitted when ROI changes (passes roi_rect as list or None)
+    mouse_coords_changed = Signal(object)  # Emitted when mouse coordinates change (passes (ix, iy) or None)
 
     def __init__(self, image_data: dict, parent_dialog, tile_index: int):
         """Initialize tile widget.
@@ -77,7 +78,7 @@ class TileWidget(QWidget):
             """
             QLabel {
                 color: white;
-                font-size: 12px;
+                font-size: 11pt;
                 font-weight: bold;
                 background-color: transparent;
             }
@@ -88,11 +89,12 @@ class TileWidget(QWidget):
         # Pixel value label (right-aligned)
         self.pixel_value_label = QLabel("")
         self.pixel_value_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.pixel_value_label.setMinimumWidth(100)  # Reserve space for pixel values
         self.pixel_value_label.setStyleSheet(
             """
             QLabel {
                 color: white;
-                font-size: 12px;
+                font-size: 11pt;
                 background-color: transparent;
             }
         """
@@ -134,7 +136,20 @@ class TileWidget(QWidget):
                 dy = event.pixelDelta().y() if not event.pixelDelta().isNull() else event.angleDelta().y()
                 if dy != 0:
                     factor = 2.0 if dy > 0 else 0.5
-                    self._on_zoom_requested(factor)
+                    # Get mouse position in viewport coordinates
+                    # Event position is relative to the object that received it, so convert to viewport coords
+                    event_pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
+                    if obj is self.scroll_area.viewport():
+                        mouse_pos = event_pos
+                    elif obj is self.image_label:
+                        # Convert from image_label coordinates to viewport coordinates
+                        mouse_pos = self.image_label.mapTo(self.scroll_area.viewport(), event_pos)
+                    elif obj is self.scroll_area:
+                        # Convert from scroll_area coordinates to viewport coordinates
+                        mouse_pos = self.scroll_area.mapTo(self.scroll_area.viewport(), event_pos)
+                    else:
+                        mouse_pos = event_pos
+                    self._on_zoom_requested(factor, mouse_pos)
                     return True
             # No Ctrl => allow default scrolling, then trigger sync manually
             vsb = self.scroll_area.verticalScrollBar()
@@ -168,10 +183,10 @@ class TileWidget(QWidget):
             return result
         return super().eventFilter(obj, event)
 
-    def _on_zoom_requested(self, factor: float):
+    def _on_zoom_requested(self, factor: float, mouse_pos=None):
         # Delegate to parent dialog to keep all tiles in sync
         try:
-            self.parent_dialog.adjust_zoom(factor)
+            self.parent_dialog.adjust_zoom(factor, tile_index=self.tile_index, mouse_pos=mouse_pos)
         except Exception:
             pass
 
@@ -221,17 +236,18 @@ class TileWidget(QWidget):
         self.roi_changed.emit(roi_rect)
 
     def _on_hover_info(self, ix: int, iy: int, value_text: str):
-        """Handle hover info from image label and display in pixel value label.
+        """Handle hover info from image label and notify parent dialog.
 
         Args:
             ix: Image x coordinate
             iy: Image y coordinate
-            value_text: Formatted pixel value text
+            value_text: Formatted pixel value text (not used, parent handles display)
         """
+        # Only notify parent dialog of coordinates, let parent update all tiles
         if value_text:
-            self.pixel_value_label.setText(value_text)
+            self.mouse_coords_changed.emit((ix, iy))
         else:
-            self.pixel_value_label.setText("")
+            self.mouse_coords_changed.emit(None)
 
     def set_image(self, array: np.ndarray, gain: float, offset: float, saturation: float):
         """Set image data with brightness parameters.
@@ -259,19 +275,27 @@ class TileWidget(QWidget):
         if arr is None:
             return
 
-        # Get brightness parameters from parent dialog
-        dtype_group = self.parent_dialog.tile_dtype_groups[self.tile_index]
-        params = self.parent_dialog.brightness_params_by_dtype[dtype_group]
-        gain = self.parent_dialog.brightness_gain
+        # Get brightness parameters from parent dialog's brightness manager
+        if hasattr(self.parent_dialog, "brightness_manager") and self.parent_dialog.brightness_manager:
+            brightness_params = self.parent_dialog.brightness_manager.get_brightness_params()
+            dtype_group = self.parent_dialog.tile_manager.get_tile_dtype_groups()[self.tile_index]
+            params = brightness_params["params_by_dtype"][dtype_group]
+            gain = brightness_params["gain"]
+        else:
+            # Fallback to default values
+            params = {"offset": 0, "saturation": 255}
+            gain = 1.0
 
         self.image_label.set_image(arr, gain, params["offset"], params["saturation"])
 
-        # Update filename display
+        # Update filename display with tile number
         path = self.image_data.get("path", f"Image {self.tile_index + 1}")
         from pathlib import Path
 
         filename = Path(path).name if path else f"Image {self.tile_index + 1}"
-        self.filename_label.setText(filename)
+        # Add tile number to the display (1-indexed)
+        display_text = f"Tile {self.tile_index + 1}: {filename}"
+        self.filename_label.setText(display_text)
 
     def get_displayed_array(self) -> np.ndarray:
         """Get currently displayed array.

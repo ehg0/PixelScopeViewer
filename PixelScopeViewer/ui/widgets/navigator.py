@@ -68,11 +68,14 @@ class NavigatorWidget(QGroupBox):
         thumb_width = pixmap.width()
         thumb_height = pixmap.height()
 
-        # Calculate pixmap offset in thumbnail_label (centered)
+        # Calculate pixmap offset in thumbnail_label
+        # Label is set to Qt.AlignTop | Qt.AlignHCenter, so:
+        # - Horizontally centered
+        # - Vertically aligned to top
         label_width = self.thumbnail_label.width()
         label_height = self.thumbnail_label.height()
         x_offset = (label_width - thumb_width) / 2
-        y_offset = (label_height - thumb_height) / 2
+        y_offset = 0  # Top-aligned, so no vertical offset
 
         mouse_pos = event.pos()
 
@@ -97,23 +100,24 @@ class NavigatorWidget(QGroupBox):
         # Center the viewport on the clicked position
         viewport_width = self.viewer.scroll_area.viewport().width()
         viewport_height = self.viewer.scroll_area.viewport().height()
-        img_viewport_w = viewport_width / self.viewer.scale
-        img_viewport_h = viewport_height / self.viewer.scale
 
-        centered_img_x = img_x - img_viewport_w / 2
-        centered_img_y = img_y - img_viewport_h / 2
+        # Calculate the top-left position of viewport in widget coordinates
+        # to center the clicked image position in the viewport
+        widget_click_x = img_x * self.viewer.scale
+        widget_click_y = img_y * self.viewer.scale
 
-        # Clamp to image bounds
-        centered_img_x = max(0, min(centered_img_x, w - img_viewport_w))
-        centered_img_y = max(0, min(centered_img_y, h - img_viewport_h))
+        # Calculate scroll position to center the clicked point
+        h_scroll = widget_click_x - viewport_width / 2
+        v_scroll = widget_click_y - viewport_height / 2
+
+        # Clamp to valid scroll range
+        h_scroll = max(0, min(h_scroll, self.viewer.image_label.width() - viewport_width))
+        v_scroll = max(0, min(v_scroll, self.viewer.image_label.height() - viewport_height))
 
         # Update scroll position
         scroll_area = self.viewer.scroll_area
-        h_scroll = int(centered_img_x * self.viewer.scale)
-        v_scroll = int(centered_img_y * self.viewer.scale)
-
-        scroll_area.horizontalScrollBar().setValue(h_scroll)
-        scroll_area.verticalScrollBar().setValue(v_scroll)
+        scroll_area.horizontalScrollBar().setValue(int(h_scroll))
+        scroll_area.verticalScrollBar().setValue(int(v_scroll))
 
         event.accept()
 

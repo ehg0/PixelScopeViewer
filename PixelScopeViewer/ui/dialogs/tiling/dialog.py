@@ -121,6 +121,9 @@ class TilingComparisonDialog(QDialog):
         self.tile_dtype_groups = []
         self.displayed_image_data = []
 
+        # Shortcuts list to keep references
+        self.shortcuts = []
+
         # Build UI
         self._build_ui()
 
@@ -342,48 +345,58 @@ class TilingComparisonDialog(QDialog):
         self.hover_label.setText(f"({ix}, {iy})")
 
     def _setup_shortcuts(self):
-        """Setup keyboard shortcuts."""
+        """Setup keyboard shortcuts with WindowShortcut context to avoid conflicts."""
+        # Clear any existing shortcuts
+        self.shortcuts.clear()
+
+        # Helper function to create and register shortcuts
+        def add_shortcut(key_seq, callback):
+            shortcut = QShortcut(QKeySequence(key_seq), self)
+            shortcut.setContext(Qt.WindowShortcut)
+            shortcut.activated.connect(callback)
+            self.shortcuts.append(shortcut)
+
         # Help
-        QShortcut(QKeySequence("F1"), self).activated.connect(self.show_help)
+        add_shortcut("F1", self.show_help)
 
         # Zoom
-        QShortcut(QKeySequence("+"), self).activated.connect(lambda: self.adjust_zoom(2.0))
-        QShortcut(QKeySequence("-"), self).activated.connect(lambda: self.adjust_zoom(0.5))
-        QShortcut(QKeySequence("f"), self).activated.connect(self.toggle_fit_zoom)
+        add_shortcut("+", lambda: self.adjust_zoom(2.0))
+        add_shortcut("-", lambda: self.adjust_zoom(0.5))
+        add_shortcut("f", self.toggle_fit_zoom)
 
         # Gain
-        QShortcut(QKeySequence("<"), self).activated.connect(lambda: self.adjust_gain(0.5))
-        QShortcut(QKeySequence(">"), self).activated.connect(lambda: self.adjust_gain(2.0))
+        add_shortcut("<", lambda: self.adjust_gain(0.5))
+        add_shortcut(">", lambda: self.adjust_gain(2.0))
 
         # Brightness dialog
-        QShortcut(QKeySequence("D"), self).activated.connect(self.show_brightness_dialog)
+        add_shortcut("D", self.show_brightness_dialog)
 
         # Reset
-        QShortcut(QKeySequence("Ctrl+R"), self).activated.connect(self.reset_brightness)
+        add_shortcut("Ctrl+R", self.reset_brightness)
 
         # ROI operations
-        QShortcut(QKeySequence("Ctrl+A"), self).activated.connect(self.select_all_roi)
-        QShortcut(QKeySequence("Esc"), self).activated.connect(self.clear_roi)
+        add_shortcut("Ctrl+A", self.select_all_roi)
+        add_shortcut("Esc", self.clear_roi)
 
         # Arrow key scrolling (synchronized)
-        QShortcut(QKeySequence("Left"), self).activated.connect(lambda: self._scroll_by_key(-10, 0, False))
-        QShortcut(QKeySequence("Right"), self).activated.connect(lambda: self._scroll_by_key(10, 0, False))
-        QShortcut(QKeySequence("Up"), self).activated.connect(lambda: self._scroll_by_key(0, -10, False))
-        QShortcut(QKeySequence("Down"), self).activated.connect(lambda: self._scroll_by_key(0, 10, False))
-        QShortcut(QKeySequence("Shift+Left"), self).activated.connect(lambda: self._scroll_by_key(-50, 0, True))
-        QShortcut(QKeySequence("Shift+Right"), self).activated.connect(lambda: self._scroll_by_key(50, 0, True))
-        QShortcut(QKeySequence("Shift+Up"), self).activated.connect(lambda: self._scroll_by_key(0, -50, True))
-        QShortcut(QKeySequence("Shift+Down"), self).activated.connect(lambda: self._scroll_by_key(0, 50, True))
-        QShortcut(QKeySequence("Ctrl+C"), self).activated.connect(self.copy_active_tile_roi)
-        QShortcut(QKeySequence("Ctrl+Shift+C"), self).activated.connect(self.copy_all_tiles_roi_as_grid)
+        add_shortcut("Left", lambda: self._scroll_by_key(-10, 0, False))
+        add_shortcut("Right", lambda: self._scroll_by_key(10, 0, False))
+        add_shortcut("Up", lambda: self._scroll_by_key(0, -10, False))
+        add_shortcut("Down", lambda: self._scroll_by_key(0, 10, False))
+        add_shortcut("Shift+Left", lambda: self._scroll_by_key(-50, 0, True))
+        add_shortcut("Shift+Right", lambda: self._scroll_by_key(50, 0, True))
+        add_shortcut("Shift+Up", lambda: self._scroll_by_key(0, -50, True))
+        add_shortcut("Shift+Down", lambda: self._scroll_by_key(0, 50, True))
+        add_shortcut("Ctrl+C", self.copy_active_tile_roi)
+        add_shortcut("Ctrl+Shift+C", self.copy_all_tiles_roi_as_grid)
 
         # Tile rotation
-        QShortcut(QKeySequence("Tab"), self).activated.connect(self.rotate_tiles_forward)
-        QShortcut(QKeySequence("Shift+Tab"), self).activated.connect(self.rotate_tiles_backward)
+        add_shortcut("Tab", self.rotate_tiles_forward)
+        add_shortcut("Shift+Tab", self.rotate_tiles_backward)
 
         # Tile swapping
-        QShortcut(QKeySequence("Ctrl+Shift+Right"), self).activated.connect(self.swap_with_next_tile)
-        QShortcut(QKeySequence("Ctrl+Shift+Left"), self).activated.connect(self.swap_with_previous_tile)
+        add_shortcut("Ctrl+Shift+Right", self.swap_with_next_tile)
+        add_shortcut("Ctrl+Shift+Left", self.swap_with_previous_tile)
 
     def adjust_zoom(self, factor, tile_index=None, mouse_pos=None):
         """Adjust zoom for all tiles.

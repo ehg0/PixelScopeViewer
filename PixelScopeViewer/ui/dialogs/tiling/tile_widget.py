@@ -22,6 +22,7 @@ class TileWidget(QWidget):
     # Signals
     activated = Signal(int)  # Emitted when tile is clicked (passes tile index)
     roi_changed = Signal(object)  # Emitted when ROI changes (passes roi_rect as list or None)
+    mouse_coords_changed = Signal(object)  # Emitted when mouse coordinates change (passes (ix, iy) or None)
 
     def __init__(self, image_data: dict, parent_dialog, tile_index: int):
         """Initialize tile widget.
@@ -77,7 +78,7 @@ class TileWidget(QWidget):
             """
             QLabel {
                 color: white;
-                font-size: 12px;
+                font-size: 11pt;
                 font-weight: bold;
                 background-color: transparent;
             }
@@ -88,11 +89,12 @@ class TileWidget(QWidget):
         # Pixel value label (right-aligned)
         self.pixel_value_label = QLabel("")
         self.pixel_value_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.pixel_value_label.setMinimumWidth(100)  # Reserve space for pixel values
         self.pixel_value_label.setStyleSheet(
             """
             QLabel {
                 color: white;
-                font-size: 12px;
+                font-size: 11pt;
                 background-color: transparent;
             }
         """
@@ -234,17 +236,18 @@ class TileWidget(QWidget):
         self.roi_changed.emit(roi_rect)
 
     def _on_hover_info(self, ix: int, iy: int, value_text: str):
-        """Handle hover info from image label and display in pixel value label.
+        """Handle hover info from image label and notify parent dialog.
 
         Args:
             ix: Image x coordinate
             iy: Image y coordinate
-            value_text: Formatted pixel value text
+            value_text: Formatted pixel value text (not used, parent handles display)
         """
+        # Only notify parent dialog of coordinates, let parent update all tiles
         if value_text:
-            self.pixel_value_label.setText(value_text)
+            self.mouse_coords_changed.emit((ix, iy))
         else:
-            self.pixel_value_label.setText("")
+            self.mouse_coords_changed.emit(None)
 
     def set_image(self, array: np.ndarray, gain: float, offset: float, saturation: float):
         """Set image data with brightness parameters.

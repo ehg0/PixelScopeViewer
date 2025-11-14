@@ -163,13 +163,25 @@ class TilingComparisonDialog(QDialog):
 
         layout.addWidget(grid_widget, 1)
 
-        # Status bar
+        # Status bar with multiple sections
         self.status_bar = QStatusBar()
-        self.status_label = QLabel()
-        self.hover_label = QLabel()
-        self.status_bar.addWidget(self.status_label, 1)
-        self.status_bar.addPermanentWidget(self.hover_label)
+        self.status_bar.setStyleSheet("font-size: 11pt;")
+        # Left side: mouse coordinates and ROI
+        self.mouse_coords_label = QLabel()
+        self.roi_info_label = QLabel()
+        # Right side: brightness and scale
+        self.brightness_label = QLabel()
+        self.scale_label = QLabel()
+
+        self.status_bar.addWidget(self.mouse_coords_label)
+        self.status_bar.addWidget(self.roi_info_label)
+        self.status_bar.addWidget(QLabel(""), 1)  # Spacer
+        self.status_bar.addPermanentWidget(self.brightness_label)
+        self.status_bar.addPermanentWidget(self.scale_label)
         layout.addWidget(self.status_bar)
+
+        # Store current mouse coordinates for status bar
+        self.current_mouse_coords = None
 
         # Setup shortcuts
         self._setup_shortcuts()
@@ -227,8 +239,7 @@ class TilingComparisonDialog(QDialog):
             tile = TileWidget(image_data, self, i)
             tile.activated.connect(lambda idx=i: self.set_active_tile(idx))
             tile.roi_changed.connect(self._on_tile_roi_changed)
-            # Hover info -> status bar
-            tile.image_label.hover_info.connect(lambda x, y, t, idx=i: self._on_hover_info(idx, x, y, t))
+            tile.mouse_coords_changed.connect(self._on_mouse_coords_changed)
 
             self.tiles.append(tile)
 
@@ -509,9 +520,25 @@ class TilingComparisonDialog(QDialog):
         self.update_status_bar()
 
     def adjust_gain(self, factor):
-        """Adjust gain (all tiles)."""
+        """Adjust gain (all tiles) using binary steps (powers of 2).
+
+        Args:
+            factor: Multiplication factor (2.0 for increase, 0.5 for decrease)
+        """
+        # Apply factor
         self.brightness_gain *= factor
-        self.brightness_gain = max(0.1, min(self.brightness_gain, 10.0))
+
+        # Snap to nearest power of 2 for clean binary steps
+        import math
+
+        if self.brightness_gain > 0:
+            power = round(math.log2(self.brightness_gain))
+            self.brightness_gain = 2.0**power
+
+        # Clamp to reasonable range (1/128x to 128x, matching zoom range)
+        min_gain = 1.0 / 128.0
+        max_gain = 128.0
+        self.brightness_gain = max(min_gain, min(self.brightness_gain, max_gain))
 
         self.refresh_all_tiles()
         self.update_status_bar()
@@ -599,6 +626,44 @@ class TilingComparisonDialog(QDialog):
         """Handle ROI change from a tile."""
         self.common_roi_rect = roi_rect_in_image_coords
         self.common_roi_changed.emit(roi_rect_in_image_coords)
+
+    def _on_mouse_coords_changed(self, coords):
+        """Handle mouse coordinates change from a tile.
+
+        Args:
+            coords: Tuple of (ix, iy) or None
+        """
+        self.current_mouse_coords = coords
+        self.update_status_bar()
+
+        # Update pixel values for all tiles at the same coordinate
+        if coords is not None:
+            ix, iy = coords
+            for tile in self.tiles:
+                arr = tile.get_displayed_array()
+                if arr is not None:
+                    try:
+                        val = arr[iy, ix]
+                        if isinstance(val, np.ndarray) or (
+                            hasattr(val, "shape") and len(getattr(val, "shape", ())) > 0
+                        ):
+                            flat = np.array(val).ravel().tolist()
+                            preview = ", ".join(str(x) for x in flat[:4])
+                            text = f"[{preview}{', …' if len(flat) > 4 else ''}]"
+                        else:
+                            text = str(val)
+                        # Truncate overly long text
+                        if len(text) > 60:
+                            text = text[:57] + "…"
+                        tile.update_status(text)
+                    except Exception:
+                        tile.update_status("")
+                else:
+                    tile.update_status("")
+        else:
+            # Clear all tile pixel value displays
+            for tile in self.tiles:
+                tile.update_status("")
 
     def _on_tile_roi_changed(self, roi_rect):
         """Handle ROI change signal from tile (list format).
@@ -828,7 +893,25 @@ class TilingComparisonDialog(QDialog):
 
     def update_status_bar(self):
         """Update status bar with current parameters."""
-        status_parts = [f"Gain: {self.brightness_gain:.2f}"]
+        # Left side: Mouse coordinates
+        if self.current_mouse_coords:
+            ix, iy = self.current_mouse_coords
+            self.mouse_coords_label.setText(f"x={ix} y={iy}")
+        else:
+            self.mouse_coords_label.setText("")
+
+        # Left side: ROI info
+        if self.common_roi_rect and not self.common_roi_rect.isEmpty():
+            r = self.common_roi_rect
+            x0, y0 = r.x(), r.y()
+            x1, y1 = x0 + r.width() - 1, y0 + r.height() - 1
+            roi_text = f" | ({x0}, {y0}) - ({x1}, {y1}), w: {r.width()}, h: {r.height()}"
+            self.roi_info_label.setText(roi_text)
+        else:
+            self.roi_info_label.setText("")
+
+        # Right side: Brightness parameters
+        brightness_parts = [f"Gain: {self.brightness_gain:.2f}"]
 
         # Count tiles per dtype
         dtype_counts = {}
@@ -840,17 +923,16 @@ class TilingComparisonDialog(QDialog):
             count = dtype_counts[dtype_group]
             params = self.brightness_params_by_dtype[dtype_group]
             if dtype_group == "float":
-                status_parts.append(
+                brightness_parts.append(
                     f"{dtype_group}({count}): off={params['offset']:.2f} sat={params['saturation']:.2f}"
                 )
             else:
-                status_parts.append(f"{dtype_group}({count}): off={params['offset']} sat={params['saturation']}")
+                brightness_parts.append(f"{dtype_group}({count}): off={params['offset']} sat={params['saturation']}")
 
-        if self.common_roi_rect and not self.common_roi_rect.isEmpty():
-            r = self.common_roi_rect
-            status_parts.append(f"ROI: x={r.x()} y={r.y()} w={r.width()} h={r.height()}")
+        self.brightness_label.setText(" | ".join(brightness_parts))
 
-        self.status_label.setText(" | ".join(status_parts))
+        # Right side: Scale
+        self.scale_label.setText(f" | Scale: {self.scale:.2f}x")
 
     def _scroll_by_key(self, dx: int, dy: int, is_shift: bool):
         """Scroll all tiles synchronously by arrow keys.

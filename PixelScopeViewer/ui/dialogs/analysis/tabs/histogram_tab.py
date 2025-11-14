@@ -87,7 +87,9 @@ class HistogramTab(QWidget):
         self.stats_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.stats_table.setSelectionMode(QTableWidget.ExtendedSelection)
         self.stats_table.setSelectionBehavior(QTableWidget.SelectItems)
-        self.stats_table.setMaximumHeight(120)
+        # Allow more rows; enable scrolling rather than clipping
+        self.stats_table.setMaximumHeight(240)
+        self.stats_table.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         total_w = 600
         ch_w = 120
         other_w = max(60, (total_w - ch_w) // (self.stats_table.columnCount() - 1))
@@ -255,10 +257,66 @@ class HistogramTab(QWidget):
     def _populate_stats_table(self, rows: list[dict]):
         """Populate stats table from computed statistics."""
         from PySide6.QtWidgets import QTableWidgetItem
+        from PySide6.QtGui import QPixmap, QColor
+        from PySide6.QtCore import Qt
+
+        # Locate tiling comparison dialog (has overlay_color_map) safely
+        dlg = self
+        color_map = {}
+        assign_colors = None
+        visited = set()
+        while dlg is not None and id(dlg) not in visited:
+            visited.add(id(dlg))
+            if hasattr(dlg, "overlay_color_map"):
+                color_map = getattr(dlg, "overlay_color_map", {}) or {}
+                assign_colors = getattr(dlg, "_assign_overlay_colors", None)
+                break
+            # Obtain parent only if callable
+            parent_attr = getattr(dlg, "parent", None)
+            if callable(parent_attr):
+                try:
+                    dlg = parent_attr()
+                except Exception:
+                    dlg = None
+            else:
+                dlg = None
 
         self.stats_table.setRowCount(len(rows))
         for row_idx, r in enumerate(rows):
-            ch_item = QTableWidgetItem(r["ch"])
+            ch_text = r["ch"]
+            ch_item = QTableWidgetItem(ch_text)
+            # Color swatch based on curve_label mapping
+            curve_label = r.get("curve_label")
+            rgb = color_map.get(curve_label) if (curve_label and color_map) else None
+            if rgb is None:
+                # Fallback: support underscore pattern 'T{n}_C{k}'
+                tile_num = None
+                channel_code = None
+                if "_" in ch_text:
+                    tpart, cpart = ch_text.split("_", 1)
+                    if tpart.startswith("T") and cpart.startswith("C") and cpart[1:].isdigit():
+                        tile_num = tpart[1:]
+                        channel_code = cpart
+                else:
+                    # legacy space separated pattern
+                    parts = ch_text.split()
+                    if len(parts) == 2 and parts[0].startswith("T"):
+                        tile_num = parts[0][1:]
+                        channel_code = parts[1]
+                if tile_num is not None and channel_code is not None and color_map is not None:
+                    derived = f"Tile {tile_num} {channel_code}"
+                    curve_label = derived
+                    rgb = color_map.get(derived)
+                    if rgb is None and assign_colors is not None:
+                        try:
+                            assign_colors([derived])
+                            rgb = getattr(dlg, "overlay_color_map", {}).get(derived)
+                        except Exception:
+                            rgb = None
+            if rgb:
+                pix = QPixmap(12, 12)
+                pix.fill(QColor(*rgb))
+                ch_item.setData(Qt.DecorationRole, pix)
             ch_item.setFlags(ch_item.flags() & ~Qt.ItemIsEditable)
             ch_item.setTextAlignment(Qt.AlignCenter)
             self.stats_table.setItem(row_idx, 0, ch_item)

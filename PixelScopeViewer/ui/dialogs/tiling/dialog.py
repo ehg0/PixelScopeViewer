@@ -128,39 +128,39 @@ class TilingComparisonDialog(QDialog):
         # Menu bar
         menu_bar = QMenuBar(self)
 
-        # File menu
-        file_menu = menu_bar.addMenu("ファイル(&F)")
-        change_images_action = file_menu.addAction("比較画像変更(&C)...")
+        # File menu (align with main viewer naming, remove mnemonic parentheses)
+        file_menu = menu_bar.addMenu("ファイル")
+        change_images_action = file_menu.addAction("比較画像変更...")
         change_images_action.triggered.connect(self.change_comparison_images)
 
         # View menu
-        view_menu = menu_bar.addMenu("表示(&V)")
-        brightness_action = view_menu.addAction("輝度調整(&B)...")
+        view_menu = menu_bar.addMenu("表示")
+        brightness_action = view_menu.addAction("表示設定...")
         brightness_action.triggered.connect(self.show_brightness_dialog)
 
-        # Analysis menu
-        analysis_menu = menu_bar.addMenu("解析(&A)")
-        histogram_action = analysis_menu.addAction("ヒストグラム(&H)...")
-        histogram_action.triggered.connect(lambda: self.show_analysis_dialog(tab="Histogram"))
+        # Analysis menu (order aligned to main viewer: dialog, metadata, profile, histogram, separators, tiling features)
+        analysis_menu = menu_bar.addMenu("解析")
+        analysis_dialog_action = analysis_menu.addAction("解析ダイアログ")
+        analysis_dialog_action.triggered.connect(lambda: self.show_analysis_dialog())
 
-        profile_action = analysis_menu.addAction("プロファイル(&P)...")
+        metadata_action = analysis_menu.addAction("メタデータ")
+        metadata_action.triggered.connect(lambda: self.show_analysis_dialog(tab="Metadata"))
+
+        profile_action = analysis_menu.addAction("プロファイル")
         profile_action.triggered.connect(lambda: self.show_analysis_dialog(tab="Profile"))
 
-        metadata_action = analysis_menu.addAction("メタデータ(&M)...")
-        metadata_action.triggered.connect(lambda: self.show_analysis_dialog(tab="Metadata"))
+        histogram_action = analysis_menu.addAction("ヒストグラム")
+        histogram_action.triggered.connect(lambda: self.show_analysis_dialog(tab="Histogram"))
 
         analysis_menu.addSeparator()
 
-        comparison_action = analysis_menu.addAction("タイル比較(&C)...")
-        comparison_action.triggered.connect(self.show_comparison_dialog)
-
-        comparison_table_action = analysis_menu.addAction("比較テーブル(&T)...")
+        comparison_table_action = analysis_menu.addAction("タイリング比較")
         comparison_table_action.setShortcut("Ctrl+Shift+A")
         comparison_table_action.triggered.connect(lambda: self.show_comparison_dialog(tab="Metadata"))
 
         # Help menu
-        help_menu = menu_bar.addMenu("ヘルプ(&H)")
-        help_action = help_menu.addAction("キーボードショートカット(&K)")
+        help_menu = menu_bar.addMenu("ヘルプ")
+        help_action = help_menu.addAction("その他キーボードショートカット")
         help_action.triggered.connect(self.show_help)
         layout.setMenuBar(menu_bar)
 
@@ -492,6 +492,7 @@ class TilingComparisonDialog(QDialog):
         if self.roi_manager:
             self.roi_manager.on_tile_roi_changed(roi_rect_in_image_coords)
             self.update_status_bar()
+            self._refresh_comparison_dialog_for_roi()
 
     def _on_mouse_coords_changed(self, coords):
         """Handle mouse coordinates change from a tile.
@@ -551,6 +552,8 @@ class TilingComparisonDialog(QDialog):
                 image_array, roi_rect_qrect, file_path = self.get_active_tile_image_and_rect()
                 if image_array is not None:
                     self._analysis_dialog.set_image_and_rect(image_array, roi_rect_qrect, file_path)
+            # Update comparison dialog overlays if open
+            self._refresh_comparison_dialog_for_roi()
 
     def get_active_tile_image_and_rect(self):
         """Get active tile's image array, ROI rect, and file path.
@@ -639,6 +642,19 @@ class TilingComparisonDialog(QDialog):
             )
 
         return tiles_data
+
+    def _refresh_comparison_dialog_for_roi(self):
+        """Refresh comparison dialog overlays after ROI change.
+
+        Rebuild tiles_data with current common ROI and update dialog if visible.
+        """
+        if self._comparison_dialog is not None and self._comparison_dialog.isVisible():
+            try:
+                updated = self.get_all_tiles_data()
+                self._comparison_dialog.update_tiles_data(updated)
+            except Exception:
+                pass
+        # No return value needed
 
     def _generate_tile_colors(self, num_tiles: int):
         """Generate distinct colors for tiles.
@@ -778,11 +794,13 @@ class TilingComparisonDialog(QDialog):
         """Select all (full image) for active tile."""
         if self.roi_manager:
             self.roi_manager.select_all_roi()
+            self._refresh_comparison_dialog_for_roi()
 
     def clear_roi(self):
         """Clear ROI from all tiles."""
         if self.roi_manager:
             self.roi_manager.clear_roi()
+            self._refresh_comparison_dialog_for_roi()
 
     def copy_active_tile_roi(self):
         """Copy ROI region from active tile to clipboard."""

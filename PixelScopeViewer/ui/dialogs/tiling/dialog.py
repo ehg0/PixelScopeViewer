@@ -366,27 +366,89 @@ class TilingComparisonDialog(QDialog):
         QShortcut(QKeySequence("Ctrl+Shift+Right"), self).activated.connect(self.swap_with_next_tile)
         QShortcut(QKeySequence("Ctrl+Shift+Left"), self).activated.connect(self.swap_with_previous_tile)
 
-    def adjust_zoom(self, factor):
-        """Adjust zoom for all tiles."""
+    def adjust_zoom(self, factor, tile_index=None, mouse_pos=None):
+        """Adjust zoom for all tiles.
+
+        Args:
+            factor: Zoom factor (2.0 for zoom in, 0.5 for zoom out)
+            tile_index: Index of the tile that triggered the zoom (for mouse position)
+            mouse_pos: Mouse position in viewport coordinates (for Ctrl+Wheel zoom)
+        """
+        # Use active tile if not specified
+        if tile_index is None:
+            tile_index = self.active_tile_index
+
+        if not (0 <= tile_index < len(self.tiles)):
+            return
+
+        source_tile = self.tiles[tile_index]
+        scroll_area = source_tile.scroll_area
+        viewport = scroll_area.viewport()
+
+        # Calculate the point to keep fixed during zoom
+        if mouse_pos is not None:
+            # Mouse wheel: use mouse position in viewport
+            viewport_x = mouse_pos.x()
+            viewport_y = mouse_pos.y()
+        else:
+            # Keyboard (+/-): use viewport center
+            viewport_x = viewport.width() / 2.0
+            viewport_y = viewport.height() / 2.0
+
+        # Convert viewport position to image coordinates (before zoom)
+        hsb = scroll_area.horizontalScrollBar()
+        vsb = scroll_area.verticalScrollBar()
+        scroll_x = hsb.value() if hsb else 0
+        scroll_y = vsb.value() if vsb else 0
+
+        # Calculate image coordinates at the target viewport point
+        image_x = (scroll_x + viewport_x) / self.scale
+        image_y = (scroll_y + viewport_y) / self.scale
+
+        # Apply new zoom (use same limits as main viewer)
+        old_scale = self.scale
         self.scale *= factor
-        self.scale = max(0.1, min(self.scale, 20.0))
+        # Set reasonable zoom limits matching main viewer
+        min_scale = 0.125  # 1/8x
+        max_scale = 128.0  # 128x
+        self.scale = max(min_scale, min(self.scale, max_scale))
 
         # Manual zoom adjustment exits fit mode
         if hasattr(self, "_is_fit_zoom"):
             self._is_fit_zoom = False
 
+        # Update all tiles with new zoom
         for tile in self.tiles:
             tile.set_zoom(self.scale)
 
-        # After zoom changes, re-sync scroll positions using active tile as source
-        if self.tiles and 0 <= self.active_tile_index < len(self.tiles):
-            src_area = self.tiles[self.active_tile_index].scroll_area
-            hsb = src_area.horizontalScrollBar()
-            vsb = src_area.verticalScrollBar()
-            if hsb:
-                self.sync_scroll(self.active_tile_index, "h", hsb.value())
-            if vsb:
-                self.sync_scroll(self.active_tile_index, "v", vsb.value())
+        # Wait for GUI to update scrollbar ranges after zoom change
+        from PySide6.QtWidgets import QApplication
+
+        QApplication.processEvents()
+
+        # Calculate new scroll position to keep the target point at the same viewport position
+        # After zoom, the image point should be at: new_scroll + viewport_offset = image_coord * new_scale
+        new_scroll_x = image_x * self.scale - viewport_x
+        new_scroll_y = image_y * self.scale - viewport_y
+
+        # Apply scroll position to ALL tiles (not just source, to avoid sync issues)
+        self._syncing_scroll = True
+        try:
+            for i, tile in enumerate(self.tiles):
+                tile_hsb = tile.scroll_area.horizontalScrollBar()
+                tile_vsb = tile.scroll_area.verticalScrollBar()
+
+                if tile_hsb:
+                    clamped_x = max(tile_hsb.minimum(), min(new_scroll_x, tile_hsb.maximum()))
+                    tile_hsb.setValue(int(clamped_x))
+                if tile_vsb:
+                    clamped_y = max(tile_vsb.minimum(), min(new_scroll_y, tile_vsb.maximum()))
+                    tile_vsb.setValue(int(clamped_y))
+        finally:
+            self._syncing_scroll = False
+
+        # Process events to ensure all scroll positions are applied
+        QApplication.processEvents()
 
         self.update_status_bar()
 

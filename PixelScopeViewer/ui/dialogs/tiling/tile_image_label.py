@@ -21,7 +21,7 @@ class TileImageLabel(QLabel):
     # Signals
     roi_changed = Signal(object)  # Emits [x, y, w, h] or None
     clicked = Signal()  # Emits on left click
-    zoom_requested = Signal(float)  # Emits zoom factor (e.g., 2.0 or 0.5)
+    zoom_requested = Signal(float, object)  # Emits (zoom factor, mouse_pos_or_none)
     hover_info = Signal(int, int, str)  # Emits (ix, iy, valueText)
 
     def __init__(self):

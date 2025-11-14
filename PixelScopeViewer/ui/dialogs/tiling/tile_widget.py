@@ -134,7 +134,20 @@ class TileWidget(QWidget):
                 dy = event.pixelDelta().y() if not event.pixelDelta().isNull() else event.angleDelta().y()
                 if dy != 0:
                     factor = 2.0 if dy > 0 else 0.5
-                    self._on_zoom_requested(factor)
+                    # Get mouse position in viewport coordinates
+                    # Event position is relative to the object that received it, so convert to viewport coords
+                    event_pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
+                    if obj is self.scroll_area.viewport():
+                        mouse_pos = event_pos
+                    elif obj is self.image_label:
+                        # Convert from image_label coordinates to viewport coordinates
+                        mouse_pos = self.image_label.mapTo(self.scroll_area.viewport(), event_pos)
+                    elif obj is self.scroll_area:
+                        # Convert from scroll_area coordinates to viewport coordinates
+                        mouse_pos = self.scroll_area.mapTo(self.scroll_area.viewport(), event_pos)
+                    else:
+                        mouse_pos = event_pos
+                    self._on_zoom_requested(factor, mouse_pos)
                     return True
             # No Ctrl => allow default scrolling, then trigger sync manually
             vsb = self.scroll_area.verticalScrollBar()
@@ -168,10 +181,10 @@ class TileWidget(QWidget):
             return result
         return super().eventFilter(obj, event)
 
-    def _on_zoom_requested(self, factor: float):
+    def _on_zoom_requested(self, factor: float, mouse_pos=None):
         # Delegate to parent dialog to keep all tiles in sync
         try:
-            self.parent_dialog.adjust_zoom(factor)
+            self.parent_dialog.adjust_zoom(factor, tile_index=self.tile_index, mouse_pos=mouse_pos)
         except Exception:
             pass
 

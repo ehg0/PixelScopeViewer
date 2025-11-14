@@ -65,6 +65,7 @@ class TilingComparisonDialog(QDialog):
         # Track child dialogs for cleanup
         self._brightness_dialog = None
         self._help_dialog = None
+        self._analysis_dialog = None
 
         # Show selection dialog first
         selection_dialog = TileSelectionDialog(self, image_list)
@@ -136,7 +137,16 @@ class TilingComparisonDialog(QDialog):
         brightness_action = view_menu.addAction("輝度調整(&B)...")
         brightness_action.triggered.connect(self.show_brightness_dialog)
 
-        # Help menu
+        # Analysis menu
+        analysis_menu = menu_bar.addMenu("解析(&A)")
+        histogram_action = analysis_menu.addAction("ヒストグラム(&H)...")
+        histogram_action.triggered.connect(lambda: self.show_analysis_dialog(tab="Histogram"))
+
+        profile_action = analysis_menu.addAction("プロファイル(&P)...")
+        profile_action.triggered.connect(lambda: self.show_analysis_dialog(tab="Profile"))
+
+        metadata_action = analysis_menu.addAction("メタデータ(&M)...")
+        metadata_action.triggered.connect(lambda: self.show_analysis_dialog(tab="Metadata"))  # Help menu
         help_menu = menu_bar.addMenu("ヘルプ(&H)")
         help_action = help_menu.addAction("キーボードショートカット(&K)")
         help_action.triggered.connect(self.show_help)
@@ -233,6 +243,11 @@ class TilingComparisonDialog(QDialog):
         self.grid_size = grid_size
         self.selected_indices = selected_indices
 
+        # Close analysis dialog before rebuilding tiles to avoid stale references
+        if self._analysis_dialog is not None:
+            self._analysis_dialog.close()
+            self._analysis_dialog = None
+
         # Rebuild tiles
         self._clear_tiles()
         self._rebuild_tiles()
@@ -302,6 +317,9 @@ class TilingComparisonDialog(QDialog):
 
         # Brightness dialog
         add_shortcut("D", self.show_brightness_dialog)
+
+        # Analysis dialog
+        add_shortcut("A", self.show_analysis_dialog)
 
         # Reset
         add_shortcut("Ctrl+R", self.reset_brightness)
@@ -419,6 +437,9 @@ class TilingComparisonDialog(QDialog):
         if self._help_dialog is not None:
             self._help_dialog.close()
             self._help_dialog = None
+        if self._analysis_dialog is not None:
+            self._analysis_dialog.close()
+            self._analysis_dialog = None
 
         # Accept the close event
         super().closeEvent(event)
@@ -441,6 +462,12 @@ class TilingComparisonDialog(QDialog):
             # Update ROI display
             if self.roi_manager and self.roi_manager.common_roi_rect:
                 self.roi_manager.sync_roi_to_all_tiles(self.roi_manager.common_roi_rect)
+
+            # Update analysis dialog if it's open
+            if self._analysis_dialog and self._analysis_dialog.isVisible():
+                image_array, roi_rect, file_path = self.get_active_tile_image_and_rect()
+                if image_array is not None:
+                    self._analysis_dialog.set_image_and_rect(image_array, roi_rect, file_path)
 
     def on_tile_roi_changed(self, roi_rect_in_image_coords: QRect):
         """Handle ROI change from a tile."""
@@ -501,6 +528,100 @@ class TilingComparisonDialog(QDialog):
             self.roi_manager.on_tile_roi_changed_list(roi_rect)
             self.update_status_bar()
 
+            # Update analysis dialog if it's open
+            if self._analysis_dialog and self._analysis_dialog.isVisible():
+                image_array, roi_rect_qrect, file_path = self.get_active_tile_image_and_rect()
+                if image_array is not None:
+                    self._analysis_dialog.set_image_and_rect(image_array, roi_rect_qrect, file_path)
+
+    def get_active_tile_image_and_rect(self):
+        """Get active tile's image array, ROI rect, and file path.
+
+        Returns:
+            tuple: (image_array, roi_rect, file_path)
+                - image_array: numpy array of the displayed image
+                - roi_rect: QRect of ROI in image coordinates (or None)
+                - file_path: Path to the image file
+        """
+        if not self.tile_manager:
+            return None, None, None
+
+        active_index = self.tile_manager.get_active_tile_index()
+        tiles = self.tile_manager.get_tiles()
+
+        if active_index < 0 or active_index >= len(tiles):
+            return None, None, None
+
+        active_tile = tiles[active_index]
+
+        # Get displayed image array (with brightness adjustments applied)
+        image_array = active_tile.get_displayed_array()
+
+        # Validate image array
+        if image_array is None:
+            return None, None, None
+
+        # Check for empty array (zero size)
+        if image_array.size == 0:
+            return None, None, None
+
+        # Get ROI rect (in image coordinates)
+        roi_rect = None
+        if self.roi_manager:
+            roi_rect = self.roi_manager.common_roi_rect
+
+        # Get file path from image_data
+        file_path = None
+        if hasattr(active_tile, "image_data") and active_tile.image_data:
+            file_path = active_tile.image_data.get("path")
+
+        return image_array, roi_rect, file_path
+
+    def show_analysis_dialog(self, tab=None):
+        """Show analysis dialog for the active tile.
+
+        Args:
+            tab: Optional tab name to open ('Histogram', 'Profile', 'Metadata')
+        """
+        from ..analysis.dialog import AnalysisDialog
+
+        # Get active tile data
+        image_array, roi_rect, file_path = self.get_active_tile_image_and_rect()
+
+        if image_array is None:
+            QMessageBox.warning(self, "解析", "解析する画像がありません。")
+            return
+
+        # Create or show existing analysis dialog
+        if self._analysis_dialog is None or not self._analysis_dialog.isVisible():
+            self._analysis_dialog = AnalysisDialog(
+                parent=self, image_array=image_array, image_rect=roi_rect, image_path=file_path
+            )
+
+            # Set window title to distinguish from main viewer's analysis dialog
+            self._analysis_dialog.setWindowTitle("Analysis (Tiling)")
+
+            # Clean up reference when dialog is closed
+            self._analysis_dialog.finished.connect(lambda: setattr(self, "_analysis_dialog", None))
+
+            # Set the requested tab
+            if tab:
+                self._analysis_dialog.set_current_tab(tab)
+
+            self._analysis_dialog.show()
+        else:
+            # Dialog already exists and is visible
+            # Update with current data
+            self._analysis_dialog.set_image_and_rect(image_array, roi_rect, file_path)
+
+            # Set the requested tab
+            if tab:
+                self._analysis_dialog.set_current_tab(tab)
+
+            # Raise and activate the window
+            self._analysis_dialog.raise_()
+            self._analysis_dialog.activateWindow()
+
     def sync_scroll(self, source_index: int, direction: str, value: int):
         """Synchronize scrolls based on viewport-centered normalized position.
 
@@ -553,11 +674,21 @@ class TilingComparisonDialog(QDialog):
         """Swap active tile with next tile."""
         if self.tile_manager:
             self.tile_manager.swap_with_next_tile()
+            # Update analysis dialog if it's open
+            if self._analysis_dialog and self._analysis_dialog.isVisible():
+                image_array, roi_rect, file_path = self.get_active_tile_image_and_rect()
+                if image_array is not None:
+                    self._analysis_dialog.set_image_and_rect(image_array, roi_rect, file_path)
 
     def swap_with_previous_tile(self):
         """Swap active tile with previous tile."""
         if self.tile_manager:
             self.tile_manager.swap_with_previous_tile()
+            # Update analysis dialog if it's open
+            if self._analysis_dialog and self._analysis_dialog.isVisible():
+                image_array, roi_rect, file_path = self.get_active_tile_image_and_rect()
+                if image_array is not None:
+                    self._analysis_dialog.set_image_and_rect(image_array, roi_rect, file_path)
 
     def swap_tiles(self, index_a: int, index_b: int):
         """Swap two tiles."""
@@ -576,6 +707,12 @@ class TilingComparisonDialog(QDialog):
 
         if self.roi_manager and self.roi_manager.common_roi_rect:
             self.roi_manager.sync_roi_to_all_tiles(self.roi_manager.common_roi_rect)
+
+        # Update analysis dialog if it's open
+        if self._analysis_dialog and self._analysis_dialog.isVisible():
+            image_array, roi_rect, file_path = self.get_active_tile_image_and_rect()
+            if image_array is not None:
+                self._analysis_dialog.set_image_and_rect(image_array, roi_rect, file_path)
 
     def update_status_bar(self):
         """Update status bar with current parameters."""

@@ -61,10 +61,14 @@ class TileSelectionDialog(QDialog):
         self.grid_combo = QComboBox()
         self.grid_combo.addItem("2x1 (2枚)", (2, 1))
         self.grid_combo.addItem("1x2 (2枚)", (1, 2))
+        self.grid_combo.addItem("1x3 (3枚)", (1, 3))
+        self.grid_combo.addItem("1x4 (4枚)", (1, 4))
         self.grid_combo.addItem("2x2 (4枚)", (2, 2))
+        self.grid_combo.addItem("2x3 (6枚)", (2, 3))
+        self.grid_combo.addItem("2x4 (8枚)", (2, 4))
         self.grid_combo.addItem("3x2 (6枚)", (3, 2))
         self.grid_combo.addItem("3x3 (9枚)", (3, 3))
-        self.grid_combo.setCurrentIndex(2)  # Default to 2x2
+        self.grid_combo.setCurrentIndex(4)  # Default to 2x2
         self.grid_combo.currentIndexChanged.connect(self._on_grid_changed)
 
         grid_layout.addWidget(self.grid_combo)

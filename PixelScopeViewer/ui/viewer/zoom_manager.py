@@ -8,6 +8,7 @@ This module handles all zoom-related operations including:
 """
 
 import numpy as np
+from ...core.constants import MIN_ZOOM_SCALE, MAX_ZOOM_SCALE
 
 
 class ZoomManager:
@@ -187,7 +188,7 @@ class ZoomManager:
         scale_w = wh / w
         fit_scale = min(scale_h, scale_w)
         # Clamp to valid zoom range
-        fit_scale = max(0.125, min(128.0, fit_scale))
+        fit_scale = max(MIN_ZOOM_SCALE, min(MAX_ZOOM_SCALE, fit_scale))
         # Snap to nearest power of 2
         power = round(np.log2(fit_scale))
         snapped_scale = 2.0**power

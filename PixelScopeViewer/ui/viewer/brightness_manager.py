@@ -204,6 +204,10 @@ class BrightnessManager:
         # Update status bar
         self.viewer.update_brightness_status()
 
+        # Invalidate display cache
+        self.viewer._cached_display_array = None
+        self.viewer._cached_display_params = None
+
         # Refresh display with new brightness settings
         if self.viewer.current_index is not None:
             self.viewer.display_image(self.viewer.images[self.viewer.current_index]["array"])
@@ -223,6 +227,10 @@ class BrightnessManager:
             self.viewer.color_manager.set_checks(n, channels)
         except Exception:
             pass
+
+        # Invalidate display cache
+        self.viewer._cached_display_array = None
+        self.viewer._cached_display_params = None
 
         # Refresh display with new channel selection
         if self.viewer.current_index is not None:
@@ -244,6 +252,10 @@ class BrightnessManager:
         except Exception:
             pass
 
+        # Invalidate display cache
+        self.viewer._cached_display_array = None
+        self.viewer._cached_display_params = None
+
         # Refresh display with new channel colors
         if self.viewer.current_index is not None:
             self.viewer.display_image(self.viewer.images[self.viewer.current_index]["array"])
@@ -259,6 +271,11 @@ class BrightnessManager:
         if mode not in (MODE_1CH_GRAYSCALE, MODE_1CH_JET):
             return
         self.viewer.color_manager.set_mode_1ch(mode)
+
+        # Invalidate display cache
+        self.viewer._cached_display_array = None
+        self.viewer._cached_display_params = None
+
         if self.viewer.current_index is not None:
             # Regenerate thumbnail for 1ch images
             img = self.viewer.images[self.viewer.current_index]
@@ -286,6 +303,11 @@ class BrightnessManager:
         if mode not in (MODE_2CH_COMPOSITE, MODE_2CH_FLOW_HSV):
             return
         self.viewer.color_manager.set_mode_2ch(mode)
+
+        # Invalidate display cache
+        self.viewer._cached_display_array = None
+        self.viewer._cached_display_params = None
+
         # Regenerate thumbnail for current image if it's 2ch
         if self.viewer.current_index is not None:
             img = self.viewer.images[self.viewer.current_index]

@@ -895,8 +895,16 @@ class ImageViewer(QMainWindow):
             return
         from ..dialogs.tiling import TilingComparisonDialog
 
-        dlg = TilingComparisonDialog(self, image_list=self.images)
-        dlg.exec()
+        # Create modeless dialog (allows main window operation)
+        # Keep reference to prevent garbage collection
+        if not hasattr(self, "_tiling_dialog") or self._tiling_dialog is None:
+            self._tiling_dialog = TilingComparisonDialog(self, image_list=self.images)
+            # If dialog is closed, reset the reference
+            self._tiling_dialog.finished.connect(lambda: setattr(self, "_tiling_dialog", None))
+
+        self._tiling_dialog.show()
+        self._tiling_dialog.raise_()
+        self._tiling_dialog.activateWindow()
 
     # ROI operations
     def select_all(self):

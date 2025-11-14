@@ -74,9 +74,15 @@ class TilingComparisonDialog(QDialog):
         """
         super().__init__(None)
         self.setWindowTitle("タイリング比較")
+        # Enable maximize and minimize buttons
+        self.setWindowFlags(Qt.Window | Qt.WindowMinMaxButtonsHint | Qt.WindowCloseButtonHint)
         self.setFocusPolicy(Qt.StrongFocus)
         self.parent_viewer = parent
         self.all_images = image_list
+
+        # Track child dialogs for cleanup
+        self._brightness_dialog = None
+        self._help_dialog = None
 
         # Show selection dialog first
         selection_dialog = TileSelectionDialog(self, image_list)
@@ -568,7 +574,7 @@ class TilingComparisonDialog(QDialog):
 
     def show_brightness_dialog(self):
         """Show brightness adjustment dialog."""
-        if not hasattr(self, "_brightness_dialog") or self._brightness_dialog is None:
+        if self._brightness_dialog is None:
             self._brightness_dialog = TilingBrightnessDialog(
                 self, self.brightness_params_by_dtype, self.brightness_gain
             )
@@ -580,12 +586,25 @@ class TilingComparisonDialog(QDialog):
 
     def show_help(self):
         """Show help dialog with keyboard shortcuts."""
-        if not hasattr(self, "_help_dialog") or self._help_dialog is None:
+        if self._help_dialog is None:
             self._help_dialog = TilingHelpDialog(self)
 
         self._help_dialog.show()
         self._help_dialog.raise_()
         self._help_dialog.activateWindow()
+
+    def closeEvent(self, event):
+        """Handle dialog close event and close child dialogs."""
+        # Close child dialogs
+        if self._brightness_dialog is not None:
+            self._brightness_dialog.close()
+            self._brightness_dialog = None
+        if self._help_dialog is not None:
+            self._help_dialog.close()
+            self._help_dialog = None
+
+        # Accept the close event
+        super().closeEvent(event)
 
     def on_brightness_dialog_changed(self, full_params: Dict):
         """Handle brightness change from dialog.

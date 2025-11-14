@@ -369,6 +369,7 @@ class TilingComparisonDialog(QDialog):
         QShortcut(QKeySequence("Shift+Up"), self).activated.connect(lambda: self._scroll_by_key(0, -50, True))
         QShortcut(QKeySequence("Shift+Down"), self).activated.connect(lambda: self._scroll_by_key(0, 50, True))
         QShortcut(QKeySequence("Ctrl+C"), self).activated.connect(self.copy_active_tile_roi)
+        QShortcut(QKeySequence("Ctrl+Shift+C"), self).activated.connect(self.copy_all_tiles_roi_as_grid)
 
         # Tile rotation
         QShortcut(QKeySequence("Tab"), self).activated.connect(self.rotate_tiles_forward)
@@ -800,6 +801,96 @@ class TilingComparisonDialog(QDialog):
         else:
             qimg = numpy_to_qimage(arr)
 
+        if qimg and not qimg.isNull():
+            QGuiApplication.clipboard().setImage(qimg)
+
+    def copy_all_tiles_roi_as_grid(self):
+        """Copy ROI regions from all tiles arranged in grid layout to clipboard."""
+        if not self.tiles:
+            return
+
+        roi_rect = self.common_roi_rect
+        if not roi_rect or roi_rect.isEmpty():
+            # No ROI set, do nothing
+            return
+
+        x, y, w, h = roi_rect.x(), roi_rect.y(), roi_rect.width(), roi_rect.height()
+        rows, cols = self.grid_size
+
+        # Extract ROI regions from all tiles
+        roi_images = []
+        for tile in self.tiles:
+            arr = tile.get_displayed_array()
+            if arr is None:
+                continue
+
+            h_arr, w_arr = arr.shape[:2]
+            if x < w_arr and y < h_arr:
+                x2 = min(x + w, w_arr)
+                y2 = min(y + h, h_arr)
+                sub_arr = arr[y:y2, x:x2]
+                roi_images.append(sub_arr)
+            else:
+                # ROI out of bounds, skip this tile
+                roi_images.append(None)
+
+        # Create grid image
+        if not roi_images or all(img is None for img in roi_images):
+            return
+
+        # Determine output dimensions (use first valid ROI size)
+        roi_h, roi_w = h, w
+        for img in roi_images:
+            if img is not None:
+                roi_h, roi_w = img.shape[:2]
+                break
+
+        # Determine if images are color or grayscale
+        is_color = False
+        num_channels = 1
+        for img in roi_images:
+            if img is not None and len(img.shape) == 3:
+                is_color = True
+                num_channels = img.shape[2]
+                break
+
+        # Create output array
+        output_h = rows * roi_h
+        output_w = cols * roi_w
+        if is_color:
+            output_array = np.zeros(
+                (output_h, output_w, num_channels), dtype=roi_images[0].dtype if roi_images[0] is not None else np.uint8
+            )
+        else:
+            output_array = np.zeros(
+                (output_h, output_w), dtype=roi_images[0].dtype if roi_images[0] is not None else np.uint8
+            )
+
+        # Place each ROI image in the grid
+        for i, img in enumerate(roi_images):
+            if img is None:
+                continue
+
+            row = i // cols
+            col = i % cols
+            y_start = row * roi_h
+            x_start = col * roi_w
+
+            img_h, img_w = img.shape[:2]
+            y_end = min(y_start + img_h, output_h)
+            x_end = min(x_start + img_w, output_w)
+
+            if is_color and len(img.shape) == 2:
+                # Convert grayscale to color
+                img = np.stack([img] * num_channels, axis=2)
+            elif not is_color and len(img.shape) == 3:
+                # Convert color to grayscale
+                img = img[:, :, 0]
+
+            output_array[y_start:y_end, x_start:x_end] = img[: y_end - y_start, : x_end - x_start]
+
+        # Convert to QImage and copy to clipboard
+        qimg = numpy_to_qimage(output_array)
         if qimg and not qimg.isNull():
             QGuiApplication.clipboard().setImage(qimg)
 

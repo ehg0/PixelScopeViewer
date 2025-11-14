@@ -138,13 +138,13 @@ class ImageViewer(QMainWindow):
         h_layout.addWidget(self.scroll_area)
         self.image_label.installEventFilter(self)
 
-        # Right docks
+        # Left docks
         # Navigator dock
         self.navigator_dock = QDockWidget("Navigator")
         self.navigator_dock.setFeatures(QDockWidget.DockWidgetFloatable | QDockWidget.DockWidgetMovable)
         self.navigator_widget = NavigatorWidget(self)
         self.navigator_dock.setWidget(self.navigator_widget)
-        self.addDockWidget(Qt.RightDockWidgetArea, self.navigator_dock)
+        self.addDockWidget(Qt.LeftDockWidgetArea, self.navigator_dock)
 
         # Info dock with tabs
         from PySide6.QtWidgets import QTabWidget
@@ -164,7 +164,7 @@ class ImageViewer(QMainWindow):
         self.info_tabs.addTab(roi_info_widget, "ROI Area")
 
         self.info_dock.setWidget(self.info_tabs)
-        self.addDockWidget(Qt.RightDockWidgetArea, self.info_dock)
+        self.addDockWidget(Qt.LeftDockWidgetArea, self.info_dock)
 
         # Status bar
         self.status = QStatusBar()
@@ -767,17 +767,33 @@ class ImageViewer(QMainWindow):
         """Close the currently displayed image."""
         if self.current_index is None:
             return
+        # Explicitly delete image data to free memory
+        img_data = self.images[self.current_index]
+        if "array" in img_data:
+            del img_data["array"]
+        if "base_array" in img_data:
+            del img_data["base_array"]
         del self.images[self.current_index]
         if not self.images:
             self.current_index = None
+            # Clear the image label to release any held references
+            self.image_label.clear()
         else:
             self.current_index = min(self.current_index, len(self.images) - 1)
         self.show_current_image()
 
     def close_all_images(self):
         """Close all loaded images."""
+        # Explicitly delete all image data to free memory
+        for img_data in self.images:
+            if "array" in img_data:
+                del img_data["array"]
+            if "base_array" in img_data:
+                del img_data["base_array"]
         self.images.clear()
         self.current_index = None
+        # Clear the image label to release any held references
+        self.image_label.clear()
         # update UI and image menu
         try:
             self.show_current_image()

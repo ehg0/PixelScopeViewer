@@ -21,34 +21,16 @@ from .selection_dialog import TileSelectionDialog
 from .tile_widget import TileWidget
 from .brightness_dialog import TilingBrightnessDialog
 from .help_dialog import TilingHelpDialog
+from .core import (
+    ZoomManager,
+    BrightnessManager,
+    ScrollManager,
+    ROIManager,
+    TileManager,
+    determine_dtype_group,
+)
 from PixelScopeViewer.core.image_io import numpy_to_qimage
 from PixelScopeViewer.core.constants import MIN_ZOOM_SCALE, MAX_ZOOM_SCALE
-
-
-def determine_dtype_group(arr: np.ndarray) -> str:
-    """Determine dtype group for brightness parameter management.
-
-    Args:
-        arr: Image array
-
-    Returns:
-        'uint8', 'uint16', or 'float'
-    """
-    dtype = arr.dtype
-
-    if np.issubdtype(dtype, np.floating):
-        return "float"
-    elif np.issubdtype(dtype, np.integer):
-        try:
-            max_val = np.iinfo(dtype).max
-            if max_val <= 255:
-                return "uint8"
-            else:
-                return "uint16"
-        except:
-            return "uint8"
-    else:
-        return "uint8"
 
 
 class TilingComparisonDialog(QDialog):
@@ -100,39 +82,34 @@ class TilingComparisonDialog(QDialog):
         self.grid_size = grid_size
         self.selected_indices = selected_indices
 
-        # Brightness parameters
-        self.brightness_gain = 1.0
-        self.brightness_params_by_dtype = {
-            "uint8": {"offset": 0, "saturation": 255},
-            "uint16": {"offset": 0, "saturation": 1023},
-            "float": {"offset": 0.0, "saturation": 1.0},
-        }
-
-        # Common state
-        self.scale = 1.0
-        self._is_fit_zoom = False
-        self._previous_zoom = 1.0
-        self.common_roi_rect = None  # QRect in image coordinates
-        self.active_tile_index = 0
-        self._syncing_scroll = False
-
-        # Tiles and their dtype groups
-        self.tiles = []
-        self.tile_dtype_groups = []
-        self.displayed_image_data = []
-
         # Shortcuts list to keep references
         self.shortcuts = []
 
-        # Build UI
+        # Store current mouse coordinates for status bar
+        self.current_mouse_coords = None
+
+        # Build UI first (creates grid_layout and labels)
         self._build_ui()
 
+        # Initialize managers after UI is built
+        self.tile_manager = TileManager(self.grid_layout)
+        self.brightness_manager = None  # Created after tiles
+        self.scroll_manager = None  # Created after tiles
+        self.zoom_manager = None  # Created after tiles
+        self.roi_manager = None  # Created after tiles
+
+        # Create initial tiles
+        self._rebuild_tiles()
+
+        # Initialize managers with tiles
+        self._initialize_managers()
+
         # Connect signals
-        self.common_roi_changed.connect(self.sync_roi_to_all_tiles)
+        self.common_roi_changed.connect(self.roi_manager.sync_roi_to_all_tiles)
 
         # Set initial active tile
-        if self.tiles:
-            self.set_active_tile(0)
+        if self.tile_manager.get_tiles():
+            self.tile_manager.set_active_tile(0)
 
         # Resize dialog
         self.resize(1200, 800)
@@ -189,89 +166,39 @@ class TilingComparisonDialog(QDialog):
         self.status_bar.addPermanentWidget(self.scale_label)
         layout.addWidget(self.status_bar)
 
-        # Store current mouse coordinates for status bar
-        self.current_mouse_coords = None
-
         # Setup shortcuts
         self._setup_shortcuts()
 
-        # Create initial tiles
-        self._rebuild_tiles()
+    def _initialize_managers(self):
+        """Initialize managers after tiles are created."""
+        tiles = self.tile_manager.get_tiles()
+        tile_dtype_groups = self.tile_manager.get_tile_dtype_groups()
+
+        self.brightness_manager = BrightnessManager(tiles, tile_dtype_groups)
+        self.scroll_manager = ScrollManager(tiles)
+        self.zoom_manager = ZoomManager(tiles, self.tile_manager.get_active_tile_index)
+        self.roi_manager = ROIManager(tiles, self.tile_manager.get_active_tile_index, self.common_roi_changed)
 
     def _clear_tiles(self):
         """Clear all existing tiles from the grid."""
-        # Disconnect and remove all tiles
-        for tile in self.tiles:
-            # Disconnect signals
-            try:
-                tile.activated.disconnect()
-                tile.roi_changed.disconnect()
-                tile.image_label.hover_info.disconnect()
-                if tile.scroll_area.horizontalScrollBar():
-                    tile.scroll_area.horizontalScrollBar().sliderMoved.disconnect()
-                if tile.scroll_area.verticalScrollBar():
-                    tile.scroll_area.verticalScrollBar().sliderMoved.disconnect()
-            except:
-                pass
-
-            # Remove from grid
-            self.grid_layout.removeWidget(tile)
-            tile.setParent(None)
-            tile.deleteLater()
-
-        # Clear lists
-        self.tiles.clear()
-        self.tile_dtype_groups.clear()
-        self.displayed_image_data.clear()
-
+        self.tile_manager.clear_tiles()
         # Clear ROI
-        self.common_roi_rect = None
+        if self.roi_manager:
+            self.roi_manager.common_roi_rect = None
 
     def _rebuild_tiles(self):
         """Rebuild tiles based on current selection."""
-        rows, cols = self.grid_size
-
-        # Create tiles
-        for i, img_idx in enumerate(self.selected_indices):
-            if img_idx >= len(self.all_images):
-                continue
-
-            image_data = self.all_images[img_idx].copy()
-            self.displayed_image_data.append(image_data)
-
-            # Determine dtype group
-            arr = image_data.get("base_array", image_data.get("array"))
-            dtype_group = determine_dtype_group(arr)
-            self.tile_dtype_groups.append(dtype_group)
-
-            # Create tile widget
-            tile = TileWidget(image_data, self, i)
-            tile.activated.connect(lambda idx=i: self.set_active_tile(idx))
-            tile.roi_changed.connect(self._on_tile_roi_changed)
-            tile.mouse_coords_changed.connect(self._on_mouse_coords_changed)
-
-            self.tiles.append(tile)
-
-            # Add to grid
-            row = i // cols
-            col = i % cols
-            self.grid_layout.addWidget(tile, row, col)
-
-            # Initial display
-            tile.update_display()
-            # Connect scrollbars for sync - use ONLY sliderMoved to avoid signal conflicts
-            if tile.scroll_area.horizontalScrollBar():
-                hsb = tile.scroll_area.horizontalScrollBar()
-                # sliderMoved: user dragging scrollbar thumb
-                hsb.sliderMoved.connect(lambda val, idx=i: self._on_scroll(idx, "h", val, "sliderMoved"))
-            if tile.scroll_area.verticalScrollBar():
-                vsb = tile.scroll_area.verticalScrollBar()
-                # sliderMoved: user dragging scrollbar thumb
-                vsb.sliderMoved.connect(lambda val, idx=i: self._on_scroll(idx, "v", val, "sliderMoved"))
-
-        # Set initial active tile
-        if self.tiles:
-            self.set_active_tile(0)
+        self.tile_manager.rebuild_tiles(
+            self.all_images,
+            self.selected_indices,
+            self.grid_size,
+            self,
+            TileWidget,
+            self.set_active_tile,
+            self._on_tile_roi_changed,
+            self._on_mouse_coords_changed,
+            self._on_scroll,
+        )
 
         # Update display
         self.update_status_bar()
@@ -309,18 +236,23 @@ class TilingComparisonDialog(QDialog):
         # Rebuild tiles
         self._clear_tiles()
         self._rebuild_tiles()
+        self._initialize_managers()
 
     def _on_scroll(self, source_index: int, direction: str, value: int, signal_name: str):
-        """Handle scroll events with debug logging."""
-        self.sync_scroll(source_index, direction, value)
+        """Handle scroll events."""
+        if self.scroll_manager:
+            self.scroll_manager.sync_scroll(source_index, direction, value, self.zoom_manager.get_scale())
 
     def _on_hover_info(self, tile_idx: int, ix: int, iy: int, value_text: str):
         """On hover in any tile, update all tiles' pixel value displays and show coordinates in status bar."""
         # Update each tile's pixel value display with value at (ix, iy)
-        for i, data in enumerate(self.displayed_image_data):
+        displayed_image_data = self.tile_manager.get_displayed_image_data()
+        tiles = self.tile_manager.get_tiles()
+
+        for i, data in enumerate(displayed_image_data):
             arr = data.get("base_array", data.get("array"))
             if arr is None:
-                self.tiles[i].update_status("")
+                tiles[i].update_status("")
                 continue
             h, w = arr.shape[:2]
             if 0 <= ix < w and 0 <= iy < h:
@@ -339,10 +271,10 @@ class TilingComparisonDialog(QDialog):
                     txt = "NA"
             else:
                 txt = ""
-            self.tiles[i].update_status(txt)
+            tiles[i].update_status(txt)
 
         # Show only coordinates in status bar
-        self.hover_label.setText(f"({ix}, {iy})")
+        self.mouse_coords_label.setText(f"({ix}, {iy})")
 
     def _setup_shortcuts(self):
         """Setup keyboard shortcuts with WindowShortcut context to avoid conflicts."""
@@ -406,137 +338,27 @@ class TilingComparisonDialog(QDialog):
             tile_index: Index of the tile that triggered the zoom (for mouse position)
             mouse_pos: Mouse position in viewport coordinates (for Ctrl+Wheel zoom)
         """
-        # Use active tile if not specified
-        if tile_index is None:
-            tile_index = self.active_tile_index
-
-        if not (0 <= tile_index < len(self.tiles)):
+        if not self.zoom_manager or not self.scroll_manager:
             return
 
-        source_tile = self.tiles[tile_index]
-        scroll_area = source_tile.scroll_area
-        viewport = scroll_area.viewport()
+        new_scroll_x, new_scroll_y = self.zoom_manager.adjust_zoom(factor, tile_index, mouse_pos)
 
-        # Calculate the point to keep fixed during zoom
-        if mouse_pos is not None:
-            # Mouse wheel: use mouse position in viewport
-            viewport_x = mouse_pos.x()
-            viewport_y = mouse_pos.y()
-        else:
-            # Keyboard (+/-): use viewport center
-            viewport_x = viewport.width() / 2.0
-            viewport_y = viewport.height() / 2.0
-
-        # Convert viewport position to image coordinates (before zoom)
-        hsb = scroll_area.horizontalScrollBar()
-        vsb = scroll_area.verticalScrollBar()
-        scroll_x = hsb.value() if hsb else 0
-        scroll_y = vsb.value() if vsb else 0
-
-        # Calculate image coordinates at the target viewport point
-        image_x = (scroll_x + viewport_x) / self.scale
-        image_y = (scroll_y + viewport_y) / self.scale
-
-        # Apply new zoom (use same limits as main viewer)
-        old_scale = self.scale
-        self.scale *= factor
-        # Use zoom limits from main viewer (MIN_ZOOM_SCALE, MAX_ZOOM_SCALE)
-        self.scale = max(MIN_ZOOM_SCALE, min(self.scale, MAX_ZOOM_SCALE))
-
-        # Manual zoom adjustment exits fit mode
-        if hasattr(self, "_is_fit_zoom"):
-            self._is_fit_zoom = False
-
-        # Update all tiles with new zoom
-        for tile in self.tiles:
-            tile.set_zoom(self.scale)
-
-        # Wait for GUI to update scrollbar ranges after zoom change
+        # Apply scroll position
         from PySide6.QtWidgets import QApplication
 
-        QApplication.processEvents()
-
-        # Calculate new scroll position to keep the target point at the same viewport position
-        # After zoom, the image point should be at: new_scroll + viewport_offset = image_coord * new_scale
-        new_scroll_x = image_x * self.scale - viewport_x
-        new_scroll_y = image_y * self.scale - viewport_y
-
-        # Apply scroll position to ALL tiles (not just source, to avoid sync issues)
-        self._syncing_scroll = True
-        try:
-            for i, tile in enumerate(self.tiles):
-                tile_hsb = tile.scroll_area.horizontalScrollBar()
-                tile_vsb = tile.scroll_area.verticalScrollBar()
-
-                if tile_hsb:
-                    clamped_x = max(tile_hsb.minimum(), min(new_scroll_x, tile_hsb.maximum()))
-                    tile_hsb.setValue(int(clamped_x))
-                if tile_vsb:
-                    clamped_y = max(tile_vsb.minimum(), min(new_scroll_y, tile_vsb.maximum()))
-                    tile_vsb.setValue(int(clamped_y))
-        finally:
-            self._syncing_scroll = False
-
-        # Process events to ensure all scroll positions are applied
+        self.scroll_manager.apply_scroll_position(new_scroll_x, new_scroll_y)
         QApplication.processEvents()
 
         self.update_status_bar()
 
     def toggle_fit_zoom(self):
         """Toggle between fit-to-window and original zoom."""
-        if not self.tiles:
+        if not self.zoom_manager or not self.scroll_manager:
             return
 
-        # Check if currently at fit zoom
-        if hasattr(self, "_is_fit_zoom") and self._is_fit_zoom:
-            # Return to previous zoom
-            if hasattr(self, "_previous_zoom"):
-                self.scale = self._previous_zoom
-            else:
-                self.scale = 1.0
-            self._is_fit_zoom = False
-        else:
-            # Save current zoom and fit to window
-            self._previous_zoom = self.scale
-
-            # Calculate fit zoom based on scroll area size and image size
-            active_tile = (
-                self.tiles[self.active_tile_index] if self.active_tile_index < len(self.tiles) else self.tiles[0]
-            )
-            scroll_area = active_tile.scroll_area
-            viewport = scroll_area.viewport()
-
-            # Get image dimensions
-            image_label = active_tile.image_label
-            if image_label.qimage:
-                img_width = image_label.qimage.width()
-                img_height = image_label.qimage.height()
-                viewport_width = viewport.width()
-                viewport_height = viewport.height()
-
-                # Calculate scale to fit both dimensions
-                scale_w = viewport_width / img_width if img_width > 0 else 1.0
-                scale_h = viewport_height / img_height if img_height > 0 else 1.0
-                self.scale = min(scale_w, scale_h, 1.0)  # Don't zoom beyond 1.0
-            else:
-                self.scale = 1.0
-
-            self._is_fit_zoom = True
-
-        # Apply zoom to all tiles
-        for tile in self.tiles:
-            tile.set_zoom(self.scale)
-
-        # Re-sync after zoom change
-        if 0 <= self.active_tile_index < len(self.tiles):
-            src_area = self.tiles[self.active_tile_index].scroll_area
-            hsb = src_area.horizontalScrollBar()
-            vsb = src_area.verticalScrollBar()
-            if hsb:
-                self.sync_scroll(self.active_tile_index, "h", hsb.value())
-            if vsb:
-                self.sync_scroll(self.active_tile_index, "v", vsb.value())
-
+        self.zoom_manager.toggle_fit_zoom(
+            lambda idx, dir, val: self.scroll_manager.sync_scroll(idx, dir, val, self.zoom_manager.get_scale())
+        )
         self.update_status_bar()
 
     def adjust_gain(self, factor):
@@ -545,52 +367,34 @@ class TilingComparisonDialog(QDialog):
         Args:
             factor: Multiplication factor (2.0 for increase, 0.5 for decrease)
         """
-        # Apply factor
-        self.brightness_gain *= factor
-
-        # Snap to nearest power of 2 for clean binary steps
-        import math
-
-        if self.brightness_gain > 0:
-            power = round(math.log2(self.brightness_gain))
-            self.brightness_gain = 2.0**power
-
-        # Clamp to reasonable range (1/128x to 128x, matching zoom range)
-        min_gain = 1.0 / 128.0
-        max_gain = 128.0
-        self.brightness_gain = max(min_gain, min(self.brightness_gain, max_gain))
-
-        self.refresh_all_tiles()
-        self.update_status_bar()
+        if self.brightness_manager:
+            self.brightness_manager.adjust_gain(factor)
+            self.update_status_bar()
 
     def reset_brightness(self):
         """Reset all brightness parameters."""
-        self.brightness_gain = 1.0
-        self.brightness_params_by_dtype = {
-            "uint8": {"offset": 0, "saturation": 255},
-            "uint16": {"offset": 0, "saturation": 1023},
-            "float": {"offset": 0.0, "saturation": 1.0},
-        }
-        self.refresh_all_tiles()
-        self.update_status_bar()
+        if self.brightness_manager:
+            self.brightness_manager.reset_brightness()
+            self.update_status_bar()
 
     def refresh_all_tiles(self):
         """Refresh display for all tiles."""
-        for tile in self.tiles:
-            tile.update_display()
+        if self.brightness_manager:
+            self.brightness_manager.refresh_all_tiles()
 
     def refresh_tiles_by_dtype_group(self, dtype_group: str):
         """Refresh tiles of specific dtype group."""
-        for i, tile in enumerate(self.tiles):
-            if self.tile_dtype_groups[i] == dtype_group:
-                tile.update_display()
+        if self.brightness_manager:
+            self.brightness_manager.refresh_tiles_by_dtype_group(dtype_group)
 
     def show_brightness_dialog(self):
         """Show brightness adjustment dialog."""
+        if not self.brightness_manager:
+            return
+
         if self._brightness_dialog is None:
-            self._brightness_dialog = TilingBrightnessDialog(
-                self, self.brightness_params_by_dtype, self.brightness_gain
-            )
+            params = self.brightness_manager.get_brightness_params()
+            self._brightness_dialog = TilingBrightnessDialog(self, params["params_by_dtype"], params["gain"])
             self._brightness_dialog.brightness_changed.connect(self.on_brightness_dialog_changed)
 
         self._brightness_dialog.show()
@@ -625,40 +429,24 @@ class TilingComparisonDialog(QDialog):
         Args:
             full_params: Dict mapping dtype groups to {gain, offset, saturation}
         """
-        # Update gain from first entry (they're all the same)
-        if full_params:
-            first_group = list(full_params.keys())[0]
-            self.brightness_gain = full_params[first_group]["gain"]
-
-        # Update per-dtype params
-        for dtype_group, params in full_params.items():
-            self.brightness_params_by_dtype[dtype_group]["offset"] = params["offset"]
-            self.brightness_params_by_dtype[dtype_group]["saturation"] = params["saturation"]
-
-        self.refresh_all_tiles()
-        self.update_status_bar()
+        if self.brightness_manager:
+            self.brightness_manager.on_brightness_dialog_changed(full_params)
+            self.update_status_bar()
 
     def set_active_tile(self, tile_index: int):
         """Set active tile."""
-        if tile_index < 0 or tile_index >= len(self.tiles):
-            return
+        if self.tile_manager:
+            self.tile_manager.set_active_tile(tile_index)
 
-        # Deactivate previous
-        if 0 <= self.active_tile_index < len(self.tiles):
-            self.tiles[self.active_tile_index].set_active(False)
-
-        # Activate new
-        self.active_tile_index = tile_index
-        self.tiles[tile_index].set_active(True)
-
-        # Update ROI display
-        if self.common_roi_rect:
-            self.sync_roi_to_all_tiles(self.common_roi_rect)
+            # Update ROI display
+            if self.roi_manager and self.roi_manager.common_roi_rect:
+                self.roi_manager.sync_roi_to_all_tiles(self.roi_manager.common_roi_rect)
 
     def on_tile_roi_changed(self, roi_rect_in_image_coords: QRect):
         """Handle ROI change from a tile."""
-        self.common_roi_rect = roi_rect_in_image_coords
-        self.common_roi_changed.emit(roi_rect_in_image_coords)
+        if self.roi_manager:
+            self.roi_manager.on_tile_roi_changed(roi_rect_in_image_coords)
+            self.update_status_bar()
 
     def _on_mouse_coords_changed(self, coords):
         """Handle mouse coordinates change from a tile.
@@ -669,10 +457,15 @@ class TilingComparisonDialog(QDialog):
         self.current_mouse_coords = coords
         self.update_status_bar()
 
+        if not self.tile_manager:
+            return
+
+        tiles = self.tile_manager.get_tiles()
+
         # Update pixel values for all tiles at the same coordinate
         if coords is not None:
             ix, iy = coords
-            for tile in self.tiles:
+            for tile in tiles:
                 arr = tile.get_displayed_array()
                 if arr is not None:
                     try:
@@ -695,7 +488,7 @@ class TilingComparisonDialog(QDialog):
                     tile.update_status("")
         else:
             # Clear all tile pixel value displays
-            for tile in self.tiles:
+            for tile in tiles:
                 tile.update_status("")
 
     def _on_tile_roi_changed(self, roi_rect):
@@ -704,16 +497,9 @@ class TilingComparisonDialog(QDialog):
         Args:
             roi_rect: ROI rectangle as list [x, y, w, h] or None
         """
-        if roi_rect:
-            self.common_roi_rect = QRect(roi_rect[0], roi_rect[1], roi_rect[2], roi_rect[3])
-        else:
-            self.common_roi_rect = None
-
-        if self.common_roi_rect:
-            self.common_roi_changed.emit(self.common_roi_rect)
-
-        # Update status bar to show ROI dimensions
-        self.update_status_bar()
+        if self.roi_manager:
+            self.roi_manager.on_tile_roi_changed_list(roi_rect)
+            self.update_status_bar()
 
     def sync_scroll(self, source_index: int, direction: str, value: int):
         """Synchronize scrolls based on viewport-centered normalized position.
@@ -721,298 +507,75 @@ class TilingComparisonDialog(QDialog):
         Uses (value + pageStep/2) / (maximum + pageStep) to keep visible region aligned
         across different content sizes and viewport dimensions.
         """
-        if self._syncing_scroll:
-            return
-        # Get source scrollbar and compute normalized center ratio
-        src_sb = (
-            self.tiles[source_index].scroll_area.horizontalScrollBar()
-            if direction == "h"
-            else self.tiles[source_index].scroll_area.verticalScrollBar()
-        )
-        if src_sb is None:
-            return
-        src_max = src_sb.maximum()
-        src_page = src_sb.pageStep()
-        denom = src_max + src_page
-        if denom <= 0:
-            # No scrollable range; do not force others
-            return
-        # value comes from signal; ensure consistent with src_sb.value()
-        src_val = value
-        # Center position ratio in [0,1]
-        center_pos = src_val + (src_page / 2.0)
-        ratio = max(0.0, min(1.0, center_pos / float(denom)))
-
-        self._syncing_scroll = True
-        try:
-            for i, tile in enumerate(self.tiles):
-                if i == source_index:
-                    continue
-                tgt_sb = (
-                    tile.scroll_area.horizontalScrollBar() if direction == "h" else tile.scroll_area.verticalScrollBar()
-                )
-                if tgt_sb is None:
-                    continue
-                tgt_max = tgt_sb.maximum()
-                tgt_page = tgt_sb.pageStep()
-                tgt_denom = tgt_max + tgt_page
-                if tgt_denom <= 0:
-                    continue
-                tgt_center = ratio * float(tgt_denom)
-                tgt_val = int(round(tgt_center - (tgt_page / 2.0)))
-                # Clamp to valid range
-                if tgt_val < tgt_sb.minimum():
-                    tgt_val = tgt_sb.minimum()
-                if tgt_val > tgt_sb.maximum():
-                    tgt_val = tgt_sb.maximum()
-
-                # Skip if already at target value
-                if tgt_sb.value() == tgt_val:
-                    continue
-
-                # Set value directly - _syncing_scroll flag prevents recursion
-                # Do NOT use blockSignals as it prevents viewport updates
-                tgt_sb.setValue(tgt_val)
-
-                # Force the scroll area to process the change immediately
-                tile.scroll_area.update()
-                tile.scroll_area.viewport().update()
-                # Process pending events to ensure scroll takes effect
-                from PySide6.QtCore import QCoreApplication
-
-                QCoreApplication.processEvents()
-
-        finally:
-            self._syncing_scroll = False
+        if self.scroll_manager:
+            self.scroll_manager.sync_scroll(
+                source_index, direction, value, self.zoom_manager.get_scale() if self.zoom_manager else 1.0
+            )
 
     def sync_roi_to_all_tiles(self, roi_rect: QRect):
         """Sync ROI to all tiles."""
-        for i, tile in enumerate(self.tiles):
-            is_active = i == self.active_tile_index
-            tile.set_roi_from_image_coords(roi_rect, is_active)
+        if self.roi_manager:
+            self.roi_manager.sync_roi_to_all_tiles(roi_rect)
 
     def select_all_roi(self):
         """Select all (full image) for active tile."""
-        if not self.tiles or self.active_tile_index >= len(self.tiles):
-            return
-
-        active_tile = self.tiles[self.active_tile_index]
-        arr = active_tile.image_data["base_array"]
-        h, w = arr.shape[:2]
-
-        full_roi = QRect(0, 0, w, h)
-        self.common_roi_rect = full_roi
-        self.common_roi_changed.emit(full_roi)
+        if self.roi_manager:
+            self.roi_manager.select_all_roi()
 
     def clear_roi(self):
         """Clear ROI from all tiles."""
-        self.common_roi_rect = None
-        self.common_roi_changed.emit(QRect())
+        if self.roi_manager:
+            self.roi_manager.clear_roi()
 
     def copy_active_tile_roi(self):
         """Copy ROI region from active tile to clipboard."""
-        if not self.tiles or self.active_tile_index >= len(self.tiles):
-            return
-
-        active_tile = self.tiles[self.active_tile_index]
-        roi_rect = self.common_roi_rect
-
-        arr = active_tile.get_displayed_array()
-
-        if roi_rect and not roi_rect.isEmpty():
-            x, y, w, h = roi_rect.x(), roi_rect.y(), roi_rect.width(), roi_rect.height()
-            h_arr, w_arr = arr.shape[:2]
-
-            if x < w_arr and y < h_arr:
-                x2 = min(x + w, w_arr)
-                y2 = min(y + h, h_arr)
-                sub_arr = arr[y:y2, x:x2]
-                qimg = numpy_to_qimage(sub_arr)
-            else:
-                qimg = None
-        else:
-            qimg = numpy_to_qimage(arr)
-
-        if qimg and not qimg.isNull():
-            QGuiApplication.clipboard().setImage(qimg)
+        if self.roi_manager:
+            self.roi_manager.copy_active_tile_roi()
 
     def copy_all_tiles_roi_as_grid(self):
         """Copy ROI regions from all tiles arranged in grid layout to clipboard."""
-        if not self.tiles:
-            return
-
-        roi_rect = self.common_roi_rect
-        if not roi_rect or roi_rect.isEmpty():
-            # No ROI set, do nothing
-            return
-
-        x, y, w, h = roi_rect.x(), roi_rect.y(), roi_rect.width(), roi_rect.height()
-        rows, cols = self.grid_size
-
-        # Extract ROI regions from all tiles
-        roi_images = []
-        for tile in self.tiles:
-            arr = tile.get_displayed_array()
-            if arr is None:
-                continue
-
-            h_arr, w_arr = arr.shape[:2]
-            if x < w_arr and y < h_arr:
-                x2 = min(x + w, w_arr)
-                y2 = min(y + h, h_arr)
-                sub_arr = arr[y:y2, x:x2]
-                roi_images.append(sub_arr)
-            else:
-                # ROI out of bounds, skip this tile
-                roi_images.append(None)
-
-        # Create grid image
-        if not roi_images or all(img is None for img in roi_images):
-            return
-
-        # Determine output dimensions (use first valid ROI size)
-        roi_h, roi_w = h, w
-        for img in roi_images:
-            if img is not None:
-                roi_h, roi_w = img.shape[:2]
-                break
-
-        # Determine if images are color or grayscale
-        is_color = False
-        num_channels = 1
-        for img in roi_images:
-            if img is not None and len(img.shape) == 3:
-                is_color = True
-                num_channels = img.shape[2]
-                break
-
-        # Create output array
-        output_h = rows * roi_h
-        output_w = cols * roi_w
-        if is_color:
-            output_array = np.zeros(
-                (output_h, output_w, num_channels), dtype=roi_images[0].dtype if roi_images[0] is not None else np.uint8
-            )
-        else:
-            output_array = np.zeros(
-                (output_h, output_w), dtype=roi_images[0].dtype if roi_images[0] is not None else np.uint8
-            )
-
-        # Place each ROI image in the grid
-        for i, img in enumerate(roi_images):
-            if img is None:
-                continue
-
-            row = i // cols
-            col = i % cols
-            y_start = row * roi_h
-            x_start = col * roi_w
-
-            img_h, img_w = img.shape[:2]
-            y_end = min(y_start + img_h, output_h)
-            x_end = min(x_start + img_w, output_w)
-
-            if is_color and len(img.shape) == 2:
-                # Convert grayscale to color
-                img = np.stack([img] * num_channels, axis=2)
-            elif not is_color and len(img.shape) == 3:
-                # Convert color to grayscale
-                img = img[:, :, 0]
-
-            output_array[y_start:y_end, x_start:x_end] = img[: y_end - y_start, : x_end - x_start]
-
-        # Convert to QImage and copy to clipboard
-        qimg = numpy_to_qimage(output_array)
-        if qimg and not qimg.isNull():
-            QGuiApplication.clipboard().setImage(qimg)
+        if self.roi_manager:
+            self.roi_manager.copy_all_tiles_roi_as_grid(self.grid_size)
 
     def rotate_tiles_forward(self):
         """Rotate tiles forward (right rotation)."""
-        if len(self.tiles) < 2:
-            return
-
-        # Rotate image data
-        last_data = self.displayed_image_data[-1]
-        last_dtype = self.tile_dtype_groups[-1]
-
-        self.displayed_image_data = [last_data] + self.displayed_image_data[:-1]
-        self.tile_dtype_groups = [last_dtype] + self.tile_dtype_groups[:-1]
-
-        for i, tile in enumerate(self.tiles):
-            tile.set_image_data(self.displayed_image_data[i])
-
-        self.active_tile_index = (self.active_tile_index + 1) % len(self.tiles)
-        self._update_active_tile_visual()
+        if self.tile_manager:
+            self.tile_manager.rotate_tiles_forward()
+            self._update_active_tile_visual()
 
     def rotate_tiles_backward(self):
         """Rotate tiles backward (left rotation)."""
-        if len(self.tiles) < 2:
-            return
-
-        # Rotate image data
-        first_data = self.displayed_image_data[0]
-        first_dtype = self.tile_dtype_groups[0]
-
-        self.displayed_image_data = self.displayed_image_data[1:] + [first_data]
-        self.tile_dtype_groups = self.tile_dtype_groups[1:] + [first_dtype]
-
-        for i, tile in enumerate(self.tiles):
-            tile.set_image_data(self.displayed_image_data[i])
-
-        self.active_tile_index = (self.active_tile_index - 1) % len(self.tiles)
-        self._update_active_tile_visual()
+        if self.tile_manager:
+            self.tile_manager.rotate_tiles_backward()
+            self._update_active_tile_visual()
 
     def swap_with_next_tile(self):
         """Swap active tile with next tile."""
-        if len(self.tiles) < 2:
-            return
-
-        current_idx = self.active_tile_index
-        next_idx = (current_idx + 1) % len(self.tiles)
-
-        self.swap_tiles(current_idx, next_idx)
-        self.set_active_tile(next_idx)
+        if self.tile_manager:
+            self.tile_manager.swap_with_next_tile()
 
     def swap_with_previous_tile(self):
         """Swap active tile with previous tile."""
-        if len(self.tiles) < 2:
-            return
-
-        current_idx = self.active_tile_index
-        prev_idx = (current_idx - 1) % len(self.tiles)
-
-        self.swap_tiles(current_idx, prev_idx)
-        self.set_active_tile(prev_idx)
+        if self.tile_manager:
+            self.tile_manager.swap_with_previous_tile()
 
     def swap_tiles(self, index_a: int, index_b: int):
         """Swap two tiles."""
-        if index_a == index_b:
-            return
-
-        if not (0 <= index_a < len(self.tiles) and 0 <= index_b < len(self.tiles)):
-            return
-
-        # Swap image data
-        temp_data = self.displayed_image_data[index_a]
-        temp_dtype = self.tile_dtype_groups[index_a]
-
-        self.displayed_image_data[index_a] = self.displayed_image_data[index_b]
-        self.tile_dtype_groups[index_a] = self.tile_dtype_groups[index_b]
-
-        self.displayed_image_data[index_b] = temp_data
-        self.tile_dtype_groups[index_b] = temp_dtype
-
-        # Update displays
-        self.tiles[index_a].set_image_data(self.displayed_image_data[index_a])
-        self.tiles[index_b].set_image_data(self.displayed_image_data[index_b])
+        if self.tile_manager:
+            self.tile_manager.swap_tiles(index_a, index_b)
 
     def _update_active_tile_visual(self):
         """Update active tile visual state."""
-        for i, tile in enumerate(self.tiles):
-            tile.set_active(i == self.active_tile_index)
+        if not self.tile_manager:
+            return
 
-        if self.common_roi_rect:
-            self.sync_roi_to_all_tiles(self.common_roi_rect)
+        tiles = self.tile_manager.get_tiles()
+        active_idx = self.tile_manager.get_active_tile_index()
+        for i, tile in enumerate(tiles):
+            tile.set_active(i == active_idx)
+
+        if self.roi_manager and self.roi_manager.common_roi_rect:
+            self.roi_manager.sync_roi_to_all_tiles(self.roi_manager.common_roi_rect)
 
     def update_status_bar(self):
         """Update status bar with current parameters."""
@@ -1024,38 +587,25 @@ class TilingComparisonDialog(QDialog):
             self.mouse_coords_label.setText("")
 
         # Left side: ROI info
-        if self.common_roi_rect and not self.common_roi_rect.isEmpty():
-            r = self.common_roi_rect
-            x0, y0 = r.x(), r.y()
-            x1, y1 = x0 + r.width() - 1, y0 + r.height() - 1
-            roi_text = f" | ({x0}, {y0}) - ({x1}, {y1}), w: {r.width()}, h: {r.height()}"
+        if self.roi_manager:
+            roi_text = self.roi_manager.get_roi_status()
             self.roi_info_label.setText(roi_text)
         else:
             self.roi_info_label.setText("")
 
         # Right side: Brightness parameters
-        brightness_parts = [f"Gain: {self.brightness_gain:.2f}"]
-
-        # Count tiles per dtype
-        dtype_counts = {}
-        for dtype_group in self.tile_dtype_groups:
-            dtype_counts[dtype_group] = dtype_counts.get(dtype_group, 0) + 1
-
-        # Add dtype info
-        for dtype_group in sorted(dtype_counts.keys()):
-            count = dtype_counts[dtype_group]
-            params = self.brightness_params_by_dtype[dtype_group]
-            if dtype_group == "float":
-                brightness_parts.append(
-                    f"{dtype_group}({count}): off={params['offset']:.2f} sat={params['saturation']:.2f}"
-                )
-            else:
-                brightness_parts.append(f"{dtype_group}({count}): off={params['offset']} sat={params['saturation']}")
-
-        self.brightness_label.setText(" | ".join(brightness_parts))
+        if self.brightness_manager:
+            brightness_text = self.brightness_manager.get_brightness_status()
+            self.brightness_label.setText(brightness_text)
+        else:
+            self.brightness_label.setText("")
 
         # Right side: Scale
-        self.scale_label.setText(f" | Scale: {self.scale:.2f}x")
+        if self.zoom_manager:
+            scale = self.zoom_manager.get_scale()
+            self.scale_label.setText(f" | Scale: {scale:.2f}x")
+        else:
+            self.scale_label.setText("")
 
     def _scroll_by_key(self, dx: int, dy: int, is_shift: bool):
         """Scroll all tiles synchronously by arrow keys.
@@ -1065,26 +615,6 @@ class TilingComparisonDialog(QDialog):
             dy: Vertical scroll delta (positive = down)
             is_shift: Whether Shift modifier is pressed
         """
-        if not self.tiles or self.active_tile_index >= len(self.tiles):
-            return
-
-        active_tile = self.tiles[self.active_tile_index]
-        scroll_area = active_tile.scroll_area
-
-        # Apply horizontal scroll
-        if dx != 0:
-            hsb = scroll_area.horizontalScrollBar()
-            if hsb:
-                new_val = hsb.value() + dx
-                new_val = max(hsb.minimum(), min(hsb.maximum(), new_val))
-                hsb.setValue(new_val)
-                self.sync_scroll(self.active_tile_index, "h", new_val)
-
-        # Apply vertical scroll
-        if dy != 0:
-            vsb = scroll_area.verticalScrollBar()
-            if vsb:
-                new_val = vsb.value() + dy
-                new_val = max(vsb.minimum(), min(vsb.maximum(), new_val))
-                vsb.setValue(new_val)
-                self.sync_scroll(self.active_tile_index, "v", new_val)
+        if self.scroll_manager and self.tile_manager:
+            active_idx = self.tile_manager.get_active_tile_index()
+            self.scroll_manager.scroll_by_key(active_idx, dx, dy)

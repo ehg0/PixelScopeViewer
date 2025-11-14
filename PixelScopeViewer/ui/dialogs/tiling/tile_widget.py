@@ -275,10 +275,16 @@ class TileWidget(QWidget):
         if arr is None:
             return
 
-        # Get brightness parameters from parent dialog
-        dtype_group = self.parent_dialog.tile_dtype_groups[self.tile_index]
-        params = self.parent_dialog.brightness_params_by_dtype[dtype_group]
-        gain = self.parent_dialog.brightness_gain
+        # Get brightness parameters from parent dialog's brightness manager
+        if hasattr(self.parent_dialog, "brightness_manager") and self.parent_dialog.brightness_manager:
+            brightness_params = self.parent_dialog.brightness_manager.get_brightness_params()
+            dtype_group = self.parent_dialog.tile_manager.get_tile_dtype_groups()[self.tile_index]
+            params = brightness_params["params_by_dtype"][dtype_group]
+            gain = brightness_params["gain"]
+        else:
+            # Fallback to default values
+            params = {"offset": 0, "saturation": 255}
+            gain = 1.0
 
         self.image_label.set_image(arr, gain, params["offset"], params["saturation"])
 

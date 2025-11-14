@@ -7,6 +7,7 @@ from PySide6.QtGui import QPixmap, QPainter, QPen, QImage, QColor, QMouseEvent, 
 from PySide6.QtCore import Qt, QRect, Signal
 
 from PixelScopeViewer.core.image_io import numpy_to_qimage
+from PixelScopeViewer.core.constants import MIN_ZOOM_SCALE, MAX_ZOOM_SCALE
 from PixelScopeViewer.ui.dialogs.display.core.compute import apply_brightness_adjustment
 
 
@@ -349,7 +350,7 @@ class TileImageLabel(QLabel):
         Args:
             factor: Zoom factor (currently not used in fit-to-tile mode)
         """
-        self.zoom_factor = max(0.1, min(32.0, float(factor)))
+        self.zoom_factor = max(MIN_ZOOM_SCALE, min(MAX_ZOOM_SCALE, float(factor)))
         # Rebuild pixmap at new scale
         if self.qimage is not None:
             self._update_display()

@@ -22,6 +22,7 @@ from .tile_widget import TileWidget
 from .brightness_dialog import TilingBrightnessDialog
 from .help_dialog import TilingHelpDialog
 from PixelScopeViewer.core.image_io import numpy_to_qimage
+from PixelScopeViewer.core.constants import MIN_ZOOM_SCALE, MAX_ZOOM_SCALE
 
 
 def determine_dtype_group(arr: np.ndarray) -> str:
@@ -408,10 +409,8 @@ class TilingComparisonDialog(QDialog):
         # Apply new zoom (use same limits as main viewer)
         old_scale = self.scale
         self.scale *= factor
-        # Set reasonable zoom limits matching main viewer
-        min_scale = 0.125  # 1/8x
-        max_scale = 128.0  # 128x
-        self.scale = max(min_scale, min(self.scale, max_scale))
+        # Use zoom limits from main viewer (MIN_ZOOM_SCALE, MAX_ZOOM_SCALE)
+        self.scale = max(MIN_ZOOM_SCALE, min(self.scale, MAX_ZOOM_SCALE))
 
         # Manual zoom adjustment exits fit mode
         if hasattr(self, "_is_fit_zoom"):

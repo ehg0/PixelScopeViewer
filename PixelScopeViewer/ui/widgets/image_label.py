@@ -10,6 +10,7 @@ from PySide6.QtCore import Qt, QRect
 from .base_image_label import BaseImageLabel
 from .roi_manager import RoiManagerMixin
 from .roi_editor import RoiEditorMixin
+from ...core.constants import MIN_ZOOM_SCALE, MAX_ZOOM_SCALE
 
 
 class ImageLabel(RoiManagerMixin, RoiEditorMixin, BaseImageLabel):
@@ -120,9 +121,7 @@ class ImageLabel(RoiManagerMixin, RoiEditorMixin, BaseImageLabel):
             new_scale = current_scale / 2
 
         # Set reasonable zoom limits (same as keyboard shortcuts)
-        min_scale = 0.125  # 1/8x
-        max_scale = 128.0  # 128x (extending range for better pixel-level work)
-        new_scale = max(min_scale, min(max_scale, new_scale))
+        new_scale = max(MIN_ZOOM_SCALE, min(MAX_ZOOM_SCALE, new_scale))
 
         # Apply zoom centered on the coordinates displayed in status bar
         self.viewer.set_zoom_at_status_coords(new_scale)

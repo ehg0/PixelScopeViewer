@@ -6,6 +6,7 @@ keyboard shortcuts for the image viewer.
 
 from PySide6.QtGui import QAction
 from PySide6.QtCore import Qt
+from ...core.constants import MIN_ZOOM_SCALE, MAX_ZOOM_SCALE
 
 
 def create_menus(viewer):
@@ -70,12 +71,12 @@ def create_menus(viewer):
     # Zoom actions
     viewer.zoom_in_action = QAction("拡大", viewer, shortcut="+")
     viewer.zoom_in_action.setShortcutContext(Qt.ApplicationShortcut)
-    viewer.zoom_in_action.triggered.connect(lambda: viewer.set_zoom(min(viewer.scale * 2, 128.0)))
+    viewer.zoom_in_action.triggered.connect(lambda: viewer.set_zoom(min(viewer.scale * 2, MAX_ZOOM_SCALE)))
     viewer.addAction(viewer.zoom_in_action)
 
     viewer.zoom_out_action = QAction("縮小", viewer, shortcut="-")
     viewer.zoom_out_action.setShortcutContext(Qt.ApplicationShortcut)
-    viewer.zoom_out_action.triggered.connect(lambda: viewer.set_zoom(max(viewer.scale / 2, 0.125)))
+    viewer.zoom_out_action.triggered.connect(lambda: viewer.set_zoom(max(viewer.scale / 2, MIN_ZOOM_SCALE)))
     viewer.addAction(viewer.zoom_out_action)
 
     # Image menu (must be created after navigation actions are defined)

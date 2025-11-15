@@ -97,7 +97,9 @@ def create_menus(viewer):
     analysis.addAction(viewer.show_features_action)
     analysis.addSeparator()
     analysis.addAction(QAction("差分画像表示", viewer, triggered=lambda: viewer.show_diff_dialog()))
-    analysis.addAction(QAction("複数画像比較", viewer, triggered=lambda: viewer.show_tiling_comparison_dialog()))
+    analysis.addAction(
+        QAction("複数画像比較", viewer, shortcut="Shift+T", triggered=lambda: viewer.show_tiling_comparison_dialog())
+    )
 
     # Help menu
     help_menu = menubar.addMenu("ヘルプ")

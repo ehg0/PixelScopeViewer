@@ -107,6 +107,10 @@ class TilingComparisonDialog(QDialog):
         # Initialize managers with tiles
         self._initialize_managers()
 
+        # Now that managers are ready, render tiles with dtype-specific defaults
+        if self.brightness_manager:
+            self.brightness_manager.refresh_all_tiles()
+
         # Connect signals
         self.common_roi_changed.connect(self.roi_manager.sync_roi_to_all_tiles)
 
@@ -265,6 +269,10 @@ class TilingComparisonDialog(QDialog):
         self._clear_tiles()
         self._rebuild_tiles()
         self._initialize_managers()
+        # Apply initial brightness per dtype on first draw
+        if self.brightness_manager:
+            self.brightness_manager.refresh_all_tiles()
+        self.update_status_bar()
 
     def _on_scroll(self, source_index: int, direction: str, value: int, signal_name: str):
         """Handle scroll events."""

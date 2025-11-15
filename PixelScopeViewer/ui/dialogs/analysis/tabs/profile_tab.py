@@ -8,8 +8,11 @@ from PySide6.QtWidgets import (
     QTableWidget,
     QHeaderView,
     QGroupBox,
+    QScrollArea,
+    QCheckBox,
 )
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QPixmap, QColor
 
 try:
     import pyqtgraph as pg
@@ -37,11 +40,15 @@ class ProfileTab(QWidget):
         pyqtgraph_available: bool,
         on_save_viewbox_state: Optional[Callable[[object], None]] = None,
         on_connect_plot_controls: Optional[Callable[[object], None]] = None,
+        on_channel_changed: Optional[Callable[[list], None]] = None,
         parent=None,
     ):
         super().__init__(parent)
 
         self.prof_widget = None
+        self.on_channel_changed = on_channel_changed
+        self.channel_checkboxes: list[QCheckBox] = []
+        self.MAX_CHANNELS = 8
 
         root = QHBoxLayout(self)
 
@@ -132,9 +139,30 @@ class ProfileTab(QWidget):
         )
         channels_layout = QVBoxLayout(channels_group)
         channels_layout.setContentsMargins(8, 5, 8, 8)
-        self.channels_btn = QPushButton("Configure...")
-        self.channels_btn.setMinimumWidth(100)
-        channels_layout.addWidget(self.channels_btn)
+
+        # Scroll area for checkboxes
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setMinimumHeight(120)  # Ensure 4 channels visible without scrolling
+        scroll.setMaximumHeight(300)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll_widget = QWidget()
+        scroll_layout = QVBoxLayout(scroll_widget)
+        scroll_layout.setContentsMargins(2, 2, 2, 2)
+        scroll_layout.setSpacing(3)
+
+        # Create checkboxes for channels
+        for i in range(self.MAX_CHANNELS):
+            cb = QCheckBox(f"C{i}")
+            cb.setVisible(False)  # Initially hidden
+            cb.stateChanged.connect(self._on_checkbox_changed)
+            scroll_layout.addWidget(cb)
+            self.channel_checkboxes.append(cb)
+
+        scroll_layout.addStretch()
+        scroll.setWidget(scroll_widget)
+        channels_layout.addWidget(scroll)
         right.addWidget(channels_group)
 
         display_group = QGroupBox("Display Settings")
@@ -163,6 +191,49 @@ class ProfileTab(QWidget):
 
         right.addStretch(1)
         root.addLayout(right)
+
+    def _on_checkbox_changed(self):
+        """Called when any checkbox changes state."""
+        if self.on_channel_changed:
+            checks = [cb.isChecked() for cb in self.channel_checkboxes if cb.isVisible()]
+            self.on_channel_changed(checks)
+
+    def update_channel_checkboxes(self, nch: int, checks: list[bool], channel_colors: list = None):
+        """Update channel checkboxes visibility, state, and colors.
+
+        Parameters
+        ----------
+        nch: int
+            Number of channels
+        checks: list[bool]
+            Checkbox states
+        channel_colors: list, optional
+            List of QColor objects for channel colors
+        """
+        for i in range(self.MAX_CHANNELS):
+            cb = self.channel_checkboxes[i]
+            if i < nch:
+                cb.setVisible(True)
+                # Block signals while updating to prevent recursive updates
+                cb.blockSignals(True)
+                cb.setChecked(checks[i] if i < len(checks) else True)
+                cb.blockSignals(False)
+                cb.setEnabled(nch > 1)  # Disable if only 1 channel
+
+                # Add color swatch icon
+                if channel_colors and i < len(channel_colors):
+                    color = channel_colors[i]
+                    if hasattr(color, "name"):
+                        pix = QPixmap(14, 14)
+                        pix.fill(color)
+                        cb.setIcon(pix)
+                        cb.setIconSize(pix.size())
+                    else:
+                        cb.setIcon(QPixmap())  # Clear icon
+                else:
+                    cb.setIcon(QPixmap())  # Clear icon
+            else:
+                cb.setVisible(False)
 
     def update(self, series: dict, stats_rows: list[dict], orientation: str, x_mode: str, channel_colors: list = None):
         """Update profile plot and statistics table with pre-computed data.

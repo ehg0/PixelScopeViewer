@@ -156,10 +156,6 @@ class AnalysisDialog(QDialog):
             "prof": {"grid": True, "auto_range": True},
         }
 
-        # Keep references to channel dialogs to prevent multiple instances
-        self._hist_channels_dialog = None
-        self._prof_channels_dialog = None
-
         self._build_ui()
 
         # Restore last window geometry if available to avoid cursor-dependent positioning
@@ -190,17 +186,16 @@ class AnalysisDialog(QDialog):
             PYQTGRAPH_AVAILABLE,
             on_save_viewbox_state=lambda vb: self._save_viewbox_state(vb, "prof"),
             on_connect_plot_controls=lambda plot_item: self._connect_plotitem_controls(plot_item, "prof"),
+            on_channel_changed=lambda checks: self._on_channel_changed(checks),
             parent=self,
         )
         self.prof_widget = self.profile_tab.prof_widget
         self.prof_stats_table = self.profile_tab.prof_stats_table
-        self.prof_channels_btn = self.profile_tab.channels_btn
         self.prof_orientation_btn = self.profile_tab.orientation_btn
         self.prof_xmode_btn = self.profile_tab.xmode_btn
         self.prof_copy_btn = self.profile_tab.copy_btn
         self.prof_copy_stats_btn = self.profile_tab.copy_stats_btn
         # Connect buttons to existing handlers
-        self.prof_channels_btn.clicked.connect(self._on_prof_channels)
         self.prof_orientation_btn.clicked.connect(self._on_prof_orientation_toggle)
         self.prof_xmode_btn.clicked.connect(self._on_prof_xmode_toggle)
         self.prof_copy_btn.clicked.connect(self.copy_profile_to_clipboard)
@@ -212,15 +207,14 @@ class AnalysisDialog(QDialog):
             PYQTGRAPH_AVAILABLE,
             on_save_viewbox_state=lambda vb: self._save_viewbox_state(vb, "hist"),
             on_connect_plot_controls=lambda plot_item: self._connect_plotitem_controls(plot_item, "hist"),
+            on_channel_changed=lambda checks: self._on_channel_changed(checks),
             parent=self,
         )
         self.hist_widget = self.hist_tab.hist_widget
         self.hist_stats_table = self.hist_tab.stats_table
-        self.hist_channels_btn = self.hist_tab.channels_btn
         self.hist_copy_btn = self.hist_tab.copy_btn
         self.hist_copy_stats_btn = self.hist_tab.copy_stats_btn
         # Connect buttons to existing handlers
-        self.hist_channels_btn.clicked.connect(self._on_hist_channels)
         self.hist_copy_btn.clicked.connect(self.copy_histogram_to_clipboard)
         self.hist_copy_stats_btn.clicked.connect(self.copy_hist_stats_to_clipboard)
         self.tabs.addTab(self.hist_tab, "Histogram")
@@ -276,14 +270,6 @@ class AnalysisDialog(QDialog):
         if image_path is not None:
             self.image_path = image_path
 
-        # Update channel dialogs if they exist and image channel count changed
-        if image_array is not None:
-            nch = image_array.shape[2] if image_array.ndim == 3 else 1
-            if self._hist_channels_dialog is not None and self._hist_channels_dialog.isVisible():
-                self._hist_channels_dialog.update_for_new_image(nch, self.channel_checks)
-            if self._prof_channels_dialog is not None and self._prof_channels_dialog.isVisible():
-                self._prof_channels_dialog.update_for_new_image(nch, self.channel_checks)
-
         self.update_contents()
 
     def set_current_tab(self, tab):
@@ -304,89 +290,16 @@ class AnalysisDialog(QDialog):
                 self.tabs.setCurrentIndex(i)
                 return
 
-    def _on_hist_channels(self):
-        """ヒストグラム用のチャネル選択ダイアログを作成して表示します。
+    def _on_channel_changed(self, new_checks: list[bool]):
+        """Called when channel checkboxes change in tabs.
 
-        すでに画像データがない場合は何もしません。
+        Parameters
+        ----------
+        new_checks: list[bool]
+            New checkbox states
         """
-        if self.image_array is None:
-            return
-
-        # If dialog already exists and is visible, just raise it
-        if self._hist_channels_dialog is not None and self._hist_channels_dialog.isVisible():
-            self._hist_channels_dialog.raise_()
-            self._hist_channels_dialog.activateWindow()
-            return
-
-        nch = self.image_array.shape[2] if self.image_array.ndim == 3 else 1
-
-        def immediate_update(new_checks):
-            """Callback for immediate graph update when checkboxes change."""
-            self.channel_checks = new_checks
-            self.update_contents()
-
-        # Get channel colors from parent viewer
-        channel_colors = None
-        try:
-            if hasattr(self.parent(), "channel_colors"):
-                channel_colors = self.parent().channel_colors
-        except Exception:
-            pass
-
-        # Create and show modeless dialog with immediate updates
-        dlg = ChannelsDialog(self, nch, self.channel_checks, callback=immediate_update, channel_colors=channel_colors)
-        self._hist_channels_dialog = dlg
-
-        # Clean up reference when dialog is closed
-        dlg.finished.connect(lambda: setattr(self, "_hist_channels_dialog", None))
-
-        # Position dialog near the histogram channels button
-        button_pos = self.hist_channels_btn.mapToGlobal(self.hist_channels_btn.rect().topRight())
-        dlg.move(button_pos.x() + 10, button_pos.y())
-
-        dlg.show()  # Show modeless dialog without blocking
-
-    def _on_prof_channels(self):
-        """プロファイル用のチャネル選択ダイアログを作成して表示します。
-
-        すでに画像データがない場合は何もしません。
-        """
-        if self.image_array is None:
-            return
-
-        # If dialog already exists and is visible, just raise it
-        if self._prof_channels_dialog is not None and self._prof_channels_dialog.isVisible():
-            self._prof_channels_dialog.raise_()
-            self._prof_channels_dialog.activateWindow()
-            return
-
-        nch = self.image_array.shape[2] if self.image_array.ndim == 3 else 1
-
-        def immediate_update(new_checks):
-            """Callback for immediate graph update when checkboxes change."""
-            self.channel_checks = new_checks
-            self.update_contents()
-
-        # Get channel colors from parent viewer
-        channel_colors = None
-        try:
-            if hasattr(self.parent(), "channel_colors"):
-                channel_colors = self.parent().channel_colors
-        except Exception:
-            pass
-
-        # Create and show modeless dialog with immediate updates
-        dlg = ChannelsDialog(self, nch, self.channel_checks, callback=immediate_update, channel_colors=channel_colors)
-        self._prof_channels_dialog = dlg
-
-        # Clean up reference when dialog is closed
-        dlg.finished.connect(lambda: setattr(self, "_prof_channels_dialog", None))
-
-        # Position dialog near the profile channels button
-        button_pos = self.prof_channels_btn.mapToGlobal(self.prof_channels_btn.rect().topRight())
-        dlg.move(button_pos.x() + 10, button_pos.y())
-
-        dlg.show()  # Show modeless dialog without blocking
+        self.channel_checks = new_checks
+        self.update_contents()
 
     def update_contents(self):
         """現在の画像データ／設定をもとに全タブの内容を再描画します。
@@ -452,15 +365,10 @@ class AnalysisDialog(QDialog):
         except Exception:
             pass
 
-        # If channel colors changed while ChannelsDialog is open, update its swatches
+        # Update channel checkboxes in tabs
         try:
-            if self._hist_channels_dialog is not None and self._hist_channels_dialog.isVisible():
-                self._hist_channels_dialog.update_for_new_image(nch, self.channel_checks, channel_colors)
-        except Exception:
-            pass
-        try:
-            if self._prof_channels_dialog is not None and self._prof_channels_dialog.isVisible():
-                self._prof_channels_dialog.update_for_new_image(nch, self.channel_checks, channel_colors)
+            self.hist_tab.update_channel_checkboxes(nch, self.channel_checks, channel_colors)
+            self.profile_tab.update_channel_checkboxes(nch, self.channel_checks, channel_colors)
         except Exception:
             pass
 

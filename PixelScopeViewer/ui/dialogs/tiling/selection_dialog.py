@@ -38,7 +38,7 @@ class TileSelectionDialog(QDialog):
             image_list: List of image dictionaries from ImageViewer
         """
         super().__init__(parent)
-        self.setWindowTitle("タイリング比較 - 画像選択")
+        self.setWindowTitle("複数画像比較 - 画像選択")
         self.resize(500, 600)
 
         self.image_list = image_list
@@ -68,7 +68,7 @@ class TileSelectionDialog(QDialog):
         self.grid_combo.addItem("2x4 (8枚)", (2, 4))
         self.grid_combo.addItem("3x2 (6枚)", (3, 2))
         self.grid_combo.addItem("3x3 (9枚)", (3, 3))
-        self.grid_combo.setCurrentIndex(4)  # Default to 2x2
+        self.grid_combo.setCurrentIndex(8)  # Default to 3x3
         self.grid_combo.currentIndexChanged.connect(self._on_grid_changed)
 
         grid_layout.addWidget(self.grid_combo)
@@ -103,6 +103,9 @@ class TileSelectionDialog(QDialog):
         # Status label
         self.status_label = QLabel("最大4枚まで選択可能")
         layout.addWidget(self.status_label)
+
+        # Ensure internal state reflects default selection (after status_label exists)
+        self._on_grid_changed()
 
         # Selection buttons
         btn_layout = QHBoxLayout()
@@ -183,13 +186,13 @@ class TileSelectionDialog(QDialog):
         max_tiles = self.grid_size[0] * self.grid_size[1]
 
         if len(selected) < 2:
-            QMessageBox.warning(self, "タイリング比較", "2枚以上の画像を選択してください。")
+            QMessageBox.warning(self, "複数画像比較", "2枚以上の画像を選択してください。")
             return
 
         if len(selected) > max_tiles:
             QMessageBox.warning(
                 self,
-                "タイリング比較",
+                "複数画像比較",
                 f"選択できる画像は最大{max_tiles}枚です。\n現在{len(selected)}枚選択されています。",
             )
             return

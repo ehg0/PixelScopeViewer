@@ -25,19 +25,16 @@ Dependencies:
 from typing import Optional
 import numpy as np
 
-from PySide6.QtCore import QRect, Qt
+from PySide6.QtCore import QRect, Qt, QEvent
 from ....core.image_io import get_image_metadata
 from PySide6.QtWidgets import (
     QDialog,
     QVBoxLayout,
     QTabWidget,
-    QPushButton,
-    QDialogButtonBox,
-    QWidget,
     QMessageBox,
     QTableWidget,
 )
-from PySide6.QtGui import QGuiApplication
+from PySide6.QtGui import QGuiApplication, QColor
 
 try:
     import pyqtgraph as pg
@@ -50,7 +47,6 @@ except ImportError:
     PlotWidget = None
     PYQTGRAPH_AVAILABLE = False
 
-from .widgets import ChannelsDialog, CopyableTableWidget
 from .tabs.metadata_tab import MetadataTab
 from .tabs.profile_tab import ProfileTab
 from .tabs.histogram_tab import HistogramTab
@@ -69,6 +65,7 @@ from .plotting import (
     connect_plot_controls as pg_connect_plot_controls,
     show_default_context_menu as pg_show_default_context_menu,
 )
+from ...utils.color_utils import get_default_channel_colors
 
 
 class AnalysisDialog(QDialog):
@@ -114,6 +111,8 @@ class AnalysisDialog(QDialog):
 
     # Persist window geometry across openings so it doesn't jump based on cursor/OS heuristics
     _saved_geometry = None
+    # Store position before minimize to restore after showNormal()
+    _position_before_minimize = None
 
     def __init__(
         self,
@@ -122,9 +121,8 @@ class AnalysisDialog(QDialog):
         image_rect: Optional[QRect] = None,
         image_path: Optional[str] = None,
     ):
-        super().__init__(None)
-        self.parent = parent
-        self.setWindowTitle("Analysis")
+        super().__init__(parent)
+        self.setWindowTitle("解析ビュー")
         self.resize(900, 600)
 
         # Set window flags to allow minimizing and prevent staying on top
@@ -145,16 +143,15 @@ class AnalysisDialog(QDialog):
         self.last_hist_data = {}
         self.last_profile_data = {}
 
+        # Channel color mapping for color swatches (label -> rgb tuple)
+        self.channel_color_map: dict[str, tuple[int, int, int]] = {}
+
         # Persisted plot settings for histogram/profile (kept across image switches)
         # keys: 'hist' and 'prof' with values for grid/log/autorange
         self.plot_settings = {
             "hist": {"grid": True, "log": False, "auto_range": True},
             "prof": {"grid": True, "auto_range": True},
         }
-
-        # Keep references to channel dialogs to prevent multiple instances
-        self._hist_channels_dialog = None
-        self._prof_channels_dialog = None
 
         self._build_ui()
 
@@ -186,17 +183,16 @@ class AnalysisDialog(QDialog):
             PYQTGRAPH_AVAILABLE,
             on_save_viewbox_state=lambda vb: self._save_viewbox_state(vb, "prof"),
             on_connect_plot_controls=lambda plot_item: self._connect_plotitem_controls(plot_item, "prof"),
+            on_channel_changed=lambda checks: self._on_channel_changed(checks),
             parent=self,
         )
         self.prof_widget = self.profile_tab.prof_widget
         self.prof_stats_table = self.profile_tab.prof_stats_table
-        self.prof_channels_btn = self.profile_tab.channels_btn
         self.prof_orientation_btn = self.profile_tab.orientation_btn
         self.prof_xmode_btn = self.profile_tab.xmode_btn
         self.prof_copy_btn = self.profile_tab.copy_btn
         self.prof_copy_stats_btn = self.profile_tab.copy_stats_btn
         # Connect buttons to existing handlers
-        self.prof_channels_btn.clicked.connect(self._on_prof_channels)
         self.prof_orientation_btn.clicked.connect(self._on_prof_orientation_toggle)
         self.prof_xmode_btn.clicked.connect(self._on_prof_xmode_toggle)
         self.prof_copy_btn.clicked.connect(self.copy_profile_to_clipboard)
@@ -208,20 +204,31 @@ class AnalysisDialog(QDialog):
             PYQTGRAPH_AVAILABLE,
             on_save_viewbox_state=lambda vb: self._save_viewbox_state(vb, "hist"),
             on_connect_plot_controls=lambda plot_item: self._connect_plotitem_controls(plot_item, "hist"),
+            on_channel_changed=lambda checks: self._on_channel_changed(checks),
             parent=self,
         )
         self.hist_widget = self.hist_tab.hist_widget
         self.hist_stats_table = self.hist_tab.stats_table
-        self.hist_channels_btn = self.hist_tab.channels_btn
         self.hist_copy_btn = self.hist_tab.copy_btn
         self.hist_copy_stats_btn = self.hist_tab.copy_stats_btn
         # Connect buttons to existing handlers
-        self.hist_channels_btn.clicked.connect(self._on_hist_channels)
         self.hist_copy_btn.clicked.connect(self.copy_histogram_to_clipboard)
         self.hist_copy_stats_btn.clicked.connect(self.copy_hist_stats_to_clipboard)
         self.tabs.addTab(self.hist_tab, "Histogram")
 
     # Note: Close button is intentionally omitted for a modeless dialog
+
+    def changeEvent(self, event):
+        """Handle window state changes to preserve position during minimize/restore."""
+        if event.type() == QEvent.WindowStateChange:
+            if self.isMinimized():
+                # Save current position before minimize
+                AnalysisDialog._position_before_minimize = self.pos()
+            elif event.oldState() & Qt.WindowMinimized:
+                # Restore position after showNormal()
+                if AnalysisDialog._position_before_minimize is not None:
+                    self.move(AnalysisDialog._position_before_minimize)
+        super().changeEvent(event)
 
     def moveEvent(self, event):
         # Save geometry whenever the dialog is moved
@@ -260,14 +267,6 @@ class AnalysisDialog(QDialog):
         if image_path is not None:
             self.image_path = image_path
 
-        # Update channel dialogs if they exist and image channel count changed
-        if image_array is not None:
-            nch = image_array.shape[2] if image_array.ndim == 3 else 1
-            if self._hist_channels_dialog is not None and self._hist_channels_dialog.isVisible():
-                self._hist_channels_dialog.update_for_new_image(nch, self.channel_checks)
-            if self._prof_channels_dialog is not None and self._prof_channels_dialog.isVisible():
-                self._prof_channels_dialog.update_for_new_image(nch, self.channel_checks)
-
         self.update_contents()
 
     def set_current_tab(self, tab):
@@ -288,73 +287,16 @@ class AnalysisDialog(QDialog):
                 self.tabs.setCurrentIndex(i)
                 return
 
-    def _on_hist_channels(self):
-        """ヒストグラム用のチャネル選択ダイアログを作成して表示します。
+    def _on_channel_changed(self, new_checks: list[bool]):
+        """Called when channel checkboxes change in tabs.
 
-        すでに画像データがない場合は何もしません。
+        Parameters
+        ----------
+        new_checks: list[bool]
+            New checkbox states
         """
-        if self.image_array is None:
-            return
-
-        # If dialog already exists and is visible, just raise it
-        if self._hist_channels_dialog is not None and self._hist_channels_dialog.isVisible():
-            self._hist_channels_dialog.raise_()
-            self._hist_channels_dialog.activateWindow()
-            return
-
-        nch = self.image_array.shape[2] if self.image_array.ndim == 3 else 1
-
-        def immediate_update(new_checks):
-            """Callback for immediate graph update when checkboxes change."""
-            self.channel_checks = new_checks
-            self.update_contents()
-
-        # Create and show modeless dialog with immediate updates
-        dlg = ChannelsDialog(self, nch, self.channel_checks, callback=immediate_update)
-        self._hist_channels_dialog = dlg
-
-        # Clean up reference when dialog is closed
-        dlg.finished.connect(lambda: setattr(self, "_hist_channels_dialog", None))
-
-        # Position dialog near the histogram channels button
-        button_pos = self.hist_channels_btn.mapToGlobal(self.hist_channels_btn.rect().topRight())
-        dlg.move(button_pos.x() + 10, button_pos.y())
-
-        dlg.show()  # Show modeless dialog without blocking
-
-    def _on_prof_channels(self):
-        """プロファイル用のチャネル選択ダイアログを作成して表示します。
-
-        すでに画像データがない場合は何もしません。
-        """
-        if self.image_array is None:
-            return
-
-        # If dialog already exists and is visible, just raise it
-        if self._prof_channels_dialog is not None and self._prof_channels_dialog.isVisible():
-            self._prof_channels_dialog.raise_()
-            self._prof_channels_dialog.activateWindow()
-            return
-
-        nch = self.image_array.shape[2] if self.image_array.ndim == 3 else 1
-
-        def immediate_update(new_checks):
-            """Callback for immediate graph update when checkboxes change."""
-            self.channel_checks = new_checks
-            self.update_contents()
-
-        # Create and show modeless dialog with immediate updates
-        dlg = ChannelsDialog(self, nch, self.channel_checks, callback=immediate_update)
-        self._prof_channels_dialog = dlg
-
-        # Clean up reference when dialog is closed
-        dlg.finished.connect(lambda: setattr(self, "_prof_channels_dialog", None))
-
-        # Position dialog near the profile channels button
-        button_pos = self.prof_channels_btn.mapToGlobal(self.prof_channels_btn.rect().topRight())
-        dlg.move(button_pos.x() + 10, button_pos.y())
-
-        dlg.show()  # Show modeless dialog without blocking
+        self.channel_checks = new_checks
+        self.update_contents()
 
     def update_contents(self):
         """現在の画像データ／設定をもとに全タブの内容を再描画します。
@@ -389,6 +331,8 @@ class AnalysisDialog(QDialog):
                 self.channel_checks = [True] * nch
             elif len(self.channel_checks) < nch:
                 self.channel_checks.extend([True] * (nch - len(self.channel_checks)))
+        else:
+            nch = 1
 
         # Histogram: compute data and delegate to tab
         bins = determine_hist_bins(arr)
@@ -410,13 +354,94 @@ class AnalysisDialog(QDialog):
         apply_log = self.plot_settings.get("hist", {}).get("log", False)
         # Check if image is integer type for histogram x-axis formatting
         is_integer_type = np.issubdtype(arr.dtype, np.integer)
-        # Get channel colors from parent viewer
-        channel_colors = None
+        # Get channel colors with precedence:
+        # 1) self.channel_colors (explicit override)
+        # 2) if parent is a tiling dialog/window -> default palette per image (1ch=black)
+        # 3) parent().channel_colors
+        channel_colors = getattr(self, "channel_colors", None)
+        if not channel_colors:
+            is_tiling_parent = False
+            try:
+                p = self.parent()
+                if p is not None:
+                    cls = type(p)
+                    mod = getattr(cls, "__module__", "").lower()
+                    name = getattr(cls, "__name__", "").lower()
+                    if "tiling" in mod or "tiling" in name:
+                        is_tiling_parent = True
+            except Exception:
+                is_tiling_parent = False
+
+            if is_tiling_parent:
+                try:
+                    if arr.ndim == 3 and arr.shape[2] > 1:
+                        nch_local = int(arr.shape[2])
+                    else:
+                        nch_local = 1
+                    colors = get_default_channel_colors(nch_local)
+                    if nch_local == 1:
+                        colors = [QColor(0, 0, 0)]
+                    channel_colors = colors
+                except Exception:
+                    channel_colors = None
+            if not channel_colors:
+                try:
+                    if hasattr(self.parent(), "channel_colors"):
+                        channel_colors = self.parent().channel_colors
+                except Exception:
+                    channel_colors = None
+
+        # Update channel checkboxes in tabs
         try:
-            if hasattr(self.parent(), "channel_colors"):
-                channel_colors = self.parent().channel_colors
+            self.hist_tab.update_channel_checkboxes(nch, self.channel_checks, channel_colors)
+            self.profile_tab.update_channel_checkboxes(nch, self.channel_checks, channel_colors)
         except Exception:
             pass
+
+        # Build channel_color_map for stats table color swatches
+        self.channel_color_map = {}
+        if channel_colors:
+            # Determine channel count
+            if arr.ndim == 3 and arr.shape[2] > 1:
+                nch_local = arr.shape[2]
+            else:
+                nch_local = 1
+            for cindex in range(nch_local):
+                if cindex < len(channel_colors):
+                    color = channel_colors[cindex]
+                    try:
+                        r, g, b, _ = color.getRgb()
+                    except Exception:
+                        r, g, b = (127, 127, 127)
+                    # Store both numeric and symbolic keys
+                    self.channel_color_map[f"C{cindex}"] = (r, g, b)
+                    self.channel_color_map[str(cindex)] = (r, g, b)
+            # Intensity mapping (single-channel): always black
+            if nch_local == 1:
+                self.channel_color_map["I"] = (0, 0, 0)
+                self.channel_color_map["0"] = (0, 0, 0)
+                self.channel_color_map["C0"] = (0, 0, 0)
+        else:
+            # Fallback default palette
+            default_palette = [
+                (255, 0, 0),
+                (0, 200, 0),
+                (0, 102, 255),
+                (127, 127, 127),
+            ]
+            if arr.ndim == 3 and arr.shape[2] > 1:
+                nch_local = arr.shape[2]
+            else:
+                nch_local = 1
+            for cindex in range(nch_local):
+                rgb = default_palette[cindex] if cindex < len(default_palette) else (127, 127, 127)
+                self.channel_color_map[f"C{cindex}"] = rgb
+                self.channel_color_map[str(cindex)] = rgb
+            if nch_local == 1:
+                # 1ch: always black
+                self.channel_color_map["I"] = (0, 0, 0)
+                self.channel_color_map["0"] = (0, 0, 0)
+                self.channel_color_map["C0"] = (0, 0, 0)
         self.hist_tab.update(
             visible_hist_series,
             hist_stats,
@@ -454,7 +479,7 @@ class AnalysisDialog(QDialog):
                 xs2 = np.arange(prof.size)
             self.last_profile_data[label] = (xs2, prof)
         prof_stats = profile_stats(arr, orientation=self.profile_orientation, channel_checks=self.channel_checks)
-        # Get channel colors from parent viewer (same as histogram)
+        # Use the same resolved channel_colors for profile tab
         self.profile_tab.update(
             visible_prof_series, prof_stats, self.profile_orientation, self.x_mode, channel_colors=channel_colors
         )

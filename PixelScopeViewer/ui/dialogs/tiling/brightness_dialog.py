@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QCheckBox,
 )
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Signal, Qt, QEvent
 
 from PixelScopeViewer.ui.dialogs.display.tabs.logic import get_dtype_defaults
 
@@ -26,6 +26,9 @@ class TilingBrightnessDialog(QDialog):
     # Signal emitted when brightness parameters change
     brightness_changed = Signal(dict)  # Emits brightness_params_by_dtype dict
 
+    # Store position before minimize to restore after showNormal()
+    _position_before_minimize = None
+
     def __init__(self, parent, brightness_params_by_dtype: Dict[str, Dict[str, float]], common_gain: float):
         """Initialize brightness dialog.
 
@@ -35,8 +38,13 @@ class TilingBrightnessDialog(QDialog):
             common_gain: Common gain value
         """
         super().__init__(parent)
-        self.setWindowTitle("輝度調整 - タイリング比較")
+        self.setWindowTitle("複数画像比較 - 輝度調整")
         self.resize(400, 500)
+
+        # Set window flags to allow minimizing and prevent staying on top
+        flags = Qt.Window | Qt.WindowMinimizeButtonHint | Qt.WindowCloseButtonHint
+        self.setWindowFlags(flags)
+        self.setAttribute(Qt.WA_DeleteOnClose)
 
         self.brightness_params_by_dtype = brightness_params_by_dtype.copy()
         self.common_gain = common_gain
@@ -224,3 +232,15 @@ class TilingBrightnessDialog(QDialog):
             Tuple of (brightness_params_by_dtype, common_gain)
         """
         return (self.brightness_params_by_dtype.copy(), self.common_gain)
+
+    def changeEvent(self, event):
+        """Handle window state changes to preserve position during minimize/restore."""
+        if event.type() == QEvent.WindowStateChange:
+            if self.isMinimized():
+                # Save current position before minimize
+                TilingBrightnessDialog._position_before_minimize = self.pos()
+            elif event.oldState() & Qt.WindowMinimized:
+                # Restore position after showNormal()
+                if TilingBrightnessDialog._position_before_minimize is not None:
+                    self.move(TilingBrightnessDialog._position_before_minimize)
+        super().changeEvent(event)

@@ -14,6 +14,7 @@ from PySide6.QtCore import QRect
 
 from ..analysis.dialog import AnalysisDialog
 from PixelScopeViewer.core.image_io import get_image_metadata
+from ...utils import get_default_channel_colors
 
 
 class TilingComparisonDialog(AnalysisDialog):
@@ -89,32 +90,17 @@ class TilingComparisonDialog(AnalysisDialog):
         super().__init__(parent=parent, image_array=image_array, image_rect=None, image_path=image_path)
 
         # Set window title
-        self.setWindowTitle("Tiling Comparison")
+        self.setWindowTitle("複数画像比較 - 解析ビュー(複数画像)")
 
-        # Hook channel configure buttons from base tabs (if available)
-        try:
-            if hasattr(self, "hist_channels_btn"):
-                # Disconnect base handler if connected, then connect overlay config
-                try:
-                    self.hist_channels_btn.clicked.disconnect()
-                except Exception:
-                    pass
-                self.hist_channels_btn.clicked.connect(self._open_overlay_channel_config)
-            if hasattr(self, "prof_channels_btn"):
-                try:
-                    self.prof_channels_btn.clicked.disconnect()
-                except Exception:
-                    pass
-                self.prof_channels_btn.clicked.connect(self._open_overlay_channel_config)
-        except Exception:
-            pass
+        # Setup overlay channel checkboxes in tabs
+        self._setup_overlay_channel_checkboxes()
 
         # (Palette & mapping already initialized before super().__init__)
 
     # ---- Color & highlight helpers ----
     def _assign_overlay_colors(self, labels: list[str]):
         # Deterministic mapping: parse 'Tile {n} Ck' or 'Tile {n} I'
-        # Compute palette index from (tile_number, channel_index)
+        # Use TABLEAU20 palette for consistent coloring
         for lbl in labels:
             if lbl in self.overlay_color_map:
                 continue
@@ -123,14 +109,13 @@ class TilingComparisonDialog(AnalysisDialog):
             ch_index = 0
             try:
                 # Expected parts: ['Tile', 'N', 'Ck'/'I']
-                # Some labels may be 'Tile N Ck'
                 if len(parts) >= 3 and parts[0] == "Tile":
                     tile_num = int(parts[1])
                     ch_code = parts[2]
                     if ch_code.startswith("C"):
                         ch_index = int(ch_code[1:])
                     else:
-                        ch_index = 0  # 'I'
+                        ch_index = 0
                 else:
                     # Fallback: search for numeric tile
                     for p in parts:
@@ -144,7 +129,7 @@ class TilingComparisonDialog(AnalysisDialog):
             except Exception:
                 tile_num = 1
                 ch_index = 0
-            # Generate stable index (spread channels within tile)
+            # Map to TABLEAU20 using tile_num and ch_index
             idx = ((tile_num - 1) * 8 + ch_index) % len(self.TABLEAU20)
             self.overlay_color_map[lbl] = self.TABLEAU20[idx]
         return {lbl: self.overlay_color_map[lbl] for lbl in labels}
@@ -205,15 +190,7 @@ class TilingComparisonDialog(AnalysisDialog):
                     metadata["Channels"] = 1
                 metadata["DataType"] = str(arr.dtype)
 
-                # Add FileSize if path exists
-                if path:
-                    try:
-                        from pathlib import Path
-
-                        file_size = Path(path).stat().st_size
-                        metadata["FileSize"] = f"{file_size:,} bytes"
-                    except Exception:
-                        pass
+                # Note: FileSize is provided by get_image_metadata for consistency with main viewer
 
             all_metadata.append({"index": tile_data["index"], "path": path, "metadata": metadata})
 
@@ -285,9 +262,8 @@ class TilingComparisonDialog(AnalysisDialog):
             unique_values = set(v for v in values if v)  # Exclude empty strings
             has_difference = len(unique_values) > 1
 
-            # Exclude FileSize, Filepath from highlighting (these are expected to differ)
-            exclude_from_highlight = {"FileSize", "Filepath"}
-            should_highlight = has_difference and key not in exclude_from_highlight
+            # Highlight any difference (no exceptions)
+            should_highlight = has_difference
 
             # Fill tile columns
             for col_idx, value in enumerate(values):
@@ -389,6 +365,9 @@ class TilingComparisonDialog(AnalysisDialog):
         self._update_histogram_overlay(valid_tiles)
         self._update_profile_overlay(valid_tiles)
 
+        # Rebuild overlay channel checkboxes and fixed buttons after data refresh
+        self._setup_overlay_channel_checkboxes()
+
     def _update_histogram_overlay(self, valid_tiles):
         """Update histogram tab with overlaid data from all tiles."""
         from ..analysis.core.compute import determine_hist_bins, histogram_series, histogram_stats
@@ -428,8 +407,8 @@ class TilingComparisonDialog(AnalysisDialog):
 
             tile_hist_series = {}
             for label, (xs, ys) in hist_series.items():
-                # Remap grayscale 'I' to unified channel code 'C0'
-                channel_code = "C0" if label == "I" else label
+                # Keep original label ('I' or 'Ck')
+                channel_code = label
                 ch_visible = True
                 if visibility is not None:
                     if label.startswith("C"):
@@ -548,7 +527,8 @@ class TilingComparisonDialog(AnalysisDialog):
                             ch_visible = visibility[0]
 
                 if ch_visible:
-                    channel_code = "C0" if label == "I" else label
+                    # Keep original label ('I' or 'Ck')
+                    channel_code = label
                     new_label = f"Tile {tile_idx + 1} {channel_code}"
                     tile_prof_series[new_label] = (xs, prof)
                     is_int = np.issubdtype(prof.dtype, np.integer)
@@ -613,103 +593,160 @@ class TilingComparisonDialog(AnalysisDialog):
                 else:
                     self.overlay_channel_visibility[idx] = [True]
 
-    def _open_overlay_channel_config(self):
+    def _setup_overlay_channel_checkboxes(self):
+        """Replace channel checkboxes UI in tabs with overlay tile checkboxes.
+
+        Ensures the fixed button row (全選択/全解除) is placed above the
+        scroll area (non-scrollable), and the tile/channel checkboxes are
+        placed inside the scroll area.
+        """
         from PySide6.QtWidgets import (
-            QDialog,
             QVBoxLayout,
             QHBoxLayout,
             QCheckBox,
             QLabel,
             QPushButton,
             QWidget,
+            QScrollArea,
         )
         from PySide6.QtGui import QPixmap, QColor
         from PySide6.QtCore import Qt
 
-        dlg = QDialog(self)
-        dlg.setWindowTitle("Overlay Channel Visibility")
-        root_layout = QVBoxLayout(dlg)
+        if hasattr(self, "hist_tab"):
+            self._replace_tab_channel_ui(self.hist_tab)
 
-        checkbox_meta = []  # (tile_idx, ch_idx, checkbox)
+        if hasattr(self, "profile_tab"):
+            self._replace_tab_channel_ui(self.profile_tab)
+
+    def _replace_tab_channel_ui(self, tab):
+        """Replace channel checkbox UI in a tab with overlay tile checkboxes."""
+        from PySide6.QtWidgets import (
+            QVBoxLayout,
+            QHBoxLayout,
+            QCheckBox,
+            QLabel,
+            QPushButton,
+            QWidget,
+            QScrollArea,
+        )
+        from PySide6.QtGui import QPixmap, QColor
+        from PySide6.QtCore import Qt
+
+        # Find scroll area directly from tab to avoid dangling references
+        scroll_area = tab.findChild(QScrollArea)
+        if scroll_area is None:
+            return
+        scroll_widget = scroll_area.widget()
+        if scroll_widget is None:
+            return
+
+        parent_layout = scroll_area.parent().layout() if scroll_area.parent() else None
+        if parent_layout is None:
+            return
+
+        btn_row_name = "overlay_btn_row_hist" if tab is getattr(self, "hist_tab", None) else "overlay_btn_row_prof"
+
+        btn_row_widget = None
+        for idx in range(parent_layout.count()):
+            item = parent_layout.itemAt(idx)
+            w = item.widget()
+            if w is not None and w.objectName() == btn_row_name:
+                btn_row_widget = w
+                break
+        if btn_row_widget is None:
+            btn_row_widget = QWidget(scroll_area.parent())
+            btn_row_widget.setObjectName(btn_row_name)
+            btn_layout = QHBoxLayout(btn_row_widget)
+            btn_layout.setContentsMargins(0, 0, 0, 0)
+            select_all_btn = QPushButton("全選択", btn_row_widget)
+            select_all_btn.setObjectName(btn_row_name + "_select")
+            clear_all_btn = QPushButton("全解除", btn_row_widget)
+            clear_all_btn.setObjectName(btn_row_name + "_clear")
+            select_all_btn.setMaximumWidth(80)
+            clear_all_btn.setMaximumWidth(80)
+            btn_layout.addWidget(select_all_btn)
+            btn_layout.addWidget(clear_all_btn)
+
+            insert_index = 0
+            for idx in range(parent_layout.count()):
+                if parent_layout.itemAt(idx).widget() == scroll_area:
+                    insert_index = idx
+                    break
+            parent_layout.insertWidget(insert_index, btn_row_widget)
+
+        layout = scroll_widget.layout()
+        if layout is not None:
+            while layout.count():
+                item = layout.takeAt(0)
+                if item.widget():
+                    item.widget().deleteLater()
+
+        checkbox_meta = []
         for tile_idx, vis_list in sorted(self.overlay_channel_visibility.items()):
-            group = QWidget()
-            gl = QVBoxLayout(group)
-            gl.setContentsMargins(0, 0, 0, 0)
-            gl.addWidget(QLabel(f"Tile {tile_idx + 1}"))
+            tile_label = QLabel(f"Tile {tile_idx + 1}")
+            tile_label.setStyleSheet("font-weight: bold; margin-top: 5px;")
+            layout.addWidget(tile_label)
             for ch_idx, enabled in enumerate(vis_list):
-                # Build curve label used for color mapping
                 if len(vis_list) > 1:
                     channel_code = f"C{ch_idx}"
-                    label = f"{channel_code}"
+                    label_text = f"{channel_code}"
                 else:
                     channel_code = "I"
-                    label = "Intensity"
+                    label_text = "Intensity"
                 curve_label = f"Tile {tile_idx + 1} {channel_code}"
-                # Ensure color assignment exists
                 self._assign_overlay_colors([curve_label])
                 rgb = self.overlay_color_map.get(curve_label, (127, 127, 127))
-                cb = QCheckBox(label)
-                # Add color swatch icon
+                cbx = QCheckBox(label_text)
                 pix = QPixmap(14, 14)
                 pix.fill(QColor(*rgb))
-                cb.setIcon(pix)
-                cb.setIconSize(pix.size())
-                cb.setChecked(enabled)
-                # Live update on toggle
-                cb.toggled.connect(
+                cbx.setIcon(pix)
+                cbx.setIconSize(pix.size())
+                cbx.setChecked(enabled)
+                cbx.toggled.connect(
                     lambda checked, t=tile_idx, c=ch_idx: self._on_overlay_channel_toggled(t, c, checked)
                 )
-                gl.addWidget(cb)
-                checkbox_meta.append((tile_idx, ch_idx, cb))
-            root_layout.addWidget(group)
+                layout.addWidget(cbx)
+                checkbox_meta.append((tile_idx, ch_idx, cbx))
 
-        # Select / Deselect All buttons
-        btn_row = QHBoxLayout()
-        select_all_btn = QPushButton("全選択")
-        clear_all_btn = QPushButton("全解除")
-        btn_row.addWidget(select_all_btn)
-        btn_row.addWidget(clear_all_btn)
-        root_layout.addLayout(btn_row)
+        layout.addStretch()
 
-        def _apply_all(value: bool):
-            for tile_idx, ch_idx, cb in checkbox_meta:
-                if cb.isChecked() != value:
-                    cb.setChecked(value)  # triggers live update
+        select_btn = btn_row_widget.findChild(QPushButton, btn_row_name + "_select")
+        clear_btn = btn_row_widget.findChild(QPushButton, btn_row_name + "_clear")
+        if select_btn is not None and clear_btn is not None:
+            # Connect only once; handler discovers current checkboxes dynamically
+            if not btn_row_widget.property("wired"):
+                select_btn.clicked.connect(lambda: self._apply_all_in_tab(tab, True))
+                clear_btn.clicked.connect(lambda: self._apply_all_in_tab(tab, False))
+                btn_row_widget.setProperty("wired", True)
 
-        select_all_btn.clicked.connect(lambda: _apply_all(True))
-        clear_all_btn.clicked.connect(lambda: _apply_all(False))
+    def _apply_all_in_tab(self, tab, value: bool):
+        from PySide6.QtWidgets import QScrollArea, QCheckBox
 
-        dlg.setModal(False)
-        dlg.show()
+        scroll_area = tab.findChild(QScrollArea)
+        if scroll_area is None:
+            return
+        sw = scroll_area.widget()
+        if sw is None:
+            return
+        for cb in sw.findChildren(QCheckBox):
+            if cb.isChecked() != value:
+                cb.setChecked(value)
 
     def _on_overlay_channel_toggled(self, tile_idx: int, ch_idx: int, checked: bool):
         vis = self.overlay_channel_visibility.get(tile_idx)
-        if not vis or ch_idx >= len(vis):
+        if vis is None or ch_idx < 0 or ch_idx >= len(vis):
             return
         vis[ch_idx] = bool(checked)
-        # Incremental update: re-render overlays (metadata unaffected)
-        try:
-            self._update_histogram_overlay(self._collect_valid_tiles())
-            self._update_profile_overlay(self._collect_valid_tiles())
-        except Exception:
-            # Fallback to full refresh if something goes wrong
-            self.update_contents()
+        # Refresh overlays and keep buttons fixed
+        self.update_contents()
 
-    def _collect_valid_tiles(self):
-        valid = []
-        for tile_data in self.tiles_data:
-            arr = tile_data["array"]
-            if arr is None:
-                continue
-            roi_rect = tile_data.get("rect")
-            if roi_rect is not None:
-                x, y, w, h = (
-                    int(roi_rect.x()),
-                    int(roi_rect.y()),
-                    int(roi_rect.width()),
-                    int(roi_rect.height()),
-                )
-                arr = arr[y : y + h, x : x + w]
-            if arr is not None and arr.size > 0:
-                valid.append({"array": arr, "index": tile_data["index"], "color": tile_data["color"], "rect": roi_rect})
-        return valid
+    # ---- Overlay Channel Visibility Helpers ----
+    def _ensure_overlay_channel_visibility(self, valid_tiles):
+        for tile in valid_tiles:
+            idx = tile["index"]
+            arr = tile["array"]
+            if idx not in self.overlay_channel_visibility:
+                if arr.ndim == 3:
+                    self.overlay_channel_visibility[idx] = [True] * arr.shape[2]
+                else:
+                    self.overlay_channel_visibility[idx] = [True]

@@ -2,7 +2,7 @@
 
 This module provides functions for:
 - Converting NumPy arrays to QImage for Qt display
-- Loading images from files using PIL
+- Loading images from files (OpenCV, OpenImageIO, NumPy)
 - Validating image file extensions
 - Extracting comprehensive image metadata
 - Custom image loader registration (plugin system)
@@ -13,9 +13,8 @@ All functions handle edge cases gracefully and are UI-independent.
 from pathlib import Path
 from io import StringIO
 from contextlib import redirect_stdout, redirect_stderr
-from typing import Union, Tuple, Optional, Callable, List
+from typing import Union, Optional, Callable, List, Tuple
 import numpy as np
-from PIL import Image
 from PySide6.QtGui import QImage
 import cv2
 import OpenImageIO as oiio
@@ -218,58 +217,6 @@ def numpy_to_qimage(arr: np.ndarray) -> QImage:
         raise ValueError("Unsupported array shape")
 
 
-def pil_to_numpy(path: Union[str, Path, Image.Image]) -> Tuple[np.ndarray, Image.Image]:
-    """Load an image and return a NumPy array together with the PIL Image.
-
-    This helper is a thin wrapper around Pillow's ``Image.open``. It is
-    convenient when callers need both the NumPy pixel data for processing
-    and the original PIL object for metadata extraction.
-
-    Args:
-        path: Path to the image file (``str`` or ``Path``), or an already
-            opened ``PIL.Image.Image`` instance. If a PIL Image is passed,
-            this function will still return a tuple ``(array, pil_image)``
-            where ``pil_image`` is the same object.
-
-    Returns:
-        (array, pil_image):
-            - array: NumPy array representation of the image (dtype depends
-              on the source image).
-            - pil_image: The PIL Image object (opened by this function if a
-              path was given). For EXR and NPY files, pil_image will be None.
-
-    Raises:
-        PIL.UnidentifiedImageError: If the file cannot be opened as an image.
-        FileNotFoundError: If a file path is provided but the file does not exist.
-
-    Note:
-        The returned NumPy array shares no required semantics with the
-        QImage conversion helper; callers should copy or cast as needed.
-    """
-    if isinstance(path, Image.Image):
-        img = path
-        arr = np.array(img)
-        return arr, img
-    else:
-        path_obj = Path(path)
-        ext = path_obj.suffix.lower()
-        if ext == ".exr":
-            import OpenImageIO as oiio
-
-            img = oiio.ImageInput.open(str(path))
-            spec = img.spec()
-            arr = img.read_image()
-            img.close()
-            return arr, None
-        elif ext == ".npy":
-            arr = np.load(path)
-            return arr, None
-        else:
-            img = Image.open(path)
-            arr = np.array(img)
-            return arr, img
-
-
 def cv2_imread_unicode(path: str):
     data = np.fromfile(path, dtype=np.uint8)
     return cv2.imdecode(data, cv2.IMREAD_UNCHANGED)
@@ -416,15 +363,14 @@ def is_image_file(path: Union[str, Path]) -> bool:
     return ext in custom_exts
 
 
-def get_image_metadata(path_or_img: Union[str, Path, Image.Image]) -> dict:
+def get_image_metadata(path_or_img: Union[str, Path]) -> dict:
     """Return a dictionary of image metadata.
 
-    The function tries to extract basic image properties using Pillow
-    (format, size, mode) and, when a file path is available, attempts to
-    read comprehensive EXIF tags using the ``exifread`` library.
+    The function extracts basic image properties (format, size, dtype) and,
+    when available, comprehensive EXIF tags using the ``exifread`` library.
 
     Args:
-        path_or_img: Either a filesystem path (str/Path) to the image file
+        path_or_img: Filesystem path (str/Path) to the image file
 
     Returns:
         dict: Mapping of metadata keys to values. Basic keys include

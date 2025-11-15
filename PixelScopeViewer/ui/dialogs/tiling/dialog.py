@@ -562,14 +562,35 @@ class TilingComparisonDialog(QDialog):
                 if arr is not None:
                     try:
                         val = arr[iy, ix]
+
+                        # Determine if array dtype is floating for formatting
+                        is_float_dtype = np.issubdtype(arr.dtype, np.floating)
+
+                        def _fmt(v):
+                            try:
+                                # Handle numpy scalar types
+                                if isinstance(v, (np.floating, float)):
+                                    return f"{float(v):.3f}" if is_float_dtype else str(v)
+                                # Handle integers
+                                if isinstance(v, (np.integer, int)):
+                                    return str(int(v))
+                                # Fallback for other types
+                                return (
+                                    f"{float(v):.3f}"
+                                    if (is_float_dtype and isinstance(v, (int, float, np.number)))
+                                    else str(v)
+                                )
+                            except Exception:
+                                return str(v)
+
                         if isinstance(val, np.ndarray) or (
                             hasattr(val, "shape") and len(getattr(val, "shape", ())) > 0
                         ):
                             flat = np.array(val).ravel().tolist()
-                            preview = ", ".join(str(x) for x in flat[:4])
+                            preview = ", ".join(_fmt(x) for x in flat[:4])
                             text = f"[{preview}{', …' if len(flat) > 4 else ''}]"
                         else:
-                            text = str(val)
+                            text = _fmt(val)
                         # Truncate overly long text
                         if len(text) > 60:
                             text = text[:57] + "…"

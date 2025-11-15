@@ -30,7 +30,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QDockWidget,
 )
-from PySide6.QtGui import QPixmap, QPainter, QIcon, QGuiApplication, QAction, QActionGroup, QPixmap
+from PySide6.QtGui import QPixmap, QPainter, QIcon, QGuiApplication, QAction, QActionGroup
 from PySide6.QtCore import Qt, QRect, QEvent, Signal
 
 from ...core.image_io import numpy_to_qimage, load_image, is_image_file
@@ -107,6 +107,9 @@ class ImageViewer(QMainWindow):
         self.images = []
         self.current_index = None
         self.scale = 1.0
+
+        # Track child dialogs for window state synchronization
+        self._child_dialogs = []
 
         # Zoom toggle state
         self.fit_zoom_scale = None
@@ -281,11 +284,21 @@ class ImageViewer(QMainWindow):
         arr = img.get("base_array", img.get("array"))
         sel = self.current_roi_rect
         img_path = img.get("path")
+        # Create with explicit parent for proper window relationship
         dlg = AnalysisDialog(self, image_array=arr, image_rect=sel, image_path=img_path)
         dlg.show()
+        dlg.raise_()
+        dlg.activateWindow()
         # keep a reference until the dialog is closed
         self._analysis_dialog = dlg
-        dlg.finished.connect(lambda: setattr(self, "_analysis_dialog", None))
+        self._child_dialogs.append(dlg)
+
+        def on_closed():
+            if dlg in self._child_dialogs:
+                self._child_dialogs.remove(dlg)
+            setattr(self, "_analysis_dialog", None)
+
+        dlg.finished.connect(on_closed)
         # if a tab was requested, set it
         if tab is not None:
             try:
@@ -470,7 +483,7 @@ class ImageViewer(QMainWindow):
                 thumb_arr = self._prepare_thumbnail_array(arr)
                 thumb_qimg = numpy_to_qimage(thumb_arr)
                 thumb_pixmap = QPixmap.fromImage(thumb_qimg).scaled(
-                    250, 250, Qt.KeepAspectRatio, Qt.SmoothTransformation
+                    200, 200, Qt.KeepAspectRatio, Qt.SmoothTransformation
                 )
 
                 img_data = {
@@ -509,7 +522,6 @@ class ImageViewer(QMainWindow):
     # ------------------------
     # Features: load + dialog
     # ------------------------
-    # Removed: feature file opening moved into FeaturesDialog menu
 
     def show_features_dialog(self):
         if self._features_dialog is not None:
@@ -524,10 +536,20 @@ class ImageViewer(QMainWindow):
             self._features_dialog.raise_()
             self._features_dialog.activateWindow()
             return
+        # Create with explicit parent for proper window relationship
         dlg = FeaturesDialog(self, self.features_manager)
         dlg.show()
+        dlg.raise_()
+        dlg.activateWindow()
         self._features_dialog = dlg
-        dlg.finished.connect(lambda: setattr(self, "_features_dialog", None))
+        self._child_dialogs.append(dlg)
+
+        def on_closed():
+            if dlg in self._child_dialogs:
+                self._child_dialogs.remove(dlg)
+            setattr(self, "_features_dialog", None)
+
+        dlg.finished.connect(on_closed)
 
     def update_image_list_menu(self):
         """Update the image list menu with current loaded images."""
@@ -891,7 +913,7 @@ class ImageViewer(QMainWindow):
     def show_tiling_comparison_dialog(self):
         """Show tiling comparison dialog."""
         if len(self.images) < 2:
-            QMessageBox.information(self, "タイリング比較", "比較する画像が2枚以上必要です。")
+            QMessageBox.information(self, "複数画像比較", "比較する画像が2枚以上必要です。")
             return
         from ..dialogs.tiling import TilingComparisonDialog
 
@@ -1008,6 +1030,38 @@ class ImageViewer(QMainWindow):
             self.roi_changed.emit()
 
     # Event handlers
+    def changeEvent(self, event):
+        """Handle window state changes to synchronize child dialogs."""
+        if event.type() == QEvent.WindowStateChange:
+            if self.isMinimized():
+                # Minimize all child dialogs
+                for dlg in self._child_dialogs:
+                    try:
+                        if dlg.isVisible() and not dlg.isMinimized():
+                            dlg.showMinimized()
+                    except RuntimeError:
+                        pass  # Dialog already deleted
+            elif event.oldState() & Qt.WindowMinimized:
+                # Restore all child dialogs
+                for dlg in self._child_dialogs:
+                    try:
+                        if dlg.isMinimized():
+                            dlg.showNormal()
+                    except RuntimeError:
+                        pass  # Dialog already deleted
+        super().changeEvent(event)
+
+    def mousePressEvent(self, event):
+        """Raise child dialogs when parent window is clicked."""
+        # Raise child dialogs to front when parent is clicked
+        for dlg in self._child_dialogs:
+            try:
+                if dlg.isVisible() and not dlg.isMinimized():
+                    dlg.raise_()
+            except RuntimeError:
+                pass  # Dialog already deleted
+        super().mousePressEvent(event)
+
     def eventFilter(self, obj, event):
         """Filter events to update status on mouse move."""
         if obj is self.image_label and event.type() == QEvent.MouseMove:

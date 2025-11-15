@@ -141,7 +141,8 @@ def histogram_stats(arr: np.ndarray, channel_checks: Optional[list[bool]] = None
             mean_v, std_v, median_v, min_v, max_v = _stats_1d(data)
             results.append(
                 {
-                    "ch": str(c),
+                    "ch": str(c),  # numeric index for legacy consumers
+                    "curve_label": f"C{c}",  # explicit channel label used for color mapping
                     "mean": mean_v,
                     "std": std_v,
                     "median": median_v,
@@ -157,6 +158,7 @@ def histogram_stats(arr: np.ndarray, channel_checks: Optional[list[bool]] = None
         results.append(
             {
                 "ch": "0",
+                "curve_label": "I",  # intensity label
                 "mean": mean_v,
                 "std": std_v,
                 "median": median_v,
@@ -182,6 +184,7 @@ def profile_stats(arr: np.ndarray, *, orientation: str = "h", channel_checks: Op
             results.append(
                 {
                     "ch": str(c),
+                    "curve_label": f"C{c}",
                     "mean": mean_v,
                     "std": std_v,
                     "median": median_v,
@@ -197,6 +200,7 @@ def profile_stats(arr: np.ndarray, *, orientation: str = "h", channel_checks: Op
         results.append(
             {
                 "ch": "0",
+                "curve_label": "I",
                 "mean": mean_v,
                 "std": std_v,
                 "median": median_v,

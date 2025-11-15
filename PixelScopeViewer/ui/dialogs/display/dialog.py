@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
     QTabWidget,
     QAbstractSpinBox,
 )
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QEvent
 from .tabs import BrightnessTab, ChannelTab
 from ...utils import MODE_1CH_GRAYSCALE, MODE_2CH_FLOW_HSV
 
@@ -43,6 +43,8 @@ class BrightnessDialog(QDialog):
 
     # Persist window geometry across openings so it doesn't jump based on cursor/OS heuristics
     _saved_geometry = None
+    # Store position before minimize to restore after showNormal()
+    _position_before_minimize = None
 
     def __init__(
         self,
@@ -65,9 +67,8 @@ class BrightnessDialog(QDialog):
             initial_channels: List of bools for channel visibility
             initial_colors: List of QColor objects for channel colors
         """
-        super().__init__(None)
-        self.parent = parent
-        self.setWindowTitle("表示設定 (Display Settings)")
+        super().__init__(parent)
+        self.setWindowTitle("表示設定")
         self.resize(500, 600)
         self.setStyleSheet("QDialog { background-color: #fafafa; }")
 
@@ -92,11 +93,11 @@ class BrightnessDialog(QDialog):
             initial_mode_1ch,
             initial_mode_2ch,
         )
-        self.tabs.addTab(self.channel_tab, "チャンネル (Channels)")
+        self.tabs.addTab(self.channel_tab, "チャンネル色設定")
 
         # Brightness tab
         self.brightness_tab = BrightnessTab(self, image_array, image_path)
-        self.tabs.addTab(self.brightness_tab, "輝度調整 (Brightness)")
+        self.tabs.addTab(self.brightness_tab, "輝度調整")
 
         # Connect signals
         self.brightness_tab.brightness_changed.connect(self.brightness_changed)
@@ -203,6 +204,18 @@ class BrightnessDialog(QDialog):
         if initial_mode_2ch is not None:
             self.channel_tab._mode2 = initial_mode_2ch
         self.channel_tab.update_for_new_image(image_array, channel_checks, channel_colors)
+
+    def changeEvent(self, event):
+        """Handle window state changes to preserve position during minimize/restore."""
+        if event.type() == QEvent.WindowStateChange:
+            if self.isMinimized():
+                # Save current position before minimize
+                BrightnessDialog._position_before_minimize = self.pos()
+            elif event.oldState() & Qt.WindowMinimized:
+                # Restore position after showNormal()
+                if BrightnessDialog._position_before_minimize is not None:
+                    self.move(BrightnessDialog._position_before_minimize)
+        super().changeEvent(event)
 
     def moveEvent(self, event):
         # Save geometry whenever the dialog is moved

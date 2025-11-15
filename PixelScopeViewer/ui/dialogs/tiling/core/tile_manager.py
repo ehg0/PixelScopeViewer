@@ -100,8 +100,7 @@ class TileManager:
             col = i % cols
             self.grid_layout.addWidget(tile, row, col)
 
-            # Initial display
-            tile.update_display()
+            # Initial display will be triggered after managers are initialized
             # Connect scrollbars for sync - use ONLY sliderMoved to avoid signal conflicts
             if tile.scroll_area.horizontalScrollBar():
                 hsb = tile.scroll_area.horizontalScrollBar()

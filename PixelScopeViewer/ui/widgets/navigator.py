@@ -18,7 +18,7 @@ class NavigatorWidget(QGroupBox):
         self.viewer = viewer
 
         self.thumbnail_label = QLabel()
-        self.thumbnail_label.setFixedSize(250, 250)
+        self.thumbnail_label.setFixedSize(200, 200)
         self.thumbnail_label.setAlignment(Qt.AlignTop | Qt.AlignHCenter)
 
         layout = QVBoxLayout(self)

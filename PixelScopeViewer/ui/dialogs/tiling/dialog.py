@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QMenuBar,
 )
-from PySide6.QtCore import Qt, Signal, QRect
+from PySide6.QtCore import Qt, Signal, QRect, QEvent
 from PySide6.QtGui import QShortcut, QKeySequence, QGuiApplication
 
 from .selection_dialog import TileSelectionDialog
@@ -55,18 +55,24 @@ class TilingComparisonDialog(QDialog):
             image_list: List of image dictionaries from ImageViewer
         """
         super().__init__(None)
-        self.setWindowTitle("タイリング比較")
-        # Enable maximize and minimize buttons
+        self.setWindowTitle("複数画像比較")
+        # Enable minimize and maximize buttons
         self.setWindowFlags(Qt.Window | Qt.WindowMinMaxButtonsHint | Qt.WindowCloseButtonHint)
         self.setFocusPolicy(Qt.StrongFocus)
         self.parent_viewer = parent
         self.all_images = image_list
 
-        # Track child dialogs for cleanup
+        # Copy channel colors from parent viewer for AnalysisDialog to access
+        self.channel_colors = None
+        if hasattr(parent, "channel_colors"):
+            self.channel_colors = parent.channel_colors
+
+        # Track child dialogs for window state synchronization
         self._brightness_dialog = None
         self._help_dialog = None
         self._analysis_dialog = None
         self._comparison_dialog = None
+        self._child_dialogs = []
 
         # Show selection dialog first
         selection_dialog = TileSelectionDialog(self, image_list)
@@ -77,7 +83,7 @@ class TilingComparisonDialog(QDialog):
 
         grid_size, selected_indices = selection_dialog.get_selection()
         if not selected_indices:
-            QMessageBox.warning(self, "タイリング比較", "画像が選択されていません。")
+            QMessageBox.warning(self, "複数画像比較", "画像が選択されていません。")
             self.reject()
             return
 
@@ -105,6 +111,10 @@ class TilingComparisonDialog(QDialog):
 
         # Initialize managers with tiles
         self._initialize_managers()
+
+        # Now that managers are ready, render tiles with dtype-specific defaults
+        if self.brightness_manager:
+            self.brightness_manager.refresh_all_tiles()
 
         # Connect signals
         self.common_roi_changed.connect(self.roi_manager.sync_roi_to_all_tiles)
@@ -135,32 +145,29 @@ class TilingComparisonDialog(QDialog):
 
         # View menu
         view_menu = menu_bar.addMenu("表示")
-        brightness_action = view_menu.addAction("表示設定...")
+        brightness_action = view_menu.addAction("表示設定")
+        brightness_action.setShortcut("D")
+        brightness_action.setShortcutContext(Qt.WindowShortcut)
+        self.addAction(brightness_action)
         brightness_action.triggered.connect(self.show_brightness_dialog)
 
         # Analysis menu (order aligned to main viewer: dialog, metadata, profile, histogram, separators, tiling features)
         analysis_menu = menu_bar.addMenu("解析")
-        analysis_dialog_action = analysis_menu.addAction("解析ダイアログ")
+        analysis_dialog_action = analysis_menu.addAction("解析ビュー(単一画像)")
+        analysis_dialog_action.setShortcut("A")
+        analysis_dialog_action.setShortcutContext(Qt.WindowShortcut)
+        self.addAction(analysis_dialog_action)
         analysis_dialog_action.triggered.connect(lambda: self.show_analysis_dialog())
 
-        metadata_action = analysis_menu.addAction("メタデータ")
-        metadata_action.triggered.connect(lambda: self.show_analysis_dialog(tab="Metadata"))
-
-        profile_action = analysis_menu.addAction("プロファイル")
-        profile_action.triggered.connect(lambda: self.show_analysis_dialog(tab="Profile"))
-
-        histogram_action = analysis_menu.addAction("ヒストグラム")
-        histogram_action.triggered.connect(lambda: self.show_analysis_dialog(tab="Histogram"))
-
-        analysis_menu.addSeparator()
-
-        comparison_table_action = analysis_menu.addAction("タイリング比較")
+        comparison_table_action = analysis_menu.addAction("解析ビュー(複数画像)")
         comparison_table_action.setShortcut("Ctrl+Shift+A")
-        comparison_table_action.triggered.connect(lambda: self.show_comparison_dialog(tab="Metadata"))
+        comparison_table_action.setShortcutContext(Qt.WindowShortcut)
+        self.addAction(comparison_table_action)
+        comparison_table_action.triggered.connect(lambda: self.show_comparison_dialog())
 
         # Help menu
         help_menu = menu_bar.addMenu("ヘルプ")
-        help_action = help_menu.addAction("その他キーボードショートカット")
+        help_action = help_menu.addAction("ヘルプ / ショートカット")
         help_action.triggered.connect(self.show_help)
         layout.setMenuBar(menu_bar)
 
@@ -226,47 +233,21 @@ class TilingComparisonDialog(QDialog):
         self.update_status_bar()
 
     def change_comparison_images(self):
-        """Show selection dialog to change comparison images."""
-        # Show selection dialog
-        selection_dialog = TileSelectionDialog(self, self.all_images)
+        """Show selection dialog to change comparison images.
 
-        # Pre-select current grid size in combo box
-        for idx in range(selection_dialog.grid_combo.count()):
-            if selection_dialog.grid_combo.itemData(idx) == self.grid_size:
-                selection_dialog.grid_combo.setCurrentIndex(idx)
-                break
+        Closes the current tiling dialog completely and opens a new one
+        with fresh settings to avoid any state inconsistencies.
+        """
+        # Close current dialog and open new tiling comparison dialog
+        # This ensures a clean state without carrying over any settings
+        if self.parent_viewer:
+            # Schedule the new dialog to open after this one closes
+            from PySide6.QtCore import QTimer
 
-        # Pre-check currently selected images
-        for idx in self.selected_indices:
-            if idx < selection_dialog.image_list_widget.count():
-                item = selection_dialog.image_list_widget.item(idx)
-                if item:
-                    item.setCheckState(Qt.Checked)
+            QTimer.singleShot(0, self.parent_viewer.show_tiling_comparison_dialog)
 
-        if selection_dialog.exec() != QDialog.Accepted:
-            return
-
-        grid_size, selected_indices = selection_dialog.get_selection()
-        if not selected_indices:
-            QMessageBox.warning(self, "比較画像変更", "画像が選択されていません。")
-            return
-
-        # Update settings
-        self.grid_size = grid_size
-        self.selected_indices = selected_indices
-
-        # Close dialogs before rebuilding tiles to avoid stale references
-        if self._analysis_dialog is not None:
-            self._analysis_dialog.close()
-            self._analysis_dialog = None
-        if self._comparison_dialog is not None:
-            self._comparison_dialog.close()
-            self._comparison_dialog = None
-
-        # Rebuild tiles
-        self._clear_tiles()
-        self._rebuild_tiles()
-        self._initialize_managers()
+        # Close this dialog
+        self.close()
 
     def _on_scroll(self, source_index: int, direction: str, value: int, signal_name: str):
         """Handle scroll events."""
@@ -330,11 +311,7 @@ class TilingComparisonDialog(QDialog):
         add_shortcut("<", lambda: self.adjust_gain(0.5))
         add_shortcut(">", lambda: self.adjust_gain(2.0))
 
-        # Brightness dialog
-        add_shortcut("D", self.show_brightness_dialog)
-
-        # Analysis dialog
-        add_shortcut("A", self.show_analysis_dialog)
+        # Brightness/Analysis shortcuts are provided via menu actions with shortcuts
 
         # Reset
         add_shortcut("Ctrl+R", self.reset_brightness)
@@ -355,13 +332,13 @@ class TilingComparisonDialog(QDialog):
         add_shortcut("Ctrl+C", self.copy_active_tile_roi)
         add_shortcut("Ctrl+Shift+C", self.copy_all_tiles_roi_as_grid)
 
-        # Tile rotation
-        add_shortcut("Tab", self.rotate_tiles_forward)
-        add_shortcut("Shift+Tab", self.rotate_tiles_backward)
+        # # Tile rotation (shortcuts commented out for now)
+        # add_shortcut("Tab", self.rotate_tiles_forward)
+        # add_shortcut("Shift+Tab", self.rotate_tiles_backward)
 
-        # Tile swapping
-        add_shortcut("Ctrl+Shift+Right", self.swap_with_next_tile)
-        add_shortcut("Ctrl+Shift+Left", self.swap_with_previous_tile)
+        # # Tile swapping (shortcuts commented out for now)
+        # add_shortcut("Ctrl+Shift+Right", self.swap_with_next_tile)
+        # add_shortcut("Ctrl+Shift+Left", self.swap_with_previous_tile)
 
     def adjust_zoom(self, factor, tile_index=None, mouse_pos=None):
         """Adjust zoom for all tiles.
@@ -429,7 +406,17 @@ class TilingComparisonDialog(QDialog):
             params = self.brightness_manager.get_brightness_params()
             self._brightness_dialog = TilingBrightnessDialog(self, params["params_by_dtype"], params["gain"])
             self._brightness_dialog.brightness_changed.connect(self.on_brightness_dialog_changed)
+            self._child_dialogs.append(self._brightness_dialog)
 
+            def on_closed():
+                if self._brightness_dialog in self._child_dialogs:
+                    self._child_dialogs.remove(self._brightness_dialog)
+                setattr(self, "_brightness_dialog", None)
+
+            self._brightness_dialog.finished.connect(on_closed)
+
+        if self._brightness_dialog.isMinimized():
+            self._brightness_dialog.showNormal()
         self._brightness_dialog.show()
         self._brightness_dialog.raise_()
         self._brightness_dialog.activateWindow()
@@ -438,10 +425,52 @@ class TilingComparisonDialog(QDialog):
         """Show help dialog with keyboard shortcuts."""
         if self._help_dialog is None:
             self._help_dialog = TilingHelpDialog(self)
+            self._child_dialogs.append(self._help_dialog)
 
+            def on_closed():
+                if self._help_dialog in self._child_dialogs:
+                    self._child_dialogs.remove(self._help_dialog)
+                setattr(self, "_help_dialog", None)
+
+            self._help_dialog.finished.connect(on_closed)
+
+        if self._help_dialog.isMinimized():
+            self._help_dialog.showNormal()
         self._help_dialog.show()
         self._help_dialog.raise_()
         self._help_dialog.activateWindow()
+
+    def changeEvent(self, event):
+        """Handle window state changes to synchronize child dialogs."""
+        if event.type() == QEvent.WindowStateChange:
+            if self.isMinimized():
+                # Minimize all child dialogs
+                for dlg in self._child_dialogs:
+                    try:
+                        if dlg.isVisible() and not dlg.isMinimized():
+                            dlg.showMinimized()
+                    except RuntimeError:
+                        pass  # Dialog already deleted
+            elif event.oldState() & Qt.WindowMinimized:
+                # Restore all child dialogs
+                for dlg in self._child_dialogs:
+                    try:
+                        if dlg.isMinimized():
+                            dlg.showNormal()
+                    except RuntimeError:
+                        pass  # Dialog already deleted
+        super().changeEvent(event)
+
+    def mousePressEvent(self, event):
+        """Raise child dialogs when parent window is clicked."""
+        # Raise child dialogs to front when parent is clicked
+        for dlg in self._child_dialogs:
+            try:
+                if dlg.isVisible() and not dlg.isMinimized():
+                    dlg.raise_()
+            except RuntimeError:
+                pass  # Dialog already deleted
+        super().mousePressEvent(event)
 
     def closeEvent(self, event):
         """Handle dialog close event and close child dialogs."""
@@ -516,14 +545,35 @@ class TilingComparisonDialog(QDialog):
                 if arr is not None:
                     try:
                         val = arr[iy, ix]
+
+                        # Determine if array dtype is floating for formatting
+                        is_float_dtype = np.issubdtype(arr.dtype, np.floating)
+
+                        def _fmt(v):
+                            try:
+                                # Handle numpy scalar types
+                                if isinstance(v, (np.floating, float)):
+                                    return f"{float(v):.3f}" if is_float_dtype else str(v)
+                                # Handle integers
+                                if isinstance(v, (np.integer, int)):
+                                    return str(int(v))
+                                # Fallback for other types
+                                return (
+                                    f"{float(v):.3f}"
+                                    if (is_float_dtype and isinstance(v, (int, float, np.number)))
+                                    else str(v)
+                                )
+                            except Exception:
+                                return str(v)
+
                         if isinstance(val, np.ndarray) or (
                             hasattr(val, "shape") and len(getattr(val, "shape", ())) > 0
                         ):
                             flat = np.array(val).ravel().tolist()
-                            preview = ", ".join(str(x) for x in flat[:4])
+                            preview = ", ".join(_fmt(x) for x in flat[:4])
                             text = f"[{preview}{', …' if len(flat) > 4 else ''}]"
                         else:
-                            text = str(val)
+                            text = _fmt(val)
                         # Truncate overly long text
                         if len(text) > 60:
                             text = text[:57] + "…"
@@ -695,6 +745,11 @@ class TilingComparisonDialog(QDialog):
         Args:
             tab: Optional tab name to open ('Histogram', 'Profile', 'Metadata')
         """
+        # Ensure comparison dialog is not open simultaneously
+        if self._comparison_dialog is not None and self._comparison_dialog.isVisible():
+            self._comparison_dialog.close()
+            self._comparison_dialog = None
+
         from ..analysis.dialog import AnalysisDialog
 
         # Get active tile data
@@ -706,23 +761,41 @@ class TilingComparisonDialog(QDialog):
 
         # Create or show existing analysis dialog
         if self._analysis_dialog is None or not self._analysis_dialog.isVisible():
+            # Create with explicit parent for proper window relationship
             self._analysis_dialog = AnalysisDialog(
-                parent=self, image_array=image_array, image_rect=roi_rect, image_path=file_path
+                parent=self,
+                image_array=image_array,
+                image_rect=roi_rect,
+                image_path=file_path,
             )
 
             # Set window title to distinguish from main viewer's analysis dialog
-            self._analysis_dialog.setWindowTitle("Analysis (Tiling)")
+            self._analysis_dialog.setWindowTitle("複数画像比較 - 解析ビュー(単一画像)")
+
+            # Track dialog for window state synchronization
+            self._child_dialogs.append(self._analysis_dialog)
 
             # Clean up reference when dialog is closed
-            self._analysis_dialog.finished.connect(lambda: setattr(self, "_analysis_dialog", None))
+            def on_closed():
+                if self._analysis_dialog in self._child_dialogs:
+                    self._child_dialogs.remove(self._analysis_dialog)
+                setattr(self, "_analysis_dialog", None)
+
+            self._analysis_dialog.finished.connect(on_closed)
 
             # Set the requested tab
             if tab:
                 self._analysis_dialog.set_current_tab(tab)
 
             self._analysis_dialog.show()
+            self._analysis_dialog.raise_()
+            self._analysis_dialog.activateWindow()
         else:
             # Dialog already exists and is visible
+            # Restore from minimized state if needed
+            if self._analysis_dialog.isMinimized():
+                self._analysis_dialog.showNormal()
+
             # Update with current data
             self._analysis_dialog.set_image_and_rect(image_array, roi_rect, file_path)
 
@@ -740,6 +813,11 @@ class TilingComparisonDialog(QDialog):
         Args:
             tab: Optional tab name to open ('Histogram', 'Profile', 'Metadata')
         """
+        # Ensure analysis dialog is not open simultaneously
+        if self._analysis_dialog is not None and self._analysis_dialog.isVisible():
+            self._analysis_dialog.close()
+            self._analysis_dialog = None
+
         from .comparison_dialog import TilingComparisonDialog
 
         # Get all tiles data
@@ -751,18 +829,33 @@ class TilingComparisonDialog(QDialog):
 
         # Create or show existing comparison dialog
         if self._comparison_dialog is None or not self._comparison_dialog.isVisible():
+            # Create with explicit parent for proper window relationship
             self._comparison_dialog = TilingComparisonDialog(parent=self, tiles_data=tiles_data)
 
+            # Track dialog for window state synchronization
+            self._child_dialogs.append(self._comparison_dialog)
+
             # Clean up reference when dialog is closed
-            self._comparison_dialog.finished.connect(lambda: setattr(self, "_comparison_dialog", None))
+            def on_closed():
+                if self._comparison_dialog in self._child_dialogs:
+                    self._child_dialogs.remove(self._comparison_dialog)
+                setattr(self, "_comparison_dialog", None)
+
+            self._comparison_dialog.finished.connect(on_closed)
 
             # Set the requested tab
             if tab:
                 self._comparison_dialog.set_current_tab(tab)
 
             self._comparison_dialog.show()
+            self._comparison_dialog.raise_()
+            self._comparison_dialog.activateWindow()
         else:
             # Dialog already exists and is visible
+            # Restore from minimized state if needed
+            if self._comparison_dialog.isMinimized():
+                self._comparison_dialog.showNormal()
+
             # Update with current data
             self._comparison_dialog.update_tiles_data(tiles_data)
 

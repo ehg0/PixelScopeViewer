@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, List
 
-from PySide6.QtCore import Qt, QModelIndex
+from PySide6.QtCore import Qt, QModelIndex, QEvent
 from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import (
     QDialog,
@@ -35,8 +35,11 @@ from .widgets import (
 
 
 class FeaturesDialog(QDialog):
+    # Store position before minimize to restore after showNormal()
+    _position_before_minimize = None
+
     def __init__(self, viewer, manager: FeaturesManager):
-        super().__init__(None)
+        super().__init__(viewer)
         self.viewer = viewer
         self.manager = manager
 
@@ -475,3 +478,15 @@ class FeaturesDialog(QDialog):
             super().keyPressEvent(event)
         else:
             super().keyPressEvent(event)
+
+    def changeEvent(self, event):
+        """Handle window state changes to preserve position during minimize/restore."""
+        if event.type() == QEvent.WindowStateChange:
+            if self.isMinimized():
+                # Save current position before minimize
+                FeaturesDialog._position_before_minimize = self.pos()
+            elif event.oldState() & Qt.WindowMinimized:
+                # Restore position after showNormal()
+                if FeaturesDialog._position_before_minimize is not None:
+                    self.move(FeaturesDialog._position_before_minimize)
+        super().changeEvent(event)

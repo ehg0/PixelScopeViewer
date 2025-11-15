@@ -122,7 +122,7 @@ class AnalysisDialog(QDialog):
         image_path: Optional[str] = None,
     ):
         super().__init__(parent)
-        self.setWindowTitle("Analysis")
+        self.setWindowTitle("解析ビュー")
         self.resize(900, 600)
 
         # Set window flags to allow minimizing and prevent staying on top

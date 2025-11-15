@@ -55,7 +55,7 @@ class TilingComparisonDialog(QDialog):
             image_list: List of image dictionaries from ImageViewer
         """
         super().__init__(None)
-        self.setWindowTitle("タイリング比較")
+        self.setWindowTitle("複数画像比較")
         # Enable minimize and maximize buttons
         self.setWindowFlags(Qt.Window | Qt.WindowMinMaxButtonsHint | Qt.WindowCloseButtonHint)
         self.setFocusPolicy(Qt.StrongFocus)
@@ -83,7 +83,7 @@ class TilingComparisonDialog(QDialog):
 
         grid_size, selected_indices = selection_dialog.get_selection()
         if not selected_indices:
-            QMessageBox.warning(self, "タイリング比較", "画像が選択されていません。")
+            QMessageBox.warning(self, "複数画像比較", "画像が選択されていません。")
             self.reject()
             return
 
@@ -145,7 +145,7 @@ class TilingComparisonDialog(QDialog):
 
         # View menu
         view_menu = menu_bar.addMenu("表示")
-        brightness_action = view_menu.addAction("表示設定...")
+        brightness_action = view_menu.addAction("表示設定")
         brightness_action.setShortcut("D")
         brightness_action.setShortcutContext(Qt.WindowShortcut)
         self.addAction(brightness_action)
@@ -153,21 +153,21 @@ class TilingComparisonDialog(QDialog):
 
         # Analysis menu (order aligned to main viewer: dialog, metadata, profile, histogram, separators, tiling features)
         analysis_menu = menu_bar.addMenu("解析")
-        analysis_dialog_action = analysis_menu.addAction("解析ダイアログ")
+        analysis_dialog_action = analysis_menu.addAction("解析ビュー(単一画像)")
         analysis_dialog_action.setShortcut("A")
         analysis_dialog_action.setShortcutContext(Qt.WindowShortcut)
         self.addAction(analysis_dialog_action)
         analysis_dialog_action.triggered.connect(lambda: self.show_analysis_dialog())
 
-        comparison_table_action = analysis_menu.addAction("解析比較ダイアログ")
+        comparison_table_action = analysis_menu.addAction("解析ビュー(複数画像)")
         comparison_table_action.setShortcut("Ctrl+Shift+A")
         comparison_table_action.setShortcutContext(Qt.WindowShortcut)
         self.addAction(comparison_table_action)
-        comparison_table_action.triggered.connect(lambda: self.show_comparison_dialog(tab="Metadata"))
+        comparison_table_action.triggered.connect(lambda: self.show_comparison_dialog())
 
         # Help menu
         help_menu = menu_bar.addMenu("ヘルプ")
-        help_action = help_menu.addAction("その他キーボードショートカット")
+        help_action = help_menu.addAction("ヘルプ / ショートカット")
         help_action.triggered.connect(self.show_help)
         layout.setMenuBar(menu_bar)
 
@@ -332,13 +332,13 @@ class TilingComparisonDialog(QDialog):
         add_shortcut("Ctrl+C", self.copy_active_tile_roi)
         add_shortcut("Ctrl+Shift+C", self.copy_all_tiles_roi_as_grid)
 
-        # Tile rotation
-        add_shortcut("Tab", self.rotate_tiles_forward)
-        add_shortcut("Shift+Tab", self.rotate_tiles_backward)
+        # # Tile rotation (shortcuts commented out for now)
+        # add_shortcut("Tab", self.rotate_tiles_forward)
+        # add_shortcut("Shift+Tab", self.rotate_tiles_backward)
 
-        # Tile swapping
-        add_shortcut("Ctrl+Shift+Right", self.swap_with_next_tile)
-        add_shortcut("Ctrl+Shift+Left", self.swap_with_previous_tile)
+        # # Tile swapping (shortcuts commented out for now)
+        # add_shortcut("Ctrl+Shift+Right", self.swap_with_next_tile)
+        # add_shortcut("Ctrl+Shift+Left", self.swap_with_previous_tile)
 
     def adjust_zoom(self, factor, tile_index=None, mouse_pos=None):
         """Adjust zoom for all tiles.
@@ -770,7 +770,7 @@ class TilingComparisonDialog(QDialog):
             )
 
             # Set window title to distinguish from main viewer's analysis dialog
-            self._analysis_dialog.setWindowTitle("Analysis (Tiling)")
+            self._analysis_dialog.setWindowTitle("複数画像比較 - 解析ビュー(単一画像)")
 
             # Track dialog for window state synchronization
             self._child_dialogs.append(self._analysis_dialog)

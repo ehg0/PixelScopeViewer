@@ -42,7 +42,7 @@ def create_menus(viewer):
 
     # Create actions that will be used in multiple menus and as window shortcuts
     # These must be defined before menus that use them
-    viewer.show_analysis_action = QAction("解析ダイアログ", viewer, shortcut="A")
+    viewer.show_analysis_action = QAction("解析ビュー", viewer, shortcut="A")
     viewer.show_analysis_action.setShortcutContext(Qt.WindowShortcut)
     viewer.show_analysis_action.triggered.connect(lambda: viewer.show_analysis_dialog())
     viewer.addAction(viewer.show_analysis_action)
@@ -97,11 +97,11 @@ def create_menus(viewer):
     analysis.addAction(viewer.show_features_action)
     analysis.addSeparator()
     analysis.addAction(QAction("差分画像表示", viewer, triggered=lambda: viewer.show_diff_dialog()))
-    analysis.addAction(QAction("タイリング比較", viewer, triggered=lambda: viewer.show_tiling_comparison_dialog()))
+    analysis.addAction(QAction("複数画像比較", viewer, triggered=lambda: viewer.show_tiling_comparison_dialog()))
 
     # Help menu
     help_menu = menubar.addMenu("ヘルプ")
-    help_menu.addAction(QAction("その他キーボードショートカット", viewer, triggered=viewer.help_dialog.show))
+    help_menu.addAction(QAction("ヘルプ / ショートカット", viewer, triggered=viewer.help_dialog.show))
 
     # Add global application-level shortcuts
     _create_global_shortcuts(viewer)

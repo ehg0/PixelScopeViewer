@@ -68,7 +68,7 @@ class BrightnessDialog(QDialog):
             initial_colors: List of QColor objects for channel colors
         """
         super().__init__(parent)
-        self.setWindowTitle("表示設定 (Display Settings)")
+        self.setWindowTitle("表示設定")
         self.resize(500, 600)
         self.setStyleSheet("QDialog { background-color: #fafafa; }")
 
@@ -93,11 +93,11 @@ class BrightnessDialog(QDialog):
             initial_mode_1ch,
             initial_mode_2ch,
         )
-        self.tabs.addTab(self.channel_tab, "チャンネル (Channels)")
+        self.tabs.addTab(self.channel_tab, "チャンネル色設定")
 
         # Brightness tab
         self.brightness_tab = BrightnessTab(self, image_array, image_path)
-        self.tabs.addTab(self.brightness_tab, "輝度調整 (Brightness)")
+        self.tabs.addTab(self.brightness_tab, "輝度調整")
 
         # Connect signals
         self.brightness_tab.brightness_changed.connect(self.brightness_changed)

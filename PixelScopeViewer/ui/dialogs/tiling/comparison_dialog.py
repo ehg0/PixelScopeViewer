@@ -90,7 +90,7 @@ class TilingComparisonDialog(AnalysisDialog):
         super().__init__(parent=parent, image_array=image_array, image_rect=None, image_path=image_path)
 
         # Set window title
-        self.setWindowTitle("Tiling Comparison")
+        self.setWindowTitle("複数画像比較 - 解析ビュー(複数画像)")
 
         # Setup overlay channel checkboxes in tabs
         self._setup_overlay_channel_checkboxes()

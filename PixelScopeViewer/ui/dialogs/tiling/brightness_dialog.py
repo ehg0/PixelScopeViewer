@@ -38,7 +38,7 @@ class TilingBrightnessDialog(QDialog):
             common_gain: Common gain value
         """
         super().__init__(parent)
-        self.setWindowTitle("輝度調整 - タイリング比較")
+        self.setWindowTitle("複数画像比較 - 輝度調整")
         self.resize(400, 500)
 
         # Set window flags to allow minimizing and prevent staying on top

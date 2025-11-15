@@ -38,7 +38,7 @@ class TileSelectionDialog(QDialog):
             image_list: List of image dictionaries from ImageViewer
         """
         super().__init__(parent)
-        self.setWindowTitle("タイリング比較 - 画像選択")
+        self.setWindowTitle("複数画像比較 - 画像選択")
         self.resize(500, 600)
 
         self.image_list = image_list
@@ -186,13 +186,13 @@ class TileSelectionDialog(QDialog):
         max_tiles = self.grid_size[0] * self.grid_size[1]
 
         if len(selected) < 2:
-            QMessageBox.warning(self, "タイリング比較", "2枚以上の画像を選択してください。")
+            QMessageBox.warning(self, "複数画像比較", "2枚以上の画像を選択してください。")
             return
 
         if len(selected) > max_tiles:
             QMessageBox.warning(
                 self,
-                "タイリング比較",
+                "複数画像比較",
                 f"選択できる画像は最大{max_tiles}枚です。\n現在{len(selected)}枚選択されています。",
             )
             return

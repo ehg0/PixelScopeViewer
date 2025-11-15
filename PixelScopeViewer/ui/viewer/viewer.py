@@ -483,7 +483,7 @@ class ImageViewer(QMainWindow):
                 thumb_arr = self._prepare_thumbnail_array(arr)
                 thumb_qimg = numpy_to_qimage(thumb_arr)
                 thumb_pixmap = QPixmap.fromImage(thumb_qimg).scaled(
-                    250, 250, Qt.KeepAspectRatio, Qt.SmoothTransformation
+                    200, 200, Qt.KeepAspectRatio, Qt.SmoothTransformation
                 )
 
                 img_data = {
@@ -913,7 +913,7 @@ class ImageViewer(QMainWindow):
     def show_tiling_comparison_dialog(self):
         """Show tiling comparison dialog."""
         if len(self.images) < 2:
-            QMessageBox.information(self, "タイリング比較", "比較する画像が2枚以上必要です。")
+            QMessageBox.information(self, "複数画像比較", "比較する画像が2枚以上必要です。")
             return
         from ..dialogs.tiling import TilingComparisonDialog
 

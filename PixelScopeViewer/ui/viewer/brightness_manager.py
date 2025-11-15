@@ -4,6 +4,7 @@ This module handles brightness parameter management and display dialog coordinat
 """
 
 import numpy as np
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QMessageBox
 from ..dialogs import BrightnessDialog
 from ..utils import MODE_1CH_GRAYSCALE, MODE_1CH_JET, MODE_2CH_COMPOSITE, MODE_2CH_FLOW_HSV
@@ -59,6 +60,7 @@ class BrightnessManager:
         init_sat = self._default_saturation_for_dtype(arr.dtype, self.viewer.brightness_saturation)
 
         if self.viewer.brightness_dialog is None:
+            # Create with explicit parent for proper window relationship
             self.viewer.brightness_dialog = BrightnessDialog(
                 self.viewer,
                 arr,
@@ -78,8 +80,16 @@ class BrightnessManager:
             )
             self.viewer.brightness_dialog.mode_1ch_changed.connect(self.viewer.brightness_manager.on_mode_1ch_changed)
             self.viewer.brightness_dialog.mode_2ch_changed.connect(self.viewer.brightness_manager.on_mode_2ch_changed)
+            # Track dialog for window state synchronization
+            self.viewer._child_dialogs.append(self.viewer.brightness_dialog)
+
             # Clear reference when dialog is closed
-            self.viewer.brightness_dialog.finished.connect(lambda: setattr(self.viewer, "brightness_dialog", None))
+            def on_closed():
+                if self.viewer.brightness_dialog in self.viewer._child_dialogs:
+                    self.viewer._child_dialogs.remove(self.viewer.brightness_dialog)
+                setattr(self.viewer, "brightness_dialog", None)
+
+            self.viewer.brightness_dialog.finished.connect(on_closed)
             # Initialize status bar with current parameters
             params = self.viewer.brightness_dialog.get_brightness()
             self.viewer.brightness_offset = params[0]

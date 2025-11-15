@@ -108,6 +108,9 @@ class ImageViewer(QMainWindow):
         self.current_index = None
         self.scale = 1.0
 
+        # Track child dialogs for window state synchronization
+        self._child_dialogs = []
+
         # Zoom toggle state
         self.fit_zoom_scale = None
         self.original_zoom_scale = 1.0
@@ -281,11 +284,21 @@ class ImageViewer(QMainWindow):
         arr = img.get("base_array", img.get("array"))
         sel = self.current_roi_rect
         img_path = img.get("path")
+        # Create with explicit parent for proper window relationship
         dlg = AnalysisDialog(self, image_array=arr, image_rect=sel, image_path=img_path)
         dlg.show()
+        dlg.raise_()
+        dlg.activateWindow()
         # keep a reference until the dialog is closed
         self._analysis_dialog = dlg
-        dlg.finished.connect(lambda: setattr(self, "_analysis_dialog", None))
+        self._child_dialogs.append(dlg)
+
+        def on_closed():
+            if dlg in self._child_dialogs:
+                self._child_dialogs.remove(dlg)
+            setattr(self, "_analysis_dialog", None)
+
+        dlg.finished.connect(on_closed)
         # if a tab was requested, set it
         if tab is not None:
             try:
@@ -524,10 +537,20 @@ class ImageViewer(QMainWindow):
             self._features_dialog.raise_()
             self._features_dialog.activateWindow()
             return
+        # Create with explicit parent for proper window relationship
         dlg = FeaturesDialog(self, self.features_manager)
         dlg.show()
+        dlg.raise_()
+        dlg.activateWindow()
         self._features_dialog = dlg
-        dlg.finished.connect(lambda: setattr(self, "_features_dialog", None))
+        self._child_dialogs.append(dlg)
+
+        def on_closed():
+            if dlg in self._child_dialogs:
+                self._child_dialogs.remove(dlg)
+            setattr(self, "_features_dialog", None)
+
+        dlg.finished.connect(on_closed)
 
     def update_image_list_menu(self):
         """Update the image list menu with current loaded images."""
@@ -1008,6 +1031,38 @@ class ImageViewer(QMainWindow):
             self.roi_changed.emit()
 
     # Event handlers
+    def changeEvent(self, event):
+        """Handle window state changes to synchronize child dialogs."""
+        if event.type() == QEvent.WindowStateChange:
+            if self.isMinimized():
+                # Minimize all child dialogs
+                for dlg in self._child_dialogs:
+                    try:
+                        if dlg.isVisible() and not dlg.isMinimized():
+                            dlg.showMinimized()
+                    except RuntimeError:
+                        pass  # Dialog already deleted
+            elif event.oldState() & Qt.WindowMinimized:
+                # Restore all child dialogs
+                for dlg in self._child_dialogs:
+                    try:
+                        if dlg.isMinimized():
+                            dlg.showNormal()
+                    except RuntimeError:
+                        pass  # Dialog already deleted
+        super().changeEvent(event)
+
+    def mousePressEvent(self, event):
+        """Raise child dialogs when parent window is clicked."""
+        # Raise child dialogs to front when parent is clicked
+        for dlg in self._child_dialogs:
+            try:
+                if dlg.isVisible() and not dlg.isMinimized():
+                    dlg.raise_()
+            except RuntimeError:
+                pass  # Dialog already deleted
+        super().mousePressEvent(event)
+
     def eventFilter(self, obj, event):
         """Filter events to update status on mouse move."""
         if obj is self.image_label and event.type() == QEvent.MouseMove:

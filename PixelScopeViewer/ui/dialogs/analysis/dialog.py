@@ -25,7 +25,7 @@ Dependencies:
 from typing import Optional
 import numpy as np
 
-from PySide6.QtCore import QRect, Qt
+from PySide6.QtCore import QRect, Qt, QEvent
 from ....core.image_io import get_image_metadata
 from PySide6.QtWidgets import (
     QDialog,
@@ -114,6 +114,8 @@ class AnalysisDialog(QDialog):
 
     # Persist window geometry across openings so it doesn't jump based on cursor/OS heuristics
     _saved_geometry = None
+    # Store position before minimize to restore after showNormal()
+    _position_before_minimize = None
 
     def __init__(
         self,
@@ -122,8 +124,7 @@ class AnalysisDialog(QDialog):
         image_rect: Optional[QRect] = None,
         image_path: Optional[str] = None,
     ):
-        super().__init__(None)
-        self.parent = parent
+        super().__init__(parent)
         self.setWindowTitle("Analysis")
         self.resize(900, 600)
 
@@ -222,6 +223,18 @@ class AnalysisDialog(QDialog):
         self.tabs.addTab(self.hist_tab, "Histogram")
 
     # Note: Close button is intentionally omitted for a modeless dialog
+
+    def changeEvent(self, event):
+        """Handle window state changes to preserve position during minimize/restore."""
+        if event.type() == QEvent.WindowStateChange:
+            if self.isMinimized():
+                # Save current position before minimize
+                AnalysisDialog._position_before_minimize = self.pos()
+            elif event.oldState() & Qt.WindowMinimized:
+                # Restore position after showNormal()
+                if AnalysisDialog._position_before_minimize is not None:
+                    self.move(AnalysisDialog._position_before_minimize)
+        super().changeEvent(event)
 
     def moveEvent(self, event):
         # Save geometry whenever the dialog is moved

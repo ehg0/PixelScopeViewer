@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QMenuBar,
 )
-from PySide6.QtCore import Qt, Signal, QRect
+from PySide6.QtCore import Qt, Signal, QRect, QEvent
 from PySide6.QtGui import QShortcut, QKeySequence, QGuiApplication
 
 from .selection_dialog import TileSelectionDialog
@@ -56,17 +56,18 @@ class TilingComparisonDialog(QDialog):
         """
         super().__init__(None)
         self.setWindowTitle("タイリング比較")
-        # Enable maximize and minimize buttons
+        # Enable minimize and maximize buttons
         self.setWindowFlags(Qt.Window | Qt.WindowMinMaxButtonsHint | Qt.WindowCloseButtonHint)
         self.setFocusPolicy(Qt.StrongFocus)
         self.parent_viewer = parent
         self.all_images = image_list
 
-        # Track child dialogs for cleanup
+        # Track child dialogs for window state synchronization
         self._brightness_dialog = None
         self._help_dialog = None
         self._analysis_dialog = None
         self._comparison_dialog = None
+        self._child_dialogs = []
 
         # Show selection dialog first
         selection_dialog = TileSelectionDialog(self, image_list)
@@ -356,20 +357,6 @@ class TilingComparisonDialog(QDialog):
         add_shortcut("Ctrl+Shift+Right", self.swap_with_next_tile)
         add_shortcut("Ctrl+Shift+Left", self.swap_with_previous_tile)
 
-    def focusInEvent(self, event):
-        """Ensure analysis/comparison dialogs stay in front when this window regains focus."""
-        try:
-            if self._analysis_dialog is not None and self._analysis_dialog.isVisible():
-                self._analysis_dialog.raise_()
-        except Exception:
-            pass
-        try:
-            if self._comparison_dialog is not None and self._comparison_dialog.isVisible():
-                self._comparison_dialog.raise_()
-        except Exception:
-            pass
-        super().focusInEvent(event)
-
     def adjust_zoom(self, factor, tile_index=None, mouse_pos=None):
         """Adjust zoom for all tiles.
 
@@ -436,7 +423,17 @@ class TilingComparisonDialog(QDialog):
             params = self.brightness_manager.get_brightness_params()
             self._brightness_dialog = TilingBrightnessDialog(self, params["params_by_dtype"], params["gain"])
             self._brightness_dialog.brightness_changed.connect(self.on_brightness_dialog_changed)
+            self._child_dialogs.append(self._brightness_dialog)
 
+            def on_closed():
+                if self._brightness_dialog in self._child_dialogs:
+                    self._child_dialogs.remove(self._brightness_dialog)
+                setattr(self, "_brightness_dialog", None)
+
+            self._brightness_dialog.finished.connect(on_closed)
+
+        if self._brightness_dialog.isMinimized():
+            self._brightness_dialog.showNormal()
         self._brightness_dialog.show()
         self._brightness_dialog.raise_()
         self._brightness_dialog.activateWindow()
@@ -445,10 +442,52 @@ class TilingComparisonDialog(QDialog):
         """Show help dialog with keyboard shortcuts."""
         if self._help_dialog is None:
             self._help_dialog = TilingHelpDialog(self)
+            self._child_dialogs.append(self._help_dialog)
 
+            def on_closed():
+                if self._help_dialog in self._child_dialogs:
+                    self._child_dialogs.remove(self._help_dialog)
+                setattr(self, "_help_dialog", None)
+
+            self._help_dialog.finished.connect(on_closed)
+
+        if self._help_dialog.isMinimized():
+            self._help_dialog.showNormal()
         self._help_dialog.show()
         self._help_dialog.raise_()
         self._help_dialog.activateWindow()
+
+    def changeEvent(self, event):
+        """Handle window state changes to synchronize child dialogs."""
+        if event.type() == QEvent.WindowStateChange:
+            if self.isMinimized():
+                # Minimize all child dialogs
+                for dlg in self._child_dialogs:
+                    try:
+                        if dlg.isVisible() and not dlg.isMinimized():
+                            dlg.showMinimized()
+                    except RuntimeError:
+                        pass  # Dialog already deleted
+            elif event.oldState() & Qt.WindowMinimized:
+                # Restore all child dialogs
+                for dlg in self._child_dialogs:
+                    try:
+                        if dlg.isMinimized():
+                            dlg.showNormal()
+                    except RuntimeError:
+                        pass  # Dialog already deleted
+        super().changeEvent(event)
+
+    def mousePressEvent(self, event):
+        """Raise child dialogs when parent window is clicked."""
+        # Raise child dialogs to front when parent is clicked
+        for dlg in self._child_dialogs:
+            try:
+                if dlg.isVisible() and not dlg.isMinimized():
+                    dlg.raise_()
+            except RuntimeError:
+                pass  # Dialog already deleted
+        super().mousePressEvent(event)
 
     def closeEvent(self, event):
         """Handle dialog close event and close child dialogs."""
@@ -718,6 +757,7 @@ class TilingComparisonDialog(QDialog):
 
         # Create or show existing analysis dialog
         if self._analysis_dialog is None or not self._analysis_dialog.isVisible():
+            # Create with explicit parent for proper window relationship
             self._analysis_dialog = AnalysisDialog(
                 parent=self, image_array=image_array, image_rect=roi_rect, image_path=file_path
             )
@@ -725,8 +765,16 @@ class TilingComparisonDialog(QDialog):
             # Set window title to distinguish from main viewer's analysis dialog
             self._analysis_dialog.setWindowTitle("Analysis (Tiling)")
 
+            # Track dialog for window state synchronization
+            self._child_dialogs.append(self._analysis_dialog)
+
             # Clean up reference when dialog is closed
-            self._analysis_dialog.finished.connect(lambda: setattr(self, "_analysis_dialog", None))
+            def on_closed():
+                if self._analysis_dialog in self._child_dialogs:
+                    self._child_dialogs.remove(self._analysis_dialog)
+                setattr(self, "_analysis_dialog", None)
+
+            self._analysis_dialog.finished.connect(on_closed)
 
             # Set the requested tab
             if tab:
@@ -737,6 +785,10 @@ class TilingComparisonDialog(QDialog):
             self._analysis_dialog.activateWindow()
         else:
             # Dialog already exists and is visible
+            # Restore from minimized state if needed
+            if self._analysis_dialog.isMinimized():
+                self._analysis_dialog.showNormal()
+
             # Update with current data
             self._analysis_dialog.set_image_and_rect(image_array, roi_rect, file_path)
 
@@ -770,10 +822,19 @@ class TilingComparisonDialog(QDialog):
 
         # Create or show existing comparison dialog
         if self._comparison_dialog is None or not self._comparison_dialog.isVisible():
+            # Create with explicit parent for proper window relationship
             self._comparison_dialog = TilingComparisonDialog(parent=self, tiles_data=tiles_data)
 
+            # Track dialog for window state synchronization
+            self._child_dialogs.append(self._comparison_dialog)
+
             # Clean up reference when dialog is closed
-            self._comparison_dialog.finished.connect(lambda: setattr(self, "_comparison_dialog", None))
+            def on_closed():
+                if self._comparison_dialog in self._child_dialogs:
+                    self._child_dialogs.remove(self._comparison_dialog)
+                setattr(self, "_comparison_dialog", None)
+
+            self._comparison_dialog.finished.connect(on_closed)
 
             # Set the requested tab
             if tab:
@@ -784,6 +845,10 @@ class TilingComparisonDialog(QDialog):
             self._comparison_dialog.activateWindow()
         else:
             # Dialog already exists and is visible
+            # Restore from minimized state if needed
+            if self._comparison_dialog.isMinimized():
+                self._comparison_dialog.showNormal()
+
             # Update with current data
             self._comparison_dialog.update_tiles_data(tiles_data)
 

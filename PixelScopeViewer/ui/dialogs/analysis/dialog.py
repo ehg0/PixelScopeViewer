@@ -31,9 +31,6 @@ from PySide6.QtWidgets import (
     QDialog,
     QVBoxLayout,
     QTabWidget,
-    QPushButton,
-    QDialogButtonBox,
-    QWidget,
     QMessageBox,
     QTableWidget,
 )
@@ -50,7 +47,6 @@ except ImportError:
     PlotWidget = None
     PYQTGRAPH_AVAILABLE = False
 
-from .widgets import ChannelsDialog, CopyableTableWidget
 from .tabs.metadata_tab import MetadataTab
 from .tabs.profile_tab import ProfileTab
 from .tabs.histogram_tab import HistogramTab

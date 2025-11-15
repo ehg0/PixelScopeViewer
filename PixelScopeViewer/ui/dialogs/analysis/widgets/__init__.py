@@ -1,13 +1,7 @@
 """Custom widgets for analysis dialogs.
 
-This module provides specialized widgets used in analysis dialogs,
-including copyable tables and channel control dialogs.
+This package contained legacy widgets (e.g., channel selector dialog and copyable tables)
+that are no longer used after embedding channel controls into tabs.
 """
 
-from .tables import CopyableTableWidget
-from .controls import ChannelsDialog
-
-__all__ = [
-    "CopyableTableWidget",
-    "ChannelsDialog",
-]
+__all__: list[str] = []

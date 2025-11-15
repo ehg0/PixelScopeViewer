@@ -1,6 +1,5 @@
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QHeaderView
-from PySide6.QtWidgets import QAbstractItemView
-from ..widgets import CopyableTableWidget
+from PySide6.QtWidgets import QAbstractItemView, QTableWidget
 
 
 class MetadataTab(QWidget):
@@ -11,7 +10,7 @@ class MetadataTab(QWidget):
         layout = QVBoxLayout(self)
 
         # Table for metadata
-        self.metadata_table = CopyableTableWidget()
+        self.metadata_table = QTableWidget()
         self.metadata_table.setColumnCount(2)
         self.metadata_table.setHorizontalHeaderLabels(["Key", "Value"])
         self.metadata_table.horizontalHeader().setStretchLastSection(True)

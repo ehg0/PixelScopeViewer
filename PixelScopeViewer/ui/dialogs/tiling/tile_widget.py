@@ -59,7 +59,7 @@ class TileWidget(QWidget):
 
         # Status bar at top with filename (left) and pixel value (right)
         status_widget = QWidget()
-        status_widget.setMaximumHeight(24)
+        status_widget.setMaximumHeight(30)
         status_widget.setStyleSheet(
             """
             QWidget {
@@ -81,6 +81,7 @@ class TileWidget(QWidget):
                 font-size: 11pt;
                 font-weight: bold;
                 background-color: transparent;
+                border: none;
             }
         """
         )
@@ -96,6 +97,7 @@ class TileWidget(QWidget):
                 color: white;
                 font-size: 11pt;
                 background-color: transparent;
+                border: none;
             }
         """
         )

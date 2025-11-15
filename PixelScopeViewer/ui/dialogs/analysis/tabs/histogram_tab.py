@@ -182,24 +182,55 @@ class HistogramTab(QWidget):
         # Clear and plot histogram
         self.hist_widget.clear()
 
-        # Determine number of channels from series data
-        # If series has only 1 entry or all entries are 'I' (Intensity), treat as grayscale
-        num_channels = len(series)
-        is_grayscale = num_channels == 1 or all(label == "I" for label in series.keys())
+        # Resolve overlay color map if present (tiling comparison)
+        overlay_map = {}
+        dlg = self
+        visited = set()
+        while dlg is not None and id(dlg) not in visited:
+            visited.add(id(dlg))
+            if hasattr(dlg, "overlay_color_map"):
+                overlay_map = getattr(dlg, "overlay_color_map", {}) or {}
+                break
+            parent_attr = getattr(dlg, "parent", None)
+            if callable(parent_attr):
+                try:
+                    dlg = parent_attr()
+                except Exception:
+                    dlg = None
+            else:
+                dlg = None
 
-        # Get colors based on channel count
-        if is_grayscale:
-            # Single channel: use black
-            colors = ["#000000"]
-        elif channel_colors and len(channel_colors) > 0:
-            # Multi-channel: use viewer's channel colors
-            colors = [c.name() if hasattr(c, "name") else "#7f8c8d" for c in channel_colors]
-        else:
-            # Fallback to default colors
-            colors = ["#ff0000", "#00cc00", "#0066ff", "#333333"]
+        # Helper to resolve color per label
+        def _color_for_label(label: str) -> str:
+            # Overlay mapping first (for tiling comparison)
+            rgb = overlay_map.get(label)
+            if rgb:
+                return f"rgb({rgb[0]},{rgb[1]},{rgb[2]})"
+            # Intensity always black
+            if label == "I":
+                return "#000000"
+            # Try to extract channel index from patterns
+            ch_index = None
+            if label.startswith("C") and label[1:].isdigit():
+                ch_index = int(label[1:])
+            else:
+                # Patterns: 'Tile N Ck' or 'T{N}_C{k}'
+                parts = label.replace("_", " ").split()
+                for p in parts:
+                    if p.startswith("C") and p[1:].isdigit():
+                        ch_index = int(p[1:])
+                        break
+            if ch_index is not None and channel_colors and 0 <= ch_index < len(channel_colors):
+                c = channel_colors[ch_index]
+                return c.name() if hasattr(c, "name") else "#7f8c8d"
+            # Fallback palette for deterministic multi-channel
+            fallback = ["#ff0000", "#00c800", "#0066ff", "#7f7f7f"]
+            if ch_index is not None and ch_index < len(fallback):
+                return fallback[ch_index]
+            return "#7f8c8d"
 
-        for idx, (label, (xs, ys)) in enumerate(series.items()):
-            pen = pg.mkPen(color=colors[idx] if idx < len(colors) else "#7f8c8d", width=2) if pg else None
+        for _, (label, (xs, ys)) in enumerate(series.items()):
+            pen = pg.mkPen(color=_color_for_label(label), width=2) if pg else None
             yplot = ys
             if apply_log:
                 import numpy as np
@@ -260,16 +291,20 @@ class HistogramTab(QWidget):
         from PySide6.QtGui import QPixmap, QColor
         from PySide6.QtCore import Qt
 
-        # Locate tiling comparison dialog (has overlay_color_map) safely
+        # Locate parent dialog (has overlay_color_map or channel_color_map) safely
         dlg = self
         color_map = {}
         assign_colors = None
         visited = set()
         while dlg is not None and id(dlg) not in visited:
             visited.add(id(dlg))
+            # Check for overlay_color_map (tiling comparison) or channel_color_map (normal analysis)
             if hasattr(dlg, "overlay_color_map"):
                 color_map = getattr(dlg, "overlay_color_map", {}) or {}
                 assign_colors = getattr(dlg, "_assign_overlay_colors", None)
+                break
+            elif hasattr(dlg, "channel_color_map"):
+                color_map = getattr(dlg, "channel_color_map", {}) or {}
                 break
             # Obtain parent only if callable
             parent_attr = getattr(dlg, "parent", None)
@@ -285,11 +320,21 @@ class HistogramTab(QWidget):
         for row_idx, r in enumerate(rows):
             ch_text = r["ch"]
             ch_item = QTableWidgetItem(ch_text)
-            # Color swatch based on curve_label mapping
+            # Color swatch based on curve_label mapping or direct channel label
             curve_label = r.get("curve_label")
             rgb = color_map.get(curve_label) if (curve_label and color_map) else None
+
+            # For normal analysis dialog, try direct channel numeric or symbolic label
             if rgb is None:
-                # Fallback: support underscore pattern 'T{n}_C{k}'
+                if ch_text in color_map:
+                    rgb = color_map.get(ch_text)
+                else:
+                    symbolic = f"C{ch_text}"  # map digits -> C{index}
+                    if symbolic in color_map:
+                        rgb = color_map.get(symbolic)
+
+            if rgb is None:
+                # Fallback: support underscore pattern 'T{n}_C{k}' for tiling comparison
                 tile_num = None
                 channel_code = None
                 if "_" in ch_text:

@@ -62,6 +62,11 @@ class TilingComparisonDialog(QDialog):
         self.parent_viewer = parent
         self.all_images = image_list
 
+        # Copy channel colors from parent viewer for AnalysisDialog to access
+        self.channel_colors = None
+        if hasattr(parent, "channel_colors"):
+            self.channel_colors = parent.channel_colors
+
         # Track child dialogs for window state synchronization
         self._brightness_dialog = None
         self._help_dialog = None
@@ -758,7 +763,10 @@ class TilingComparisonDialog(QDialog):
         if self._analysis_dialog is None or not self._analysis_dialog.isVisible():
             # Create with explicit parent for proper window relationship
             self._analysis_dialog = AnalysisDialog(
-                parent=self, image_array=image_array, image_rect=roi_rect, image_path=file_path
+                parent=self,
+                image_array=image_array,
+                image_rect=roi_rect,
+                image_path=file_path,
             )
 
             # Set window title to distinguish from main viewer's analysis dialog

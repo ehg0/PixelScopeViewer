@@ -146,6 +146,9 @@ class AnalysisDialog(QDialog):
         self.last_hist_data = {}
         self.last_profile_data = {}
 
+        # Channel color mapping for color swatches (label -> rgb tuple)
+        self.channel_color_map: dict[str, tuple[int, int, int]] = {}
+
         # Persisted plot settings for histogram/profile (kept across image switches)
         # keys: 'hist' and 'prof' with values for grid/log/autorange
         self.plot_settings = {
@@ -322,8 +325,16 @@ class AnalysisDialog(QDialog):
             self.channel_checks = new_checks
             self.update_contents()
 
+        # Get channel colors from parent viewer
+        channel_colors = None
+        try:
+            if hasattr(self.parent(), "channel_colors"):
+                channel_colors = self.parent().channel_colors
+        except Exception:
+            pass
+
         # Create and show modeless dialog with immediate updates
-        dlg = ChannelsDialog(self, nch, self.channel_checks, callback=immediate_update)
+        dlg = ChannelsDialog(self, nch, self.channel_checks, callback=immediate_update, channel_colors=channel_colors)
         self._hist_channels_dialog = dlg
 
         # Clean up reference when dialog is closed
@@ -356,8 +367,16 @@ class AnalysisDialog(QDialog):
             self.channel_checks = new_checks
             self.update_contents()
 
+        # Get channel colors from parent viewer
+        channel_colors = None
+        try:
+            if hasattr(self.parent(), "channel_colors"):
+                channel_colors = self.parent().channel_colors
+        except Exception:
+            pass
+
         # Create and show modeless dialog with immediate updates
-        dlg = ChannelsDialog(self, nch, self.channel_checks, callback=immediate_update)
+        dlg = ChannelsDialog(self, nch, self.channel_checks, callback=immediate_update, channel_colors=channel_colors)
         self._prof_channels_dialog = dlg
 
         # Clean up reference when dialog is closed
@@ -402,6 +421,8 @@ class AnalysisDialog(QDialog):
                 self.channel_checks = [True] * nch
             elif len(self.channel_checks) < nch:
                 self.channel_checks.extend([True] * (nch - len(self.channel_checks)))
+        else:
+            nch = 1
 
         # Histogram: compute data and delegate to tab
         bins = determine_hist_bins(arr)
@@ -430,6 +451,63 @@ class AnalysisDialog(QDialog):
                 channel_colors = self.parent().channel_colors
         except Exception:
             pass
+
+        # If channel colors changed while ChannelsDialog is open, update its swatches
+        try:
+            if self._hist_channels_dialog is not None and self._hist_channels_dialog.isVisible():
+                self._hist_channels_dialog.update_for_new_image(nch, self.channel_checks, channel_colors)
+        except Exception:
+            pass
+        try:
+            if self._prof_channels_dialog is not None and self._prof_channels_dialog.isVisible():
+                self._prof_channels_dialog.update_for_new_image(nch, self.channel_checks, channel_colors)
+        except Exception:
+            pass
+
+        # Build channel_color_map for stats table color swatches
+        self.channel_color_map = {}
+        if channel_colors:
+            # Determine channel count
+            if arr.ndim == 3 and arr.shape[2] > 1:
+                nch_local = arr.shape[2]
+            else:
+                nch_local = 1
+            for cindex in range(nch_local):
+                if cindex < len(channel_colors):
+                    color = channel_colors[cindex]
+                    try:
+                        r, g, b, _ = color.getRgb()
+                    except Exception:
+                        r, g, b = (127, 127, 127)
+                    # Store both numeric and symbolic keys
+                    self.channel_color_map[f"C{cindex}"] = (r, g, b)
+                    self.channel_color_map[str(cindex)] = (r, g, b)
+            # Intensity mapping (single-channel): always black
+            if nch_local == 1:
+                self.channel_color_map["I"] = (0, 0, 0)
+                self.channel_color_map["0"] = (0, 0, 0)
+                self.channel_color_map["C0"] = (0, 0, 0)
+        else:
+            # Fallback default palette
+            default_palette = [
+                (255, 0, 0),
+                (0, 200, 0),
+                (0, 102, 255),
+                (127, 127, 127),
+            ]
+            if arr.ndim == 3 and arr.shape[2] > 1:
+                nch_local = arr.shape[2]
+            else:
+                nch_local = 1
+            for cindex in range(nch_local):
+                rgb = default_palette[cindex] if cindex < len(default_palette) else (127, 127, 127)
+                self.channel_color_map[f"C{cindex}"] = rgb
+                self.channel_color_map[str(cindex)] = rgb
+            if nch_local == 1:
+                # 1ch: always black
+                self.channel_color_map["I"] = (0, 0, 0)
+                self.channel_color_map["0"] = (0, 0, 0)
+                self.channel_color_map["C0"] = (0, 0, 0)
         self.hist_tab.update(
             visible_hist_series,
             hist_stats,

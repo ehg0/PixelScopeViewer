@@ -6,6 +6,7 @@ This module provides utility dialogs for:
 
 from typing import Optional
 from PySide6.QtWidgets import QDialog, QVBoxLayout, QCheckBox
+from PySide6.QtGui import QPixmap, QColor
 
 
 class ChannelsDialog(QDialog):
@@ -16,6 +17,7 @@ class ChannelsDialog(QDialog):
         nch: Number of channels in the image
         checks: Initial checkbox states (list of bool)
         callback: Optional callback function to call when checkboxes change
+        channel_colors: Optional list of QColor objects for channel colors
 
     Usage:
         dlg = ChannelsDialog(parent, nch=3, checks=[True, True, False])
@@ -31,13 +33,16 @@ class ChannelsDialog(QDialog):
 
     MAX_CHANNELS = 8  # Maximum number of channels to support
 
-    def __init__(self, parent, nch: int, checks: Optional[list] = None, callback=None):
+    def __init__(
+        self, parent, nch: int, checks: Optional[list] = None, callback=None, channel_colors: Optional[list] = None
+    ):
         super().__init__(parent)
         self.setWindowTitle("Channels")
         self.setModal(False)  # Make it modeless since it's for immediate updates
 
         self.callback = callback
         self.nch = nch
+        self.channel_colors = channel_colors
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(5)
@@ -75,18 +80,28 @@ class ChannelsDialog(QDialog):
                 cb.setChecked(checks[i] if checks and i < len(checks) else True)
                 # Disable checkbox if only 1 channel (can't uncheck the only channel)
                 cb.setEnabled(nch > 1)
+                # Add color swatch icon if channel_colors provided
+                if self.channel_colors and i < len(self.channel_colors):
+                    color = self.channel_colors[i]
+                    if hasattr(color, "name"):
+                        pix = QPixmap(14, 14)
+                        pix.fill(color)
+                        cb.setIcon(pix)
+                        cb.setIconSize(pix.size())
             else:
                 # This channel doesn't exist in current image - hide it
                 cb.setVisible(False)
 
-    def update_for_new_image(self, nch: int, checks: Optional[list] = None):
+    def update_for_new_image(self, nch: int, checks: Optional[list] = None, channel_colors: Optional[list] = None):
         """Update dialog for new image with different channel count.
 
         Args:
             nch: New number of channels
             checks: New checkbox states (optional)
+            channel_colors: Optional list of QColor objects for channel colors
         """
         self.nch = nch
+        self.channel_colors = channel_colors
         self._update_checkboxes(nch, checks)
 
     def _on_checkbox_changed(self):

@@ -14,6 +14,7 @@ from PySide6.QtCore import QRect
 
 from ..analysis.dialog import AnalysisDialog
 from PixelScopeViewer.core.image_io import get_image_metadata
+from ...utils import get_default_channel_colors
 
 
 class TilingComparisonDialog(AnalysisDialog):
@@ -114,7 +115,7 @@ class TilingComparisonDialog(AnalysisDialog):
     # ---- Color & highlight helpers ----
     def _assign_overlay_colors(self, labels: list[str]):
         # Deterministic mapping: parse 'Tile {n} Ck' or 'Tile {n} I'
-        # Compute palette index from (tile_number, channel_index)
+        # Use TABLEAU20 palette for consistent coloring
         for lbl in labels:
             if lbl in self.overlay_color_map:
                 continue
@@ -123,14 +124,13 @@ class TilingComparisonDialog(AnalysisDialog):
             ch_index = 0
             try:
                 # Expected parts: ['Tile', 'N', 'Ck'/'I']
-                # Some labels may be 'Tile N Ck'
                 if len(parts) >= 3 and parts[0] == "Tile":
                     tile_num = int(parts[1])
                     ch_code = parts[2]
                     if ch_code.startswith("C"):
                         ch_index = int(ch_code[1:])
                     else:
-                        ch_index = 0  # 'I'
+                        ch_index = 0
                 else:
                     # Fallback: search for numeric tile
                     for p in parts:
@@ -144,7 +144,7 @@ class TilingComparisonDialog(AnalysisDialog):
             except Exception:
                 tile_num = 1
                 ch_index = 0
-            # Generate stable index (spread channels within tile)
+            # Map to TABLEAU20 using tile_num and ch_index
             idx = ((tile_num - 1) * 8 + ch_index) % len(self.TABLEAU20)
             self.overlay_color_map[lbl] = self.TABLEAU20[idx]
         return {lbl: self.overlay_color_map[lbl] for lbl in labels}
@@ -419,8 +419,8 @@ class TilingComparisonDialog(AnalysisDialog):
 
             tile_hist_series = {}
             for label, (xs, ys) in hist_series.items():
-                # Remap grayscale 'I' to unified channel code 'C0'
-                channel_code = "C0" if label == "I" else label
+                # Keep original label ('I' or 'Ck')
+                channel_code = label
                 ch_visible = True
                 if visibility is not None:
                     if label.startswith("C"):
@@ -539,7 +539,8 @@ class TilingComparisonDialog(AnalysisDialog):
                             ch_visible = visibility[0]
 
                 if ch_visible:
-                    channel_code = "C0" if label == "I" else label
+                    # Keep original label ('I' or 'Ck')
+                    channel_code = label
                     new_label = f"Tile {tile_idx + 1} {channel_code}"
                     tile_prof_series[new_label] = (xs, prof)
                     is_int = np.issubdtype(prof.dtype, np.integer)
@@ -621,6 +622,18 @@ class TilingComparisonDialog(AnalysisDialog):
         dlg.setWindowTitle("Overlay Channel Visibility")
         root_layout = QVBoxLayout(dlg)
 
+        # Pre-assign all colors to ensure color swatches appear
+        all_labels = []
+        for tile_idx, vis_list in sorted(self.overlay_channel_visibility.items()):
+            for ch_idx in range(len(vis_list)):
+                if len(vis_list) > 1:
+                    channel_code = f"C{ch_idx}"
+                else:
+                    channel_code = "I"
+                curve_label = f"Tile {tile_idx + 1} {channel_code}"
+                all_labels.append(curve_label)
+        self._assign_overlay_colors(all_labels)
+
         checkbox_meta = []  # (tile_idx, ch_idx, checkbox)
         for tile_idx, vis_list in sorted(self.overlay_channel_visibility.items()):
             group = QWidget()
@@ -636,8 +649,6 @@ class TilingComparisonDialog(AnalysisDialog):
                     channel_code = "I"
                     label = "Intensity"
                 curve_label = f"Tile {tile_idx + 1} {channel_code}"
-                # Ensure color assignment exists
-                self._assign_overlay_colors([curve_label])
                 rgb = self.overlay_color_map.get(curve_label, (127, 127, 127))
                 cb = QCheckBox(label)
                 # Add color swatch icon

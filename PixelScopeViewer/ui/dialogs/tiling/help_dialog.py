@@ -53,7 +53,7 @@ class TilingHelpDialog(QDialog):
             "  Copy data/stats       : 現在表示中(非表示除外)曲線のみをCSVコピー\n"
             "  非表示チャンネル      : 統計・コピー対象外 (オーバーレイも更新除外)\n\n"
             "[メタデータ比較]\n"
-            "  ファイル/EXIFの差分行を淡黄色で強調 (FileSize, Filepath除外)\n\n"
+            "  ファイル/EXIFの差分行を淡黄色で強調\n\n"
             "[チャンネル表記]\n"
             "  単一画像: 元チャンネル記号 (R,G,B / C0)\n"
             "  タイリング比較オーバーレイ: すべて Tn_Ck\n\n"

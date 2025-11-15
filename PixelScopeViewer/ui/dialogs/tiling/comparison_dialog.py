@@ -205,15 +205,7 @@ class TilingComparisonDialog(AnalysisDialog):
                     metadata["Channels"] = 1
                 metadata["DataType"] = str(arr.dtype)
 
-                # Add FileSize if path exists
-                if path:
-                    try:
-                        from pathlib import Path
-
-                        file_size = Path(path).stat().st_size
-                        metadata["FileSize"] = f"{file_size:,} bytes"
-                    except Exception:
-                        pass
+                # Note: FileSize is provided by get_image_metadata for consistency with main viewer
 
             all_metadata.append({"index": tile_data["index"], "path": path, "metadata": metadata})
 
@@ -285,9 +277,8 @@ class TilingComparisonDialog(AnalysisDialog):
             unique_values = set(v for v in values if v)  # Exclude empty strings
             has_difference = len(unique_values) > 1
 
-            # Exclude FileSize, Filepath from highlighting (these are expected to differ)
-            exclude_from_highlight = {"FileSize", "Filepath"}
-            should_highlight = has_difference and key not in exclude_from_highlight
+            # Highlight any difference (no exceptions)
+            should_highlight = has_difference
 
             # Fill tile columns
             for col_idx, value in enumerate(values):

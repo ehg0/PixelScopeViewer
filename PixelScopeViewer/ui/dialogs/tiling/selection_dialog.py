@@ -68,7 +68,7 @@ class TileSelectionDialog(QDialog):
         self.grid_combo.addItem("2x4 (8枚)", (2, 4))
         self.grid_combo.addItem("3x2 (6枚)", (3, 2))
         self.grid_combo.addItem("3x3 (9枚)", (3, 3))
-        self.grid_combo.setCurrentIndex(4)  # Default to 2x2
+        self.grid_combo.setCurrentIndex(8)  # Default to 3x3
         self.grid_combo.currentIndexChanged.connect(self._on_grid_changed)
 
         grid_layout.addWidget(self.grid_combo)
@@ -103,6 +103,9 @@ class TileSelectionDialog(QDialog):
         # Status label
         self.status_label = QLabel("最大4枚まで選択可能")
         layout.addWidget(self.status_label)
+
+        # Ensure internal state reflects default selection (after status_label exists)
+        self._on_grid_changed()
 
         # Selection buttons
         btn_layout = QHBoxLayout()

@@ -37,7 +37,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QTableWidget,
 )
-from PySide6.QtGui import QGuiApplication
+from PySide6.QtGui import QGuiApplication, QColor
 
 try:
     import pyqtgraph as pg
@@ -69,6 +69,7 @@ from .plotting import (
     connect_plot_controls as pg_connect_plot_controls,
     show_default_context_menu as pg_show_default_context_menu,
 )
+from ...utils.color_utils import get_default_channel_colors
 
 
 class AnalysisDialog(QDialog):
@@ -357,13 +358,42 @@ class AnalysisDialog(QDialog):
         apply_log = self.plot_settings.get("hist", {}).get("log", False)
         # Check if image is integer type for histogram x-axis formatting
         is_integer_type = np.issubdtype(arr.dtype, np.integer)
-        # Get channel colors from parent viewer
-        channel_colors = None
-        try:
-            if hasattr(self.parent(), "channel_colors"):
-                channel_colors = self.parent().channel_colors
-        except Exception:
-            pass
+        # Get channel colors with precedence:
+        # 1) self.channel_colors (explicit override)
+        # 2) if parent is a tiling dialog/window -> default palette per image (1ch=black)
+        # 3) parent().channel_colors
+        channel_colors = getattr(self, "channel_colors", None)
+        if not channel_colors:
+            is_tiling_parent = False
+            try:
+                p = self.parent()
+                if p is not None:
+                    cls = type(p)
+                    mod = getattr(cls, "__module__", "").lower()
+                    name = getattr(cls, "__name__", "").lower()
+                    if "tiling" in mod or "tiling" in name:
+                        is_tiling_parent = True
+            except Exception:
+                is_tiling_parent = False
+
+            if is_tiling_parent:
+                try:
+                    if arr.ndim == 3 and arr.shape[2] > 1:
+                        nch_local = int(arr.shape[2])
+                    else:
+                        nch_local = 1
+                    colors = get_default_channel_colors(nch_local)
+                    if nch_local == 1:
+                        colors = [QColor(0, 0, 0)]
+                    channel_colors = colors
+                except Exception:
+                    channel_colors = None
+            if not channel_colors:
+                try:
+                    if hasattr(self.parent(), "channel_colors"):
+                        channel_colors = self.parent().channel_colors
+                except Exception:
+                    channel_colors = None
 
         # Update channel checkboxes in tabs
         try:
@@ -453,7 +483,7 @@ class AnalysisDialog(QDialog):
                 xs2 = np.arange(prof.size)
             self.last_profile_data[label] = (xs2, prof)
         prof_stats = profile_stats(arr, orientation=self.profile_orientation, channel_checks=self.channel_checks)
-        # Get channel colors from parent viewer (same as histogram)
+        # Use the same resolved channel_colors for profile tab
         self.profile_tab.update(
             visible_prof_series, prof_stats, self.profile_orientation, self.x_mode, channel_colors=channel_colors
         )

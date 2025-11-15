@@ -93,10 +93,6 @@ def create_menus(viewer):
     # Analysis menu
     analysis = menubar.addMenu("解析")
     analysis.addAction(viewer.show_analysis_action)
-
-    analysis.addAction(QAction("メタデータ", viewer, triggered=lambda: viewer.show_analysis_dialog(tab="Metadata")))
-    analysis.addAction(QAction("プロファイル", viewer, triggered=lambda: viewer.show_analysis_dialog(tab="Profile")))
-    analysis.addAction(QAction("ヒストグラム", viewer, triggered=lambda: viewer.show_analysis_dialog(tab="Histogram")))
     analysis.addSeparator()
     analysis.addAction(viewer.show_features_action)
     analysis.addSeparator()

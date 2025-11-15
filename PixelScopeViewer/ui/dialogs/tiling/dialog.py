@@ -136,26 +136,23 @@ class TilingComparisonDialog(QDialog):
         # View menu
         view_menu = menu_bar.addMenu("表示")
         brightness_action = view_menu.addAction("表示設定...")
+        brightness_action.setShortcut("D")
+        brightness_action.setShortcutContext(Qt.WindowShortcut)
+        self.addAction(brightness_action)
         brightness_action.triggered.connect(self.show_brightness_dialog)
 
         # Analysis menu (order aligned to main viewer: dialog, metadata, profile, histogram, separators, tiling features)
         analysis_menu = menu_bar.addMenu("解析")
         analysis_dialog_action = analysis_menu.addAction("解析ダイアログ")
+        analysis_dialog_action.setShortcut("A")
+        analysis_dialog_action.setShortcutContext(Qt.WindowShortcut)
+        self.addAction(analysis_dialog_action)
         analysis_dialog_action.triggered.connect(lambda: self.show_analysis_dialog())
 
-        metadata_action = analysis_menu.addAction("メタデータ")
-        metadata_action.triggered.connect(lambda: self.show_analysis_dialog(tab="Metadata"))
-
-        profile_action = analysis_menu.addAction("プロファイル")
-        profile_action.triggered.connect(lambda: self.show_analysis_dialog(tab="Profile"))
-
-        histogram_action = analysis_menu.addAction("ヒストグラム")
-        histogram_action.triggered.connect(lambda: self.show_analysis_dialog(tab="Histogram"))
-
-        analysis_menu.addSeparator()
-
-        comparison_table_action = analysis_menu.addAction("タイリング比較")
+        comparison_table_action = analysis_menu.addAction("解析比較ダイアログ")
         comparison_table_action.setShortcut("Ctrl+Shift+A")
+        comparison_table_action.setShortcutContext(Qt.WindowShortcut)
+        self.addAction(comparison_table_action)
         comparison_table_action.triggered.connect(lambda: self.show_comparison_dialog(tab="Metadata"))
 
         # Help menu
@@ -330,11 +327,7 @@ class TilingComparisonDialog(QDialog):
         add_shortcut("<", lambda: self.adjust_gain(0.5))
         add_shortcut(">", lambda: self.adjust_gain(2.0))
 
-        # Brightness dialog
-        add_shortcut("D", self.show_brightness_dialog)
-
-        # Analysis dialog
-        add_shortcut("A", self.show_analysis_dialog)
+        # Brightness/Analysis shortcuts are provided via menu actions with shortcuts
 
         # Reset
         add_shortcut("Ctrl+R", self.reset_brightness)
@@ -362,6 +355,20 @@ class TilingComparisonDialog(QDialog):
         # Tile swapping
         add_shortcut("Ctrl+Shift+Right", self.swap_with_next_tile)
         add_shortcut("Ctrl+Shift+Left", self.swap_with_previous_tile)
+
+    def focusInEvent(self, event):
+        """Ensure analysis/comparison dialogs stay in front when this window regains focus."""
+        try:
+            if self._analysis_dialog is not None and self._analysis_dialog.isVisible():
+                self._analysis_dialog.raise_()
+        except Exception:
+            pass
+        try:
+            if self._comparison_dialog is not None and self._comparison_dialog.isVisible():
+                self._comparison_dialog.raise_()
+        except Exception:
+            pass
+        super().focusInEvent(event)
 
     def adjust_zoom(self, factor, tile_index=None, mouse_pos=None):
         """Adjust zoom for all tiles.
@@ -695,6 +702,11 @@ class TilingComparisonDialog(QDialog):
         Args:
             tab: Optional tab name to open ('Histogram', 'Profile', 'Metadata')
         """
+        # Ensure comparison dialog is not open simultaneously
+        if self._comparison_dialog is not None and self._comparison_dialog.isVisible():
+            self._comparison_dialog.close()
+            self._comparison_dialog = None
+
         from ..analysis.dialog import AnalysisDialog
 
         # Get active tile data
@@ -721,6 +733,8 @@ class TilingComparisonDialog(QDialog):
                 self._analysis_dialog.set_current_tab(tab)
 
             self._analysis_dialog.show()
+            self._analysis_dialog.raise_()
+            self._analysis_dialog.activateWindow()
         else:
             # Dialog already exists and is visible
             # Update with current data
@@ -740,6 +754,11 @@ class TilingComparisonDialog(QDialog):
         Args:
             tab: Optional tab name to open ('Histogram', 'Profile', 'Metadata')
         """
+        # Ensure analysis dialog is not open simultaneously
+        if self._analysis_dialog is not None and self._analysis_dialog.isVisible():
+            self._analysis_dialog.close()
+            self._analysis_dialog = None
+
         from .comparison_dialog import TilingComparisonDialog
 
         # Get all tiles data
@@ -761,6 +780,8 @@ class TilingComparisonDialog(QDialog):
                 self._comparison_dialog.set_current_tab(tab)
 
             self._comparison_dialog.show()
+            self._comparison_dialog.raise_()
+            self._comparison_dialog.activateWindow()
         else:
             # Dialog already exists and is visible
             # Update with current data

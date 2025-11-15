@@ -30,7 +30,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QDockWidget,
 )
-from PySide6.QtGui import QPixmap, QPainter, QIcon, QGuiApplication, QAction, QActionGroup, QPixmap
+from PySide6.QtGui import QPixmap, QPainter, QIcon, QGuiApplication, QAction, QActionGroup
 from PySide6.QtCore import Qt, QRect, QEvent, Signal
 
 from ...core.image_io import numpy_to_qimage, load_image, is_image_file
@@ -522,7 +522,6 @@ class ImageViewer(QMainWindow):
     # ------------------------
     # Features: load + dialog
     # ------------------------
-    # Removed: feature file opening moved into FeaturesDialog menu
 
     def show_features_dialog(self):
         if self._features_dialog is not None:

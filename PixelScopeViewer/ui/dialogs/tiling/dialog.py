@@ -228,51 +228,21 @@ class TilingComparisonDialog(QDialog):
         self.update_status_bar()
 
     def change_comparison_images(self):
-        """Show selection dialog to change comparison images."""
-        # Show selection dialog
-        selection_dialog = TileSelectionDialog(self, self.all_images)
+        """Show selection dialog to change comparison images.
 
-        # Pre-select current grid size in combo box
-        for idx in range(selection_dialog.grid_combo.count()):
-            if selection_dialog.grid_combo.itemData(idx) == self.grid_size:
-                selection_dialog.grid_combo.setCurrentIndex(idx)
-                break
+        Closes the current tiling dialog completely and opens a new one
+        with fresh settings to avoid any state inconsistencies.
+        """
+        # Close current dialog and open new tiling comparison dialog
+        # This ensures a clean state without carrying over any settings
+        if self.parent_viewer:
+            # Schedule the new dialog to open after this one closes
+            from PySide6.QtCore import QTimer
 
-        # Pre-check currently selected images
-        for idx in self.selected_indices:
-            if idx < selection_dialog.image_list_widget.count():
-                item = selection_dialog.image_list_widget.item(idx)
-                if item:
-                    item.setCheckState(Qt.Checked)
+            QTimer.singleShot(0, self.parent_viewer.show_tiling_comparison_dialog)
 
-        if selection_dialog.exec() != QDialog.Accepted:
-            return
-
-        grid_size, selected_indices = selection_dialog.get_selection()
-        if not selected_indices:
-            QMessageBox.warning(self, "比較画像変更", "画像が選択されていません。")
-            return
-
-        # Update settings
-        self.grid_size = grid_size
-        self.selected_indices = selected_indices
-
-        # Close dialogs before rebuilding tiles to avoid stale references
-        if self._analysis_dialog is not None:
-            self._analysis_dialog.close()
-            self._analysis_dialog = None
-        if self._comparison_dialog is not None:
-            self._comparison_dialog.close()
-            self._comparison_dialog = None
-
-        # Rebuild tiles
-        self._clear_tiles()
-        self._rebuild_tiles()
-        self._initialize_managers()
-        # Apply initial brightness per dtype on first draw
-        if self.brightness_manager:
-            self.brightness_manager.refresh_all_tiles()
-        self.update_status_bar()
+        # Close this dialog
+        self.close()
 
     def _on_scroll(self, source_index: int, direction: str, value: int, signal_name: str):
         """Handle scroll events."""

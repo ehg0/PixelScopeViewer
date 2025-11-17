@@ -347,13 +347,19 @@ class ImageViewer(QMainWindow):
         # Load images
         new_count = self._add_images(image_files)
         self._finalize_image_addition(new_count)
+        self.activateWindow()
 
         # Load feature files
         if feature_files:
             try:
                 self.features_manager.load_feature_files(feature_files)
+                # Open features dialog (または既存ダイアログを前面に)して内容を反映する
+                self.show_features_dialog()
                 if self._features_dialog is not None:
-                    self._features_dialog.refresh_from_manager()
+                    try:
+                        self._features_dialog.refresh_from_manager()
+                    except Exception:
+                        pass
             except Exception:
                 # Non-fatal
                 pass

@@ -56,13 +56,13 @@ class TileSelectionDialog(QDialog):
 
         # Grid size selection
         grid_layout = QHBoxLayout()
-        grid_layout.addWidget(QLabel("グリッドサイズ:"))
+        grid_layout.addWidget(QLabel("グリッドサイズ (h, w):"))
 
         self.grid_combo = QComboBox()
-        self.grid_combo.addItem("2x1 (2枚)", (2, 1))
         self.grid_combo.addItem("1x2 (2枚)", (1, 2))
         self.grid_combo.addItem("1x3 (3枚)", (1, 3))
         self.grid_combo.addItem("1x4 (4枚)", (1, 4))
+        self.grid_combo.addItem("2x1 (2枚)", (2, 1))
         self.grid_combo.addItem("2x2 (4枚)", (2, 2))
         self.grid_combo.addItem("2x3 (6枚)", (2, 3))
         self.grid_combo.addItem("2x4 (8枚)", (2, 4))

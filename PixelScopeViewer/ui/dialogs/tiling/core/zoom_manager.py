@@ -3,6 +3,7 @@
 from typing import List, Optional
 from PySide6.QtWidgets import QApplication
 from PixelScopeViewer.core.constants import MIN_ZOOM_SCALE, MAX_ZOOM_SCALE
+import numpy as np
 
 
 class ZoomManager:
@@ -122,7 +123,12 @@ class ZoomManager:
                 # Calculate scale to fit both dimensions
                 scale_w = viewport_width / img_width if img_width > 0 else 1.0
                 scale_h = viewport_height / img_height if img_height > 0 else 1.0
-                self.scale = min(scale_w, scale_h, 1.0)  # Don't zoom beyond 1.0
+                fit_scale = min(scale_w, scale_h, 1.0)  # Don't zoom beyond 1.0
+                # Clamp to valid zoom range
+                fit_scale = max(MIN_ZOOM_SCALE, min(MAX_ZOOM_SCALE, fit_scale))
+                # Snap to nearest power of 2
+                power = round(np.log2(fit_scale))
+                self.scale = 2.0**power
             else:
                 self.scale = 1.0
 

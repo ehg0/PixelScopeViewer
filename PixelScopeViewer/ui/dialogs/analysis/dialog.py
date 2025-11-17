@@ -317,6 +317,8 @@ class AnalysisDialog(QDialog):
                 int(self.image_rect.height()),
             )
             arr = arr[y : y + h, x : x + w]
+        else:
+            arr = arr[0:1, 0:1]
 
         # Update metadata tab (always update when image changes)
         self._update_metadata()

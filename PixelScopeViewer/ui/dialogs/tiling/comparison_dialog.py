@@ -328,6 +328,8 @@ class TilingComparisonDialog(AnalysisDialog):
                     int(roi_rect.height()),
                 )
                 arr = arr[y : y + h, x : x + w]
+            else:
+                arr = arr[0:1, 0:1]
 
             # Skip empty arrays
             if arr.size == 0:

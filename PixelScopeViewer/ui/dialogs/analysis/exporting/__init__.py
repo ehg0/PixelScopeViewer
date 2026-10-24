@@ -5,9 +5,9 @@ table contents to CSV format.
 """
 
 from .csv import (
+    selection_to_csv,
     series_to_csv,
     table_to_csv,
-    selection_to_csv,
 )
 
 __all__ = [

@@ -1,12 +1,12 @@
 """Tile widget for displaying individual images in tiling comparison."""
 
-from typing import Optional
 import numpy as np
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QScrollArea, QSizePolicy
-from PySide6.QtCore import Qt, Signal, QEvent
+from PySide6.QtCore import QEvent, Qt, Signal
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QScrollArea, QSizePolicy, QVBoxLayout, QWidget
+
+from PixelScopeViewer.ui.dialogs.display.core.compute import apply_brightness_adjustment
 
 from .tile_image_label import TileImageLabel
-from PixelScopeViewer.ui.dialogs.display.core.compute import apply_brightness_adjustment
 
 
 class TileWidget(QWidget):
@@ -334,7 +334,7 @@ class TileWidget(QWidget):
         """
         self.pixel_value_label.setText(text)
 
-    def set_roi(self, roi_rect: Optional[list]):
+    def set_roi(self, roi_rect: list | None):
         """Set ROI rectangle.
 
         Args:
@@ -354,7 +354,7 @@ class TileWidget(QWidget):
         else:
             self.image_label.set_roi(None)
 
-    def get_roi(self) -> Optional[list]:
+    def get_roi(self) -> list | None:
         """Get current ROI rectangle.
 
         Returns:

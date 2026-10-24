@@ -3,7 +3,7 @@
 This module provides arrow key editing for ROI rectangles.
 """
 
-from PySide6.QtCore import Qt, QRect
+from PySide6.QtCore import QRect, Qt
 
 
 class RoiEditorMixin:

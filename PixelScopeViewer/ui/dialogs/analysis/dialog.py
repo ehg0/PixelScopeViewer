@@ -313,7 +313,7 @@ class AnalysisDialog(QDialog):
         This method is expected to be called frequently from outside (parent viewer),
         and it calls `update_contents` to rebuild the internal display after updating the model.
 
-        arguments:
+        Arguments:
             image_array: NumPy array of the image or selection
             image_rect: Selection rectangle in image（QRect）
             image_path: File path of the image (used for metadata extraction)
@@ -328,7 +328,7 @@ class AnalysisDialog(QDialog):
     def set_current_tab(self, tab):
         """Switch tabs by name（prefix of 'Histogram','Profile','Info'  or index）
 
-        arguments:
+        Arguments:
             tab: String tab name or index（int）
         """
         if tab is None:

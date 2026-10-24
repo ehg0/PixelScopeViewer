@@ -1,13 +1,12 @@
 """Scroll synchronization for tiling comparison."""
 
-from typing import List
 from PySide6.QtCore import QCoreApplication
 
 
 class ScrollManager:
     """Manages scroll synchronization across tiles."""
 
-    def __init__(self, tiles: List):
+    def __init__(self, tiles: list):
         """Initialize scroll manager.
 
         Args:
@@ -149,4 +148,3 @@ class ScrollManager:
                 self.sync_scroll(active_tile_index, "v", new_val, 1.0)
 
         return True
-

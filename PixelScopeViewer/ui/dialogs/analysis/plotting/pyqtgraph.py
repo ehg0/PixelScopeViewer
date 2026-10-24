@@ -8,10 +8,8 @@ what pyqtgraph provides.
 
 from __future__ import annotations
 
-from typing import Optional, Dict
 
-
-def save_viewbox_state(vb) -> Optional[dict]:
+def save_viewbox_state(vb) -> dict | None:
     """Return full ViewBox state if available."""
     try:
         return vb.getState(copy=True)
@@ -19,7 +17,7 @@ def save_viewbox_state(vb) -> Optional[dict]:
         return None
 
 
-def apply_plot_settings(widget, which: str, plot_settings: Dict[str, dict], saved_full_state: Optional[dict] = None):
+def apply_plot_settings(widget, which: str, plot_settings: dict[str, dict], saved_full_state: dict | None = None):
     """Apply grid settings and restore saved ViewBox state if provided."""
     try:
         s = plot_settings.get(which, {})
@@ -35,7 +33,7 @@ def apply_plot_settings(widget, which: str, plot_settings: Dict[str, dict], save
             pass
 
 
-def connect_plot_controls(plot_item, which: str, plot_settings: Dict[str, dict], on_hist_log_changed=None):
+def connect_plot_controls(plot_item, which: str, plot_settings: dict[str, dict], on_hist_log_changed=None):
     """Connect PlotItem.ctrl toggles to persist grid/log settings.
 
     For 'hist', also persists LogY and calls on_hist_log_changed when toggled.
@@ -78,19 +76,17 @@ def connect_plot_controls(plot_item, which: str, plot_settings: Dict[str, dict],
             pass
 
 
-def _on_grid_toggled(which: str, plot_settings: Dict[str, dict], checked: bool):
+def _on_grid_toggled(which: str, plot_settings: dict[str, dict], checked: bool):
     try:
         plot_settings.setdefault(which, {})["grid"] = bool(checked)
     except Exception:
         pass
 
 
-def _on_log_toggled(plot_settings: Dict[str, dict], checked: bool, on_hist_log_changed=None):
+def _on_log_toggled(plot_settings: dict[str, dict], checked: bool, on_hist_log_changed=None):
     try:
         plot_settings.setdefault("hist", {})["log"] = bool(checked)
         if on_hist_log_changed is not None:
             on_hist_log_changed()
     except Exception:
         pass
-
-

@@ -1,17 +1,17 @@
 """ROI info widget showing and editing ROI information."""
 
-from PySide6.QtWidgets import (
-    QGroupBox,
-    QVBoxLayout,
-    QTableWidget,
-    QTableWidgetItem,
-    QSpinBox,
-    QHBoxLayout,
-    QWidget,
-    QMenu,
-)
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QGuiApplication
+from PySide6.QtWidgets import (
+    QGroupBox,
+    QHBoxLayout,
+    QMenu,
+    QSpinBox,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
 
 
 class ROIInfoWidget(QGroupBox):

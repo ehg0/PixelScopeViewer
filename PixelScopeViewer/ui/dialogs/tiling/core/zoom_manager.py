@@ -1,14 +1,14 @@
 """Zoom management for tiling comparison."""
 
-from typing import List, Optional
-from PixelScopeViewer.core.constants import MIN_ZOOM_SCALE, MAX_ZOOM_SCALE
 import numpy as np
+
+from PixelScopeViewer.core.constants import MAX_ZOOM_SCALE, MIN_ZOOM_SCALE
 
 
 class ZoomManager:
     """Manages zoom operations for all tiles."""
 
-    def __init__(self, tiles: List, get_active_tile_index_func):
+    def __init__(self, tiles: list, get_active_tile_index_func):
         """Initialize zoom manager.
 
         Args:
@@ -21,7 +21,7 @@ class ZoomManager:
         self._is_fit_zoom = False
         self._previous_zoom = 1.0
 
-    def adjust_zoom(self, factor: float, tile_index: Optional[int] = None, mouse_pos=None):
+    def adjust_zoom(self, factor: float, tile_index: int | None = None, mouse_pos=None):
         """Adjust zoom for all tiles.
 
         Args:
@@ -150,4 +150,3 @@ class ZoomManager:
     def get_scale(self) -> float:
         """Get current zoom scale."""
         return self.scale
-

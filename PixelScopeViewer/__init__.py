@@ -42,8 +42,8 @@ Dependencies:
 """
 
 from .app import main
-from .ui import ImageViewer, HelpDialog, DiffDialog, AnalysisDialog, BrightnessDialog
-from .core import numpy_to_qimage, load_image, is_image_file, get_image_metadata
+from .core import get_image_metadata, is_image_file, load_image, numpy_to_qimage
+from .ui import AnalysisDialog, BrightnessDialog, DiffDialog, HelpDialog, ImageViewer
 
 __version__ = "0.1.0"
 __all__ = [

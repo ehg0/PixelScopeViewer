@@ -1,20 +1,20 @@
 """Image selection dialog for tiling comparison."""
 
 from pathlib import Path
-from typing import List, Dict, Tuple
+
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QComboBox,
     QDialog,
-    QVBoxLayout,
     QHBoxLayout,
     QLabel,
-    QComboBox,
-    QPushButton,
     QListWidget,
     QListWidgetItem,
-    QAbstractItemView,
     QMessageBox,
+    QPushButton,
+    QVBoxLayout,
 )
-from PySide6.QtCore import Qt
 
 
 class DraggableListWidget(QListWidget):
@@ -30,7 +30,7 @@ class DraggableListWidget(QListWidget):
 class TileSelectionDialog(QDialog):
     """Dialog for selecting images and grid size for tiling comparison."""
 
-    def __init__(self, parent, image_list: List[Dict]):
+    def __init__(self, parent, image_list: list[dict]):
         """Initialize selection dialog.
 
         Args:
@@ -83,14 +83,14 @@ class TileSelectionDialog(QDialog):
 
         # Populate list
         for i, img_info in enumerate(self.image_list):
-            path = img_info.get("path", f"Image {i+1}")
-            filename = Path(path).name if path else f"Image {i+1}"
+            path = img_info.get("path", f"Image {i + 1}")
+            filename = Path(path).name if path else f"Image {i + 1}"
 
             # Get dtype info
             arr = img_info.get("base_array", img_info.get("array"))
             dtype_str = f"({arr.dtype.name})" if arr is not None else ""
 
-            item_text = f"{i+1}: {filename} {dtype_str}"
+            item_text = f"{i + 1}: {filename} {dtype_str}"
             item = QListWidgetItem(item_text)
             item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
             item.setCheckState(Qt.Unchecked)
@@ -196,7 +196,7 @@ class TileSelectionDialog(QDialog):
         self.selected_indices = selected
         self.accept()
 
-    def get_selection(self) -> Tuple[Tuple[int, int], List[int]]:
+    def get_selection(self) -> tuple[tuple[int, int], list[int]]:
         """Get grid size and selected image indices.
 
         Returns:

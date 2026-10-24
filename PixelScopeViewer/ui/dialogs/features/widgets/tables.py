@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, List
+from typing import Any
 
-from PySide6.QtCore import Qt, QAbstractTableModel, QModelIndex
+from PySide6.QtCore import QAbstractTableModel, QModelIndex, QSortFilterProxyModel, Qt
 from PySide6.QtGui import QBrush, QColor
-from PySide6.QtCore import QSortFilterProxyModel
 
 from ....utils.features_manager import FeaturesManager
 
@@ -272,7 +271,7 @@ class AnnotationsTableModel(QAbstractTableModel):
         self.beginResetModel()
         self.endResetModel()
 
-    def get_columns(self) -> List[str]:
+    def get_columns(self) -> list[str]:
         return list(self._columns)
 
     def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:

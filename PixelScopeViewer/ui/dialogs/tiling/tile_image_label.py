@@ -1,13 +1,12 @@
 """Image label for tile display with ROI support."""
 
-from typing import Optional
 import numpy as np
-from PySide6.QtWidgets import QLabel
-from PySide6.QtGui import QPixmap, QPainter, QPen, QColor, QMouseEvent, QKeyEvent, QWheelEvent
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QColor, QKeyEvent, QMouseEvent, QPainter, QPen, QPixmap, QWheelEvent
+from PySide6.QtWidgets import QLabel
 
+from PixelScopeViewer.core.constants import MAX_ZOOM_SCALE, MIN_ZOOM_SCALE
 from PixelScopeViewer.core.image_io import numpy_to_qimage
-from PixelScopeViewer.core.constants import MIN_ZOOM_SCALE, MAX_ZOOM_SCALE
 from PixelScopeViewer.ui.dialogs.display.core.compute import apply_brightness_adjustment
 
 
@@ -119,7 +118,7 @@ class TileImageLabel(QLabel):
         self.setFixedSize(pixmap.size())
         self.update()
 
-    def set_roi(self, roi_rect: Optional[list]):
+    def set_roi(self, roi_rect: list | None):
         """Set ROI rectangle.
 
         Args:
@@ -128,7 +127,7 @@ class TileImageLabel(QLabel):
         self.roi_rect = roi_rect
         self.update()
 
-    def get_roi(self) -> Optional[list]:
+    def get_roi(self) -> list | None:
         """Get current ROI rectangle.
 
         Returns:
@@ -359,7 +358,7 @@ class TileImageLabel(QLabel):
         iy = max(0, min(iy, self.qimage.height() - 1))
         return (ix, iy)
 
-    def _get_resize_edge(self, pos) -> Optional[str]:
+    def _get_resize_edge(self, pos) -> str | None:
         """Determine which edge of the ROI is near the cursor.
 
         Args:
@@ -411,7 +410,7 @@ class TileImageLabel(QLabel):
 
         return None
 
-    def _update_cursor_for_edge(self, edge: Optional[str]):
+    def _update_cursor_for_edge(self, edge: str | None):
         """Update cursor shape based on which edge is being hovered.
 
         Args:

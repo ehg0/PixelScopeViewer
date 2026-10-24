@@ -3,13 +3,13 @@
 This module combines all widget functionality into a single ImageLabel class.
 """
 
-from PySide6.QtGui import QPainter, QImage, QWheelEvent
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QImage, QPainter, QWheelEvent
 
+from ...core.constants import MAX_ZOOM_SCALE, MIN_ZOOM_SCALE
 from .base_image_label import BaseImageLabel
-from .roi_manager import RoiManagerMixin
 from .roi_editor import RoiEditorMixin
-from ...core.constants import MIN_ZOOM_SCALE, MAX_ZOOM_SCALE
+from .roi_manager import RoiManagerMixin
 
 
 class ImageLabel(RoiManagerMixin, RoiEditorMixin, BaseImageLabel):

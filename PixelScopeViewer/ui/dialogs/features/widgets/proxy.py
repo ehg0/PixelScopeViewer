@@ -1,5 +1,6 @@
-from PySide6.QtCore import QSortFilterProxyModel, QModelIndex
 from pathlib import Path
+
+from PySide6.QtCore import QModelIndex, QSortFilterProxyModel
 
 
 class LoadedOnlyProxyModel(QSortFilterProxyModel):

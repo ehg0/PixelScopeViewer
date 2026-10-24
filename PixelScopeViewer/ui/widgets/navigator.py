@@ -1,8 +1,8 @@
 """Navigator widget showing thumbnail with viewport rectangle."""
 
-from PySide6.QtWidgets import QGroupBox, QVBoxLayout, QLabel
-from PySide6.QtGui import QPixmap, QPainter, QPen, QColor, QMouseEvent
-from PySide6.QtCore import Qt, QEvent
+from PySide6.QtCore import QEvent, Qt
+from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPen, QPixmap
+from PySide6.QtWidgets import QGroupBox, QLabel, QVBoxLayout
 
 
 class NavigatorWidget(QGroupBox):

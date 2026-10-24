@@ -8,7 +8,8 @@ This module handles all zoom-related operations including:
 """
 
 import numpy as np
-from ...core.constants import MIN_ZOOM_SCALE, MAX_ZOOM_SCALE
+
+from ...core.constants import MAX_ZOOM_SCALE, MIN_ZOOM_SCALE
 
 
 class ZoomManager:

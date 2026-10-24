@@ -1,4 +1,4 @@
-from PySide6.QtWidgets import QStyledItemDelegate, QLineEdit
+from PySide6.QtWidgets import QLineEdit, QStyledItemDelegate
 
 
 class PlainTextDelegate(QStyledItemDelegate):

@@ -1,6 +1,7 @@
 """Custom SpinBox widget that steps by powers of 2."""
 
 import math
+
 from PySide6.QtWidgets import QDoubleSpinBox
 
 

@@ -1,7 +1,6 @@
 """ROI management for tiling comparison."""
 
 import numpy as np
-from typing import List, Optional, Tuple
 from PySide6.QtCore import QRect, Signal
 from PySide6.QtGui import QGuiApplication
 
@@ -11,7 +10,7 @@ from PixelScopeViewer.core.image_io import numpy_to_qimage
 class ROIManager:
     """Manages ROI operations for all tiles."""
 
-    def __init__(self, tiles: List, get_active_tile_index_func, common_roi_changed_signal: Signal):
+    def __init__(self, tiles: list, get_active_tile_index_func, common_roi_changed_signal: Signal):
         """Initialize ROI manager.
 
         Args:
@@ -22,7 +21,7 @@ class ROIManager:
         self.tiles = tiles
         self.get_active_tile_index = get_active_tile_index_func
         self.common_roi_changed = common_roi_changed_signal
-        self.common_roi_rect: Optional[QRect] = None
+        self.common_roi_rect: QRect | None = None
 
     def on_tile_roi_changed(self, roi_rect_in_image_coords: QRect):
         """Handle ROI change from a tile.
@@ -102,7 +101,7 @@ class ROIManager:
         if qimg and not qimg.isNull():
             QGuiApplication.clipboard().setImage(qimg)
 
-    def copy_all_tiles_roi_as_grid(self, grid_size: Tuple[int, int]):
+    def copy_all_tiles_roi_as_grid(self, grid_size: tuple[int, int]):
         """Copy ROI regions from all tiles arranged in grid layout to clipboard.
 
         Args:

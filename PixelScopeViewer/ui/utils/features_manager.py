@@ -16,16 +16,17 @@ Notes:
 
 from __future__ import annotations
 
+import json
 from collections import OrderedDict
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable, List, Dict, Any, Optional
+from typing import Any
 
 import polars as pl
-import json
 
 
-def _flatten_dict(d: Dict[str, Any], parent_key: str = "", sep: str = "_") -> Dict[str, Any]:
-    items: Dict[str, Any] = {}
+def _flatten_dict(d: dict[str, Any], parent_key: str = "", sep: str = "_") -> dict[str, Any]:
+    items: dict[str, Any] = {}
     for k, v in d.items():
         new_key = f"{parent_key}{sep}{k}" if parent_key else k
         if isinstance(v, dict):
@@ -47,14 +48,14 @@ class FeaturesManager:
     NON_EDITABLE_COLUMNS = {"fullfilepath", "file_name"}
 
     def __init__(self) -> None:
-        self._rows_by_key: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
+        self._rows_by_key: OrderedDict[str, dict[str, Any]] = OrderedDict()
         # Optional rich data from JSON loads
-        self._dataset_name: Optional[str] = None
+        self._dataset_name: str | None = None
         # Categories keyed by (source_json_path, category_id) to preserve per-file categories
-        self._categories_by_source: "Dict[str, List[Dict[str, Any]]]" = {}
-        self._annotations_rows: List[Dict[str, Any]] = []  # image_id, category_id, bbox(list of 4)
+        self._categories_by_source: dict[str, list[dict[str, Any]]] = {}
+        self._annotations_rows: list[dict[str, Any]] = []  # image_id, category_id, bbox(list of 4)
         # Track last loaded path for save dialog
-        self._last_loaded_path: Optional[str] = None
+        self._last_loaded_path: str | None = None
 
     # ------------------------
     # Loaders
@@ -78,7 +79,7 @@ class FeaturesManager:
         """
         path = Path(json_path)
         self._last_loaded_path = str(path.resolve())  # Remember last loaded path
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             data = json.load(f)
 
         # dataset_name
@@ -94,9 +95,9 @@ class FeaturesManager:
         if cats:
             self._categories_by_source[json_key] = cats
 
-        images_rows: List[Dict[str, Any]] = []
+        images_rows: list[dict[str, Any]] = []
         for img in data.get("images", []) or []:
-            base: Dict[str, Any] = OrderedDict()
+            base: dict[str, Any] = OrderedDict()
             base["id"] = img.get("id")
             base["file_name"] = img.get("file_name")
 
@@ -143,7 +144,7 @@ class FeaturesManager:
             # Fallback to empty
             df = pl.DataFrame([])
 
-        rows: List[Dict[str, Any]] = df.to_dicts()
+        rows: list[dict[str, Any]] = df.to_dicts()
 
         # Ensure fullfilepath
         for r in rows:
@@ -159,7 +160,7 @@ class FeaturesManager:
     # ------------------------
     # Core ops
     # ------------------------
-    def _merge_rows(self, rows: Iterable[Dict[str, Any]]) -> int:
+    def _merge_rows(self, rows: Iterable[dict[str, Any]]) -> int:
         """Merge given rows into current table. Last wins by 'fullfilepath'.
 
         Returns number of affected rows (inserted+replaced).
@@ -184,10 +185,10 @@ class FeaturesManager:
     # ------------------------
     # Accessors / Mutators
     # ------------------------
-    def get_rows(self) -> List[Dict[str, Any]]:
+    def get_rows(self) -> list[dict[str, Any]]:
         return list(self._rows_by_key.values())
 
-    def get_columns(self) -> List[str]:
+    def get_columns(self) -> list[str]:
         cols = OrderedDict()
         # First check if id and file_name exist in any row
         has_id = False
@@ -217,19 +218,19 @@ class FeaturesManager:
             return pl.DataFrame([])
         return pl.DataFrame(rows)
 
-    def get_last_loaded_directory(self) -> Optional[str]:
+    def get_last_loaded_directory(self) -> str | None:
         """Return the directory of the last loaded feature file, or None."""
         if self._last_loaded_path:
             return str(Path(self._last_loaded_path).parent)
         return None
 
-    def get_last_loaded_path(self) -> Optional[str]:
+    def get_last_loaded_path(self) -> str | None:
         """Return the full path of the last loaded feature file, or None."""
         return self._last_loaded_path
 
-    def get_categories_rows(self) -> List[Dict[str, Any]]:
+    def get_categories_rows(self) -> list[dict[str, Any]]:
         # Flatten all categories from all sources, de-duplicate by id (last wins)
-        merged: "OrderedDict[int, Dict[str, Any]]" = OrderedDict()
+        merged: OrderedDict[int, dict[str, Any]] = OrderedDict()
         for cats in self._categories_by_source.values():
             for c in cats:
                 cid = c.get("id")
@@ -237,14 +238,14 @@ class FeaturesManager:
                     merged[cid] = dict(c)
         return list(merged.values())
 
-    def get_categories_columns(self) -> List[str]:
+    def get_categories_columns(self) -> list[str]:
         cols = OrderedDict()
         for r in self.get_categories_rows():
             for k in r.keys():
                 cols.setdefault(k, True)
         return list(cols.keys())
 
-    def get_annotations_rows(self) -> List[Dict[str, Any]]:
+    def get_annotations_rows(self) -> list[dict[str, Any]]:
         return list(self._annotations_rows)
 
     def add_column(self, name: str, default_value: Any = None) -> None:
@@ -289,9 +290,9 @@ class FeaturesManager:
         images_rows = self.get_rows()
 
         # Build images with nested metrics and annotations
-        images_list: List[Dict[str, Any]] = []
+        images_list: list[dict[str, Any]] = []
         for r in images_rows:
-            img_obj: Dict[str, Any] = {}
+            img_obj: dict[str, Any] = {}
             # Base fields
             for k in ("id", "file_name", "width", "height"):
                 if k in r:
@@ -299,7 +300,7 @@ class FeaturesManager:
 
             # Other keys (except reserved/edit control columns)
             reserved = {"fullfilepath", "file_name"}
-            metrics: Dict[str, Any] = {}
+            metrics: dict[str, Any] = {}
             for k, v in r.items():
                 if k in reserved or k in ("id", "width", "height"):
                     continue
@@ -312,7 +313,7 @@ class FeaturesManager:
                 img_obj["metrics"] = metrics
 
             # Attach annotations by image_id
-            anns: List[Dict[str, Any]] = []
+            anns: list[dict[str, Any]] = []
             img_id = r.get("id")
             if img_id is not None:
                 for a in self._annotations_rows:

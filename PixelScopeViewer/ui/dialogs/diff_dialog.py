@@ -5,14 +5,14 @@ loaded image list and creating a difference image with configurable offset.
 """
 
 from PySide6.QtWidgets import (
+    QComboBox,
     QDialog,
-    QVBoxLayout,
+    QDoubleSpinBox,
     QHBoxLayout,
     QLabel,
-    QComboBox,
-    QDoubleSpinBox,
-    QPushButton,
     QMessageBox,
+    QPushButton,
+    QVBoxLayout,
 )
 
 
@@ -35,7 +35,7 @@ class DiffDialog(QDialog):
         h1.addWidget(QLabel("画像 A:"))
         self.combo_a = QComboBox()
         for i, info in enumerate(self.image_list):
-            self.combo_a.addItem(f"{i+1}: {info.get('path','(untitled)')}")
+            self.combo_a.addItem(f"{i + 1}: {info.get('path', '(untitled)')}")
         h1.addWidget(self.combo_a)
         layout.addLayout(h1)
 
@@ -43,7 +43,7 @@ class DiffDialog(QDialog):
         h2.addWidget(QLabel("画像 B:"))
         self.combo_b = QComboBox()
         for i, info in enumerate(self.image_list):
-            self.combo_b.addItem(f"{i+1}: {info.get('path','(untitled)')}")
+            self.combo_b.addItem(f"{i + 1}: {info.get('path', '(untitled)')}")
         self.combo_b.setCurrentIndex(1)
         h2.addWidget(self.combo_b)
         layout.addLayout(h2)
@@ -78,7 +78,7 @@ class DiffDialog(QDialog):
         self.accept()
 
     def get_result(self):
-        """get resulut of selections。
+        """Get resulut of selections。
 
         Returns:
             tuple: (image_a_index, image_b_index, offset) or None

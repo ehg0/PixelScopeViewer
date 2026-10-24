@@ -3,10 +3,9 @@
 This module provides the foundation for image display with zoom support.
 """
 
-from typing import Optional
+from PySide6.QtCore import QPoint, QRect, Qt
+from PySide6.QtGui import QImage, QPainter, QPixmap
 from PySide6.QtWidgets import QLabel
-from PySide6.QtGui import QPixmap, QPainter, QImage
-from PySide6.QtCore import Qt, QRect, QPoint
 
 
 class BaseImageLabel(QLabel):
@@ -33,7 +32,7 @@ class BaseImageLabel(QLabel):
         self.setFocusPolicy(Qt.StrongFocus)
 
         self._orig_pixmap = QPixmap()
-        self._qimage: Optional[QImage] = None
+        self._qimage: QImage | None = None
         self.scale = 1.0
         self.showing = False
 
@@ -76,13 +75,13 @@ class BaseImageLabel(QLabel):
             painter.restore()
 
     # --- Coordinate conversion utilities ---
-    def _display_scale_factor(self) -> Optional[float]:
+    def _display_scale_factor(self) -> float | None:
         """Return displayed pixels per source image pixel."""
         if self._qimage is None or self._qimage.isNull() or not self.scale or self.scale <= 0:
             return None
         return float(self.scale)
 
-    def _widget_to_image_point(self, pt: QPoint) -> Optional[tuple[int, int]]:
+    def _widget_to_image_point(self, pt: QPoint) -> tuple[int, int] | None:
         """Convert widget coordinates to image pixel coordinates.
 
         Args:
@@ -125,7 +124,7 @@ class BaseImageLabel(QLabel):
         h = max(1, bottom_ex - top)
         return QRect(left, top, w, h)
 
-    def _widget_rect_to_image(self, widget_rect: QRect) -> Optional[QRect]:
+    def _widget_rect_to_image(self, widget_rect: QRect) -> QRect | None:
         """Convert widget rectangle to image rectangle.
 
         Args:

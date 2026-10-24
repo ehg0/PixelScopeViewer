@@ -24,12 +24,12 @@ def apply_brightness_adjustment(arr: np.ndarray, offset: float, gain: float, upp
     upper_level : float
         Maximum intensity reference (positive only)
 
-    Returns
+    Returns:
     -------
     np.ndarray
         Adjusted array clipped to [0, 255] and converted to uint8
 
-    Notes
+    Notes:
     -----
     If upper_level is 0, returns the original array to avoid division by zero.
     """
@@ -42,5 +42,3 @@ def apply_brightness_adjustment(arr: np.ndarray, offset: float, gain: float, upp
 
     # Clip to valid range and convert back to uint8
     return np.clip(adjusted, 0, 255).astype(np.uint8)
-
-

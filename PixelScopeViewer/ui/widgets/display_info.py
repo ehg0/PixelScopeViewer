@@ -1,8 +1,8 @@
 """Display info widget showing current viewport information."""
 
-from PySide6.QtWidgets import QGroupBox, QVBoxLayout, QTableWidget, QTableWidgetItem, QMenu
-from PySide6.QtCore import Qt, QEvent
+from PySide6.QtCore import QEvent, Qt
 from PySide6.QtGui import QGuiApplication
+from PySide6.QtWidgets import QGroupBox, QMenu, QTableWidget, QTableWidgetItem, QVBoxLayout
 
 
 class DisplayInfoWidget(QGroupBox):

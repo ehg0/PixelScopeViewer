@@ -302,7 +302,7 @@ class ProfileTab(QWidget):
             if rgb:
                 # 表示カラーがグレースケールの時はグラフ線色を黒にする
                 if rgb[0] == rgb[1] == rgb[2]:
-                    return f"rgb(0, 0, 0)"
+                    return "rgb(0, 0, 0)"
                 return f"rgb({rgb[0]},{rgb[1]},{rgb[2]})"
             # Intensity always black
             if label == "I":

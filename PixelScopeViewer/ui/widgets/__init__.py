@@ -7,9 +7,9 @@ This package provides:
 - ROIInfoWidget: ROI information and editing table
 """
 
+from .display_info import DisplayInfoWidget
 from .image_label import ImageLabel
 from .navigator import NavigatorWidget
-from .display_info import DisplayInfoWidget
 from .roi_info import ROIInfoWidget
 
 __all__ = ["ImageLabel", "NavigatorWidget", "DisplayInfoWidget", "ROIInfoWidget"]

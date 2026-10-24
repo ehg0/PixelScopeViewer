@@ -1,6 +1,5 @@
 """Tile management for tiling comparison."""
 
-from typing import List, Dict, Tuple
 from PySide6.QtWidgets import QGridLayout
 
 from .utils import determine_dtype_group
@@ -16,16 +15,16 @@ class TileManager:
             grid_layout: QGridLayout to place tiles in
         """
         self.grid_layout = grid_layout
-        self.tiles: List = []
-        self.tile_dtype_groups: List[str] = []
-        self.displayed_image_data: List[Dict] = []
+        self.tiles: list = []
+        self.tile_dtype_groups: list[str] = []
+        self.displayed_image_data: list[dict] = []
         self.active_tile_index = 0
 
     def rebuild_tiles(
         self,
-        all_images: List[Dict],
-        selected_indices: List[int],
-        grid_size: Tuple[int, int],
+        all_images: list[dict],
+        selected_indices: list[int],
+        grid_size: tuple[int, int],
         parent_dialog,
         tile_widget_class,
         on_activated_func,
@@ -196,14 +195,14 @@ class TileManager:
         """Get the active tile index."""
         return self.active_tile_index
 
-    def get_tiles(self) -> List:
+    def get_tiles(self) -> list:
         """Get list of tiles."""
         return self.tiles
 
-    def get_tile_dtype_groups(self) -> List[str]:
+    def get_tile_dtype_groups(self) -> list[str]:
         """Get list of tile dtype groups."""
         return self.tile_dtype_groups
 
-    def get_displayed_image_data(self) -> List[Dict]:
+    def get_displayed_image_data(self) -> list[dict]:
         """Get list of displayed image data."""
         return self.displayed_image_data

@@ -3,9 +3,8 @@
 This module provides ROI creation, moving, and resizing functionality.
 """
 
-from typing import Optional
-from PySide6.QtGui import QPainter, QPen, QColor
-from PySide6.QtCore import Qt, QRect, QPoint
+from PySide6.QtCore import QPoint, QRect, Qt
+from PySide6.QtGui import QColor, QPainter, QPen
 
 
 class RoiManagerMixin:
@@ -30,7 +29,7 @@ class RoiManagerMixin:
 
     def __init_roi_manager__(self):
         """Initialize selection manager state."""
-        self.roi_rect: Optional[QRect] = None
+        self.roi_rect: QRect | None = None
         self.dragging = False
         self._moving = False
         self._resizing = False
@@ -247,7 +246,7 @@ class RoiManagerMixin:
             painter.setPen(pen)
             painter.drawRect(self.roi_rect)
 
-    def get_roi_in_image_coords(self) -> Optional[QRect]:
+    def get_roi_in_image_coords(self) -> QRect | None:
         """Get the current selection rectangle in image coordinates.
 
         Returns:
@@ -266,7 +265,7 @@ class RoiManagerMixin:
         self.roi_rect = QRect(0, 0, max(1, disp_w), max(1, disp_h))
         self.update()
 
-    def _get_resize_edge(self, pos: QPoint) -> Optional[str]:
+    def _get_resize_edge(self, pos: QPoint) -> str | None:
         """Determine which edge of the selection is near the cursor.
 
         Args:
@@ -311,7 +310,7 @@ class RoiManagerMixin:
 
         return None
 
-    def _update_cursor_for_edge(self, edge: Optional[str]):
+    def _update_cursor_for_edge(self, edge: str | None):
         """Update cursor shape based on which edge is being hovered/grabbed.
 
         Args:

@@ -1,9 +1,9 @@
 """UI components package."""
 
+from .dialogs import AnalysisDialog, BrightnessDialog, DiffDialog, HelpDialog
+from .utils import get_default_channel_colors
 from .viewer import ImageViewer
 from .widgets import ImageLabel
-from .dialogs import HelpDialog, DiffDialog, AnalysisDialog, BrightnessDialog
-from .utils import get_default_channel_colors
 
 __all__ = [
     "ImageViewer",

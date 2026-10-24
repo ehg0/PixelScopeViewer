@@ -75,7 +75,7 @@ class ImageLoaderRegistry:
                      - priority = 0: Add new format support (default, does not override)
                      - priority < 0: Fallback loader (tried after all others fail)
 
-                     Examples:
+        Examples:
                      - priority = 1: Override .npy loading with custom logic
                      - priority = 0: Add support for .dat files (default)
                      - priority = -100: Wildcard fallback for any unknown format
@@ -121,6 +121,7 @@ class ImageLoaderRegistry:
                 exts.update(loader_info["extensions"])
 
         return sorted(exts), has_wildcard
+
 
 def numpy_to_qimage(arr: np.ndarray) -> QImage:
     """Convert a NumPy image array to a Qt QImage suitable for display.

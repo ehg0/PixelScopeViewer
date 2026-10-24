@@ -570,26 +570,20 @@ class ImageViewer(QMainWindow):
         img = self.images[self.state.current_index]
         arr = img["array"]
         # dtype が切り替わった場合のみ、その dtype で保存した brightness を読み込む
-        try:
-            dtype_key = determine_dtype_group(arr)
-            stored_params = self.state.brightness_by_dtype.get(dtype_key)
-
-            if stored_params and stored_params != self.state.brightness:
-                self.state.brightness = replace(stored_params)
-                self.update_brightness_status()
-        except Exception:
-            pass
+        stored_params = self.state.brightness_by_dtype[determine_dtype_group(arr)]
+        if stored_params != self.state.brightness:
+            self.state.brightness = replace(stored_params)
+            self.update_brightness_status()
         self.display_image(arr)
         self.image_changed.emit()
         self.update_image_list_menu()
 
         # 非表示でも表示設定 dialog が存在すれば新しい画像に更新する
+        base_arr = img.get("base_array", arr)
+        img_path = img.get("path")
         if self.brightness_dialog is not None:
-            img = self.images[self.state.current_index]
-            arr_for_brightness = img.get("base_array", img.get("array"))
-            img_path = img.get("path", None)
             self.brightness_dialog.update_for_new_image(
-                arr_for_brightness,
+                base_arr,
                 img_path,
                 keep_settings=True,
                 channel_checks=self.channel_checks,
@@ -610,12 +604,8 @@ class ImageViewer(QMainWindow):
             self.image_label.update()
 
         if self._analysis_dialog:
-            img = self.images[self.state.current_index] if self.state.current_index is not None else None
-            if img:
-                arr = img.get("base_array", img.get("array"))
-                img_path = img.get("path")
-                with contextlib.suppress(Exception):
-                    self._analysis_dialog.set_image_and_rect(arr, self.state.roi, img_path)
+            with contextlib.suppress(Exception):
+                self._analysis_dialog.set_image_and_rect(base_arr, self.state.roi, img_path)
 
     def _get_displayed_array(self) -> np.ndarray | None:
         """brightness・channel 合成・colormap を適用した表示用の配列を返す。"""

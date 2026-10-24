@@ -43,7 +43,7 @@ class ImageLabel(RoiManagerMixin, RoiEditorMixin, BaseImageLabel):
         self.paint_roi(painter)
 
     def wheelEvent(self, event: QWheelEvent):
-        if not self.showing or self.viewer.current_index is None:
+        if not self.showing or self.viewer.state.current_index is None:
             event.ignore()
             return
 
@@ -59,7 +59,7 @@ class ImageLabel(RoiManagerMixin, RoiEditorMixin, BaseImageLabel):
             return
 
         # キーボード操作と同様に 2 倍 / 1/2 倍で zoom する
-        current_scale = self.viewer.scale
+        current_scale = self.viewer.state.scale
         new_scale = current_scale * ZOOM_STEP if angle_delta > 0 else current_scale / ZOOM_STEP
 
         new_scale = max(MIN_ZOOM_SCALE, min(MAX_ZOOM_SCALE, new_scale))

@@ -94,13 +94,13 @@ class ROIInfoWidget(QGroupBox):
         # プログラムからの更新は無視する
         if self._updating:
             return
-        if self.viewer.current_index is None:
+        if self.viewer.state.current_index is None:
             return
 
-        img = self.viewer.images[self.viewer.current_index]["array"]
+        img = self.viewer.images[self.viewer.state.current_index]["array"]
         img_h, img_w = img.shape[:2]
 
-        current_rect = self.viewer.current_roi_rect
+        current_rect = self.viewer.state.roi
         if current_rect is None:
             return
 
@@ -162,17 +162,17 @@ class ROIInfoWidget(QGroupBox):
         # setMaximum/setValue の clamp による valueChanged の連鎖を防ぐ
         self._updating = True
         try:
-            if self.viewer.current_index is None or not self.viewer.images:
+            if self.viewer.state.current_index is None or not self.viewer.images:
                 for spin_box in self.spin_boxes.values():
                     spin_box.setValue(0)
                 self.table.setItem(6, 1, QTableWidgetItem(""))
                 self.table.setItem(7, 1, QTableWidgetItem(""))
                 return
 
-            img = self.viewer.images[self.viewer.current_index]["array"]
+            img = self.viewer.images[self.viewer.state.current_index]["array"]
             img_h, img_w = img.shape[:2]
 
-            current_rect = self.viewer.current_roi_rect
+            current_rect = self.viewer.state.roi
             if current_rect is None or current_rect.isNull():
                 for spin_box in self.spin_boxes.values():
                     spin_box.setValue(0)

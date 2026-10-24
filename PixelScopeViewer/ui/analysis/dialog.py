@@ -568,8 +568,8 @@ class AnalysisDialog(QDialog):
             QMessageBox.information(self, "Copy", "No histogram stats to copy.")
             return
         imgs = self.viewer.images
-        current_id = self.viewer.current_index
-        x, y, w, h = self.viewer.current_roi_rect.getRect()
+        current_id = self.viewer.state.current_index
+        x, y, w, h = self.viewer.state.roi.getRect()
         text = "path,ch,x_sta,y_sta,width,hight,mean,std,median,min,max,fano\n"
 
         targets = imgs if self.hist_get_all_plane_data.isChecked() else [imgs[current_id]]
@@ -598,8 +598,8 @@ class AnalysisDialog(QDialog):
             QMessageBox.information(self, "Copy", "No profile stats to copy.")
             return
         imgs = self.viewer.images
-        current_id = self.viewer.current_index
-        x, y, w, h = self.viewer.current_roi_rect.getRect()
+        current_id = self.viewer.state.current_index
+        x, y, w, h = self.viewer.state.roi.getRect()
         orientation = self.profile_orientation
         method = self.profile_compute_method
         text = "path,ch,x_sta,y_sta,width,hight,orientation,method,mean,std,median,min,max,fano\n"

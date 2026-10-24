@@ -65,12 +65,16 @@ def create_menus(viewer):
 
     viewer.zoom_in_action = QAction("拡大", viewer, shortcut="+")
     viewer.zoom_in_action.setShortcutContext(Qt.WindowShortcut)
-    viewer.zoom_in_action.triggered.connect(lambda: viewer.set_zoom(min(viewer.scale * ZOOM_STEP, MAX_ZOOM_SCALE)))
+    viewer.zoom_in_action.triggered.connect(
+        lambda: viewer.set_zoom(min(viewer.state.scale * ZOOM_STEP, MAX_ZOOM_SCALE))
+    )
     viewer.addAction(viewer.zoom_in_action)
 
     viewer.zoom_out_action = QAction("縮小", viewer, shortcut="-")
     viewer.zoom_out_action.setShortcutContext(Qt.WindowShortcut)
-    viewer.zoom_out_action.triggered.connect(lambda: viewer.set_zoom(max(viewer.scale / ZOOM_STEP, MIN_ZOOM_SCALE)))
+    viewer.zoom_out_action.triggered.connect(
+        lambda: viewer.set_zoom(max(viewer.state.scale / ZOOM_STEP, MIN_ZOOM_SCALE))
+    )
     viewer.addAction(viewer.zoom_out_action)
 
     # 画像 menu は画像移動の action を使うため、それらの作成後に作る

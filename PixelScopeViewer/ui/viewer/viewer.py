@@ -2,6 +2,7 @@
 
 import contextlib
 from collections.abc import Iterable
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -31,7 +32,7 @@ from PySide6.QtWidgets import (
 )
 
 from PixelScopeViewer.core.colormap import apply_jet_colormap, flow_to_hsv_rgb
-from PixelScopeViewer.core.constants import STANDARD_IMAGE_EXTENSIONS, get_dtype_defaults
+from PixelScopeViewer.core.constants import STANDARD_IMAGE_EXTENSIONS
 from PixelScopeViewer.core.image_io import ImageLoaderRegistry, is_image_file, load_image
 from PixelScopeViewer.ui.analysis import AnalysisDialog
 from PixelScopeViewer.ui.annotations import AnnotationsDialog
@@ -44,6 +45,7 @@ from PixelScopeViewer.ui.tiling import TilingDialog
 from PixelScopeViewer.ui.viewer.brightness_manager import BrightnessManager
 from PixelScopeViewer.ui.viewer.help_dialog import HelpDialog
 from PixelScopeViewer.ui.viewer.menu_builder import create_menus
+from PixelScopeViewer.ui.viewer.state import ViewerState
 from PixelScopeViewer.ui.viewer.status_updater import StatusUpdater
 from PixelScopeViewer.ui.viewer.widgets import DisplayInfoWidget, ImageLabel, NavigatorWidget, ROIInfoWidget
 from PixelScopeViewer.ui.viewer.zoom_manager import ZoomManager
@@ -69,24 +71,13 @@ class ImageViewer(QMainWindow):
         self.setMouseTracking(True)
 
         self.images = []
-        self.current_index = None
-        self.scale = 1.0
+        self.state = ViewerState()
 
         # window 状態（最小化など）を同期する子 dialog
         self._child_dialogs = []
 
-        # fit zoom の切り替え状態
-        self.fit_zoom_scale = None
-        self.original_zoom_scale = 1.0
-        self.original_center_coords = None
-
         # zoom の中心に使うマウス位置（画像座標）
         self.current_mouse_image_coords = None
-
-        initial = get_dtype_defaults("uint8")
-        self.brightness_offset = initial["initial_offset"]
-        self.brightness_gain = initial["initial_gain"]
-        self.brightness_upper_level = initial["initial_upper_level"]
 
         # brightness 調整後の表示用配列の cache
         self._cached_display_array = None
@@ -95,8 +86,6 @@ class ImageViewer(QMainWindow):
         central = QWidget(self)
         self.setCentralWidget(central)
         h_layout = QHBoxLayout(central)
-
-        self.current_roi_rect: QRect | None = None
 
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
@@ -177,9 +166,9 @@ class ImageViewer(QMainWindow):
 
     # channel の表示設定（channel_display から表示中の画像の channel 数に対応する値を読む）
     def _current_n_channels(self) -> int:
-        if self.current_index is None:
+        if self.state.current_index is None:
             return 0
-        arr = self.images[self.current_index]["array"]
+        arr = self.images[self.state.current_index]["array"]
         return arr.shape[2] if arr.ndim >= 3 else 0
 
     @property
@@ -193,8 +182,8 @@ class ImageViewer(QMainWindow):
     def _on_channel_display_changed(self, *_):
         self._cached_display_array = None
         self._cached_display_params = None
-        if self.current_index is not None:
-            self.display_image(self.images[self.current_index]["array"])
+        if self.state.current_index is not None:
+            self.display_image(self.images[self.state.current_index]["array"])
 
     # zoom_manager への委譲
     def set_zoom(self, scale: float):
@@ -245,7 +234,7 @@ class ImageViewer(QMainWindow):
         # QAction.triggered(bool) から渡される bool は無視する
         if isinstance(tab, bool):
             tab = None
-        if self.current_index is None:
+        if self.state.current_index is None:
             QMessageBox.information(self, "解析", "画像が選択されていません。")
             return
 
@@ -260,9 +249,9 @@ class ImageViewer(QMainWindow):
                     self._analysis_dialog.set_current_tab(tab)
             return
 
-        img = self.images[self.current_index]
+        img = self.images[self.state.current_index]
         arr = img.get("base_array", img.get("array"))
-        sel = self.current_roi_rect
+        sel = self.state.roi
         img_path = img.get("path")
         dlg = AnalysisDialog(
             self, image_array=arr, image_rect=sel, image_path=img_path, channel_display=self.channel_display
@@ -482,10 +471,10 @@ class ImageViewer(QMainWindow):
         """追加した画像の先頭を表示し、画像 menu を更新する。"""
         if new_count <= 0:
             return
-        if self.current_index is None:
-            self.current_index = 0
+        if self.state.current_index is None:
+            self.state.current_index = 0
         else:
-            self.current_index = len(self.images) - new_count
+            self.state.current_index = len(self.images) - new_count
         self.show_current_image()
         self.update_image_list_menu()
 
@@ -533,7 +522,7 @@ class ImageViewer(QMainWindow):
             act = QAction(info["path"], self)
             act.setCheckable(True)
             # triggered が発火しないよう、connect の前に check 状態と icon を設定する
-            if i == self.current_index:
+            if i == self.state.current_index:
                 act.setChecked(True)
                 pix = QPixmap(12, 12)
                 pix.fill(Qt.transparent)
@@ -550,7 +539,7 @@ class ImageViewer(QMainWindow):
         """idx 番目の画像を表示する callback を返す。"""
 
         def fn(checked=None):
-            self.current_index = idx
+            self.state.current_index = idx
             if 0 <= idx < len(self.images):
                 self.show_current_image()
             else:
@@ -561,29 +550,28 @@ class ImageViewer(QMainWindow):
 
     def show_current_image(self):
         """current_index の画像を表示し、関連する widget と dialog を更新する。"""
-        if self.current_index is None or not self.images:
+        if self.state.current_index is None or not self.images:
             self.image_label.clear()
             self.update_status()
             return
 
         # 画像を切り替えたら fit zoom の状態と表示 cache を破棄する
-        self.fit_zoom_scale = None
-        self.original_zoom_scale = 1.0
-        self.original_center_coords = None
+        self.state.fit_zoom_scale = None
+        self.state.original_zoom_scale = 1.0
+        self.state.original_center_coords = None
 
         self._cached_display_array = None
         self._cached_display_params = None
 
-        img = self.images[self.current_index]
+        img = self.images[self.state.current_index]
         arr = img["array"]
         # dtype が切り替わった場合のみ、その dtype で保存した brightness を読み込む
         try:
             dtype_key = self.brightness_manager._dtype_key(arr.dtype)
-            stored_params = self.brightness_manager._params_by_dtype.get(dtype_key)
-            current_params = (self.brightness_offset, self.brightness_gain, self.brightness_upper_level)
+            stored_params = self.state.brightness_by_dtype.get(dtype_key)
 
-            if stored_params and stored_params != current_params:
-                self.brightness_offset, self.brightness_gain, self.brightness_upper_level = stored_params
+            if stored_params and stored_params != self.state.brightness:
+                self.state.brightness = replace(stored_params)
                 self.update_brightness_status()
         except Exception:
             pass
@@ -593,7 +581,7 @@ class ImageViewer(QMainWindow):
 
         # 非表示でも表示設定 dialog が存在すれば新しい画像に更新する
         if self.brightness_dialog is not None:
-            img = self.images[self.current_index]
+            img = self.images[self.state.current_index]
             arr_for_brightness = img.get("base_array", img.get("array"))
             img_path = img.get("path", None)
             self.brightness_dialog.update_for_new_image(
@@ -607,47 +595,47 @@ class ImageViewer(QMainWindow):
             )
 
         try:
-            img = self.images[self.current_index]
+            img = self.images[self.state.current_index]
             arr_for_analysis = img.get("base_array", img.get("array"))
             img_path = img.get("path", None)
             if self._analysis_dialog:
                 with contextlib.suppress(Exception):
-                    self._analysis_dialog.set_image_and_rect(arr_for_analysis, self.current_roi_rect, img_path)
+                    self._analysis_dialog.set_image_and_rect(arr_for_analysis, self.state.roi, img_path)
         except Exception:
             pass
 
-        if self.current_roi_rect:
-            s = self.scale
+        if self.state.roi:
+            s = self.state.scale
             rect = QRect(
-                int(self.current_roi_rect.x() * s),
-                int(self.current_roi_rect.y() * s),
-                int(self.current_roi_rect.width() * s),
-                int(self.current_roi_rect.height() * s),
+                int(self.state.roi.x() * s),
+                int(self.state.roi.y() * s),
+                int(self.state.roi.width() * s),
+                int(self.state.roi.height() * s),
             )
             self.image_label.roi_rect = rect
             self.image_label.update()
 
         if self._analysis_dialog:
-            img = self.images[self.current_index] if self.current_index is not None else None
+            img = self.images[self.state.current_index] if self.state.current_index is not None else None
             if img:
                 arr = img.get("base_array", img.get("array"))
                 img_path = img.get("path")
                 with contextlib.suppress(Exception):
-                    self._analysis_dialog.set_image_and_rect(arr, self.current_roi_rect, img_path)
+                    self._analysis_dialog.set_image_and_rect(arr, self.state.roi, img_path)
 
     def _get_displayed_array(self) -> np.ndarray | None:
         """brightness・channel 合成・colormap を適用した表示用の配列を返す。"""
-        if self.current_index is None:
+        if self.state.current_index is None:
             return None
 
-        arr = self.images[self.current_index]["array"]
+        arr = self.images[self.state.current_index]["array"]
 
         # 表示に影響する parameter をすべて cache の key にする
         cache_key = (
-            self.current_index,
-            self.brightness_offset,
-            self.brightness_gain,
-            self.brightness_upper_level,
+            self.state.current_index,
+            self.state.brightness.offset,
+            self.state.brightness.gain,
+            self.state.brightness.upper_level,
             tuple(self.channel_checks) if self.channel_checks else None,
             tuple(c.name() for c in self.channel_colors) if self.channel_colors else None,
             self.channel_display.mode_1ch,
@@ -680,9 +668,9 @@ class ImageViewer(QMainWindow):
         apply_adjust = False
         if (
             np.issubdtype(arr.dtype, np.floating)
-            or self.brightness_offset != 0
-            or self.brightness_gain != 1.0
-            or self.brightness_upper_level != 255
+            or self.state.brightness.offset != 0
+            or self.state.brightness.gain != 1.0
+            or self.state.brightness.upper_level != 255
         ):
             apply_adjust = True
 
@@ -729,37 +717,37 @@ class ImageViewer(QMainWindow):
             processed_arr = arr
 
         qimg = numpy_to_qimage(processed_arr)
-        self.image_label.set_image(qimg, self.scale)
+        self.image_label.set_image(qimg, self.state.scale)
         self.update_status()
 
     def next_image(self):
         if not self.images:
             return
-        self.current_index = (self.current_index + 1) % len(self.images)
+        self.state.current_index = (self.state.current_index + 1) % len(self.images)
         self.show_current_image()
 
     def prev_image(self):
         if not self.images:
             return
-        self.current_index = (self.current_index - 1) % len(self.images)
+        self.state.current_index = (self.state.current_index - 1) % len(self.images)
         self.show_current_image()
 
     def close_current_image(self):
         """表示中の画像を閉じる。"""
-        if self.current_index is None:
+        if self.state.current_index is None:
             return
         # memory を解放するため配列を明示的に削除する
-        img_data = self.images[self.current_index]
+        img_data = self.images[self.state.current_index]
         if "array" in img_data:
             del img_data["array"]
         if "base_array" in img_data:
             del img_data["base_array"]
-        del self.images[self.current_index]
+        del self.images[self.state.current_index]
         if not self.images:
-            self.current_index = None
+            self.state.current_index = None
             self.image_label.clear()
         else:
-            self.current_index = min(self.current_index, len(self.images) - 1)
+            self.state.current_index = min(self.state.current_index, len(self.images) - 1)
         self.show_current_image()
 
     def close_all_images(self):
@@ -771,7 +759,7 @@ class ImageViewer(QMainWindow):
             if "base_array" in img_data:
                 del img_data["base_array"]
         self.images.clear()
-        self.current_index = None
+        self.state.current_index = None
         self.image_label.clear()
         with contextlib.suppress(Exception):
             self.show_current_image()
@@ -820,7 +808,7 @@ class ImageViewer(QMainWindow):
             "thumbnail_pixmap": thumb_pixmap,
         }
         self.images.append(img_data)
-        self.current_index = len(self.images) - 1
+        self.state.current_index = len(self.images) - 1
         self.show_current_image()
 
     def show_tiling_comparison_dialog(self):
@@ -840,7 +828,7 @@ class ImageViewer(QMainWindow):
     # ROI 操作
     def select_all(self):
         """画像全体を ROI にする。"""
-        if self.current_index is None or not self.images:
+        if self.state.current_index is None or not self.images:
             return
         self.image_label.set_roi_full()
         if self.image_label.roi_rect:
@@ -848,8 +836,8 @@ class ImageViewer(QMainWindow):
 
     def on_roi_changed(self, rect: QRect):
         """widget 座標の ROI を画像座標に変換して保存し、関連する widget と dialog に通知する。"""
-        s = self.scale
-        self.current_roi_rect = QRect(
+        s = self.state.scale
+        self.state.roi = QRect(
             int(rect.x() / s),
             int(rect.y() / s),
             int(rect.width() / s),
@@ -857,18 +845,18 @@ class ImageViewer(QMainWindow):
         )
         self.status_updater.update_roi_status()
         if self._analysis_dialog:
-            img = self.images[self.current_index] if self.current_index is not None else None
+            img = self.images[self.state.current_index] if self.state.current_index is not None else None
             if img:
                 arr = img.get("base_array", img.get("array"))
                 img_path = img.get("path")
                 with contextlib.suppress(Exception):
-                    self._analysis_dialog.set_image_and_rect(arr, self.current_roi_rect, img_path)
+                    self._analysis_dialog.set_image_and_rect(arr, self.state.roi, img_path)
 
         self.roi_changed.emit()
 
     def copy_roi_to_clipboard(self):
         """表示中の画像の ROI（ROI がなければ全体）を表示倍率で clipboard にコピーする。"""
-        if self.current_index is None:
+        if self.state.current_index is None:
             QMessageBox.information(self, "コピー", "画像がありません。")
             return
 
@@ -877,7 +865,7 @@ class ImageViewer(QMainWindow):
             QMessageBox.information(self, "コピー", "表示されている画像データを取得できません。")
             return
 
-        sel = self.current_roi_rect
+        sel = self.state.roi
         if sel and not sel.isEmpty():
             x, y, w, h = sel.x(), sel.y(), sel.width(), sel.height()
             h_arr, w_arr = displayed_arr.shape[:2]
@@ -892,8 +880,8 @@ class ImageViewer(QMainWindow):
         if qimg and not qimg.isNull():
             # viewer の表示倍率に nearest neighbor で拡大縮小する
             scaled_qimg = qimg.scaled(
-                int(qimg.width() * self.scale),
-                int(qimg.height() * self.scale),
+                int(qimg.width() * self.state.scale),
+                int(qimg.height() * self.state.scale),
                 Qt.KeepAspectRatio,
                 Qt.FastTransformation,
             )
@@ -907,8 +895,8 @@ class ImageViewer(QMainWindow):
         widget 座標を経由しないため、zoom 中でも丸め誤差なく反映される。
         """
         try:
-            self.current_roi_rect = rect_img
-            s = self.scale if hasattr(self, "scale") else 1.0
+            self.state.roi = rect_img
+            s = self.state.scale
             rect_label = QRect(
                 int(rect_img.x() * s),
                 int(rect_img.y() * s),
@@ -919,12 +907,12 @@ class ImageViewer(QMainWindow):
             self.image_label.update()
 
             if self._analysis_dialog:
-                img = self.images[self.current_index] if self.current_index is not None else None
+                img = self.images[self.state.current_index] if self.state.current_index is not None else None
                 if img:
                     arr = img.get("base_array", img.get("array"))
                     img_path = img.get("path")
                     with contextlib.suppress(Exception):
-                        self._analysis_dialog.set_image_and_rect(arr, self.current_roi_rect, img_path)
+                        self._analysis_dialog.set_image_and_rect(arr, self.state.roi, img_path)
             self.roi_changed.emit()
         except Exception:
             self.roi_changed.emit()

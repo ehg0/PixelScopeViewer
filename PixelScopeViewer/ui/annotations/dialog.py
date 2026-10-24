@@ -387,7 +387,7 @@ class AnnotationsDialog(QDialog):
             match_idx = None
 
         if match_idx is not None:
-            self.viewer.current_index = match_idx
+            self.viewer.state.current_index = match_idx
             self.viewer.show_current_image()
             return
 

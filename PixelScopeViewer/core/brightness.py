@@ -1,8 +1,25 @@
 """brightness の計算と dtype ごとの初期設定（Qt 非依存）。"""
 
+from dataclasses import dataclass
+
 import numpy as np
 
 from PixelScopeViewer.core.constants import get_dtype_defaults
+
+
+@dataclass
+class BrightnessParams:
+    """brightness の offset・gain・upper level。"""
+
+    offset: float
+    gain: float
+    upper_level: float
+
+    @classmethod
+    def for_dtype(cls, dtype_key: str) -> "BrightnessParams":
+        """dtype の初期設定から作る。"""
+        d = get_dtype_defaults(dtype_key)
+        return cls(d["initial_offset"], d["initial_gain"], d["initial_upper_level"])
 
 
 def apply_brightness_adjustment(arr: np.ndarray, offset: float, gain: float, upper_level: float) -> np.ndarray:

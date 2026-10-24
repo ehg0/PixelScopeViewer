@@ -6,7 +6,7 @@ import numpy as np
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QVBoxLayout, QWidget
 
-from PixelScopeViewer.core.brightness import determine_dtype_defaults
+from PixelScopeViewer.core.brightness import BrightnessParams, determine_dtype_defaults
 from PixelScopeViewer.core.constants import get_dtype_defaults
 from PixelScopeViewer.ui.display.tabs.logic import clamp_value, round_to_power_of_2
 from PixelScopeViewer.ui.display.tabs.logic.brightness_builder import BrightnessUIBuilder
@@ -291,10 +291,9 @@ class BrightnessTab(QWidget):
             dialog = self.parent()
             if dialog and hasattr(dialog, "parent") and callable(dialog.parent):
                 viewer = dialog.parent()
-                if viewer and hasattr(viewer, "brightness_manager"):
-                    mgr = viewer.brightness_manager
+                if viewer and hasattr(viewer, "state"):
                     offset, gain, upper_level = self.dtype_params.get(self.current_dtype, (0, 1.0, 255))
-                    mgr._params_by_dtype[self.current_dtype] = (offset, gain, upper_level)
+                    viewer.state.brightness_by_dtype[self.current_dtype] = BrightnessParams(offset, gain, upper_level)
         except Exception:
             pass
 
@@ -436,8 +435,8 @@ class BrightnessTab(QWidget):
 
     def _get_roi(self):
         """親の ROI を (x, y, w, h) で返す。ROI がない場合は None。"""
-        if self.viewer and hasattr(self.viewer, "current_roi_rect"):
-            r = self.viewer.current_roi_rect
+        if self.viewer and hasattr(self.viewer, "state"):
+            r = self.viewer.state.roi
             if r and not r.isEmpty():
                 return r.x(), r.y(), r.width(), r.height()
             return None

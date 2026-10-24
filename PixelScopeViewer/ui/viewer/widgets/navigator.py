@@ -79,7 +79,7 @@ class NavigatorWidget(QGroupBox):
         pixmap_y = mouse_pos.y() - y_offset
 
         # 画像座標に変換する
-        img = self.viewer.images[self.viewer.current_index]["array"]
+        img = self.viewer.images[self.viewer.state.current_index]["array"]
         h, w = img.shape[:2]
         scale_factor = min(thumb_width / w, thumb_height / h)
 
@@ -90,8 +90,8 @@ class NavigatorWidget(QGroupBox):
         viewport_height = self.viewer.scroll_area.viewport().height()
 
         # クリック位置が viewport の中心になる scroll 位置を求める
-        widget_click_x = img_x * self.viewer.scale
-        widget_click_y = img_y * self.viewer.scale
+        widget_click_x = img_x * self.viewer.state.scale
+        widget_click_y = img_y * self.viewer.state.scale
 
         h_scroll = widget_click_x - viewport_width / 2
         v_scroll = widget_click_y - viewport_height / 2
@@ -107,12 +107,12 @@ class NavigatorWidget(QGroupBox):
 
     def update_thumbnail(self):
         """thumbnail と表示領域の枠を更新する。"""
-        if self.viewer.current_index is None or not self.viewer.images:
+        if self.viewer.state.current_index is None or not self.viewer.images:
             self.thumbnail_label.clear()
             self.thumb_rect = None
             return
 
-        img_data = self.viewer.images[self.viewer.current_index]
+        img_data = self.viewer.images[self.viewer.state.current_index]
         h, w = img_data["array"].shape[:2]
 
         base_pixmap = img_data.get("thumbnail_pixmap")
@@ -135,10 +135,10 @@ class NavigatorWidget(QGroupBox):
         v_scroll = scroll_area.verticalScrollBar().value()
 
         # 表示領域を画像座標 → thumbnail 座標に変換する
-        img_x = h_scroll / self.viewer.scale
-        img_y = v_scroll / self.viewer.scale
-        img_w = viewport_width / self.viewer.scale
-        img_h = viewport_height / self.viewer.scale
+        img_x = h_scroll / self.viewer.state.scale
+        img_y = v_scroll / self.viewer.state.scale
+        img_w = viewport_width / self.viewer.state.scale
+        img_h = viewport_height / self.viewer.state.scale
 
         thumb_x = int(img_x * scale_factor)
         thumb_y = int(img_y * scale_factor)

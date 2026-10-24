@@ -76,7 +76,7 @@ class DisplayInfoWidget(QGroupBox):
 
     def update_info(self):
         """表示領域の情報を更新する。"""
-        if self.viewer.current_index is None or not self.viewer.images:
+        if self.viewer.state.current_index is None or not self.viewer.images:
             for i in range(8):
                 self.table.setItem(i, 1, QTableWidgetItem(""))
             return
@@ -88,13 +88,13 @@ class DisplayInfoWidget(QGroupBox):
         v_scroll = scroll_area.verticalScrollBar().value()
 
         # 画像座標に変換する
-        scale = self.viewer.scale
+        scale = self.viewer.state.scale
         x_start = int(h_scroll / scale)
         y_start = int(v_scroll / scale)
         x_end = int((h_scroll + viewport_width) / scale)
         y_end = int((v_scroll + viewport_height) / scale)
 
-        img = self.viewer.images[self.viewer.current_index]["array"]
+        img = self.viewer.images[self.viewer.state.current_index]["array"]
         img_h, img_w = img.shape[:2]
         x_end = min(x_end, img_w - 1)
         y_end = min(y_end, img_h - 1)

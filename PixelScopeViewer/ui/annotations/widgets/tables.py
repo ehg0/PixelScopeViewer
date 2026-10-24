@@ -159,9 +159,9 @@ class ImageAnnotationsTableModel(QAbstractTableModel):
                     loaded.add(str(p))
                 except Exception:
                     continue
-            if getattr(self.viewer, "current_index", None) is not None:
+            if getattr(self.viewer, "state", None) is not None and self.viewer.state.current_index is not None:
                 try:
-                    ci = self.viewer.current_index
+                    ci = self.viewer.state.current_index
                     cur = imgs[ci] if 0 <= ci < len(imgs) else None
                     if cur:
                         cur_path = str(Path(cur.get("path", "")).resolve())

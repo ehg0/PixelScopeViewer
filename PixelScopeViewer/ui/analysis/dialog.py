@@ -22,10 +22,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from PixelScopeViewer.core.export import histogram_csv, metadata_csv, profile_csv, roi_stats_csv
 from PixelScopeViewer.core.image_io import get_image_metadata
 from PixelScopeViewer.core.statistics import (
-    calc_stats,
-    compute_profile_1d,
     crop_roi,
     determine_hist_bins,
     ecdf_series,
@@ -35,7 +34,6 @@ from PixelScopeViewer.core.statistics import (
     profile_series,
     profile_stats,
 )
-from PixelScopeViewer.ui.analysis.exporting import series_to_csv
 from PixelScopeViewer.ui.analysis.plotting import apply_plot_settings as pg_apply_plot_settings
 from PixelScopeViewer.ui.analysis.plotting import connect_plot_controls as pg_connect_plot_controls
 from PixelScopeViewer.ui.analysis.plotting import save_viewbox_state as pg_save_viewbox_state
@@ -411,118 +409,35 @@ class AnalysisDialog(QDialog):
         if not self.last_metadata:
             QMessageBox.information(self, "Copy", "No metadata to copy.")
             return
-
-        lines = ["Key,Value"]
-        for key, value in self.last_metadata:
-            lines.append(f"{key},{value}")
-
-        text = "\n".join(lines)
-        QGuiApplication.clipboard().setText(text)
+        QGuiApplication.clipboard().setText(metadata_csv(self.last_metadata))
 
     def copy_histogram_to_clipboard(self):
         """histogram（または ECDF）のデータを CSV で clipboard にコピーする。"""
         if not self.last_hist_data:
             QMessageBox.information(self, "Copy", "No data.")
             return
-
-        keys = list(self.last_hist_data.keys())
-
-        # 先頭の系列の x（bin の中心）を共通の x 軸として使う
-        xs = np.array(self.last_hist_data[keys[0]][0]).flatten()
-
-        if self.settings.hist_mode == "Histogram":
-            # bin 幅から各 bin の開始・終了位置を求める
-            bin_width = np.diff(xs)[0] if len(xs) > 1 else 1.0
-            bin_starts = xs - (bin_width / 2)
-            bin_ends = xs + (bin_width / 2)
-
-            csv_data = {"bin_start": bin_starts, "bin_end": bin_ends, "bin_center": xs}
-            cast_int_keys = keys  # 度数は int で出力する
-
-        elif self.settings.hist_mode == "ECDF":
-            csv_data = {"value": xs}
-            cast_int_keys = None
-
-        # 各系列の y を列として追加する
-        for k in keys:
-            csv_data[k] = np.array(self.last_hist_data[k][1]).flatten()
-
-        text = series_to_csv(csv_data, cast_int_keys=cast_int_keys)
-        QGuiApplication.clipboard().setText(text)
+        QGuiApplication.clipboard().setText(histogram_csv(self.last_hist_data, self.settings.hist_mode))
 
     def copy_profile_to_clipboard(self):
         """profile のデータを CSV で clipboard にコピーする。"""
         if not self.last_profile_data:
             QMessageBox.information(self, "Copy", "No data.")
             return
-
-        keys = list(self.last_profile_data.keys())
-        xs = self.last_profile_data[keys[0]][0]
-
-        csv_data = {"x address": xs} if self.settings.profile_orientation == "h" else {"y address": xs}
-
-        for k in keys:
-            csv_data[k] = self.last_profile_data[k][1]
-
-        text = series_to_csv(csv_data)
-        QGuiApplication.clipboard().setText(text)
+        QGuiApplication.clipboard().setText(profile_csv(self.last_profile_data, self.settings.profile_orientation))
 
     def copy_hist_stats_to_clipboard(self):
-        """ROI の統計量を CSV で clipboard にコピーする。"Target: All plane" の場合は全画像を対象にする。"""
-        imgs = self.viewer.images
-        current_id = self.viewer.state.current_index
-        x, y, w, h = self.viewer.state.roi.getRect()
-        text = "path,ch,x_sta,y_sta,width,hight,mean,std,median,min,max,fano\n"
-
-        targets = imgs if self.hist_tab.get_all_plane_data.isChecked() else [imgs[current_id]]
-
-        for img in targets:
-            path = img.get("path")
-            arr = img.get("base_array")
-            height, width = arr.shape[:2]
-            # ROI が画像の範囲外の場合は skip する
-            if x > width or (x + w) > width or y > height or (y + h) > height:
-                continue
-
-            if arr.ndim == 2:
-                arr = arr[:, :, np.newaxis]
-
-            for ch in range(arr.shape[2]):
-                data = arr[:, :, ch]
-                data_roi = data[y : y + h, x : x + w]
-                mean, std, median, min, max, fano = calc_stats(data_roi)
-                text += f"{path},{ch},{x},{y},{w},{h},{mean},{std},{median},{min},{max},{fano}\n"
-        QGuiApplication.clipboard().setText(text)
+        self._copy_roi_stats(self.hist_tab, None)
 
     def copy_prof_stats_to_clipboard(self):
-        """ROI の profile の統計量を CSV で clipboard にコピーする。"Target: All plane" の場合は全画像を対象にする。"""
+        self._copy_roi_stats(self.profile_tab, (self.settings.profile_orientation, self.settings.profile_method))
+
+    def _copy_roi_stats(self, tab, profile: tuple[str, str] | None):
+        """ROI の統計量を CSV で clipboard にコピーする。"Target: All plane" の場合は全画像を対象にする。"""
         imgs = self.viewer.images
-        current_id = self.viewer.state.current_index
-        x, y, w, h = self.viewer.state.roi.getRect()
-        orientation = self.settings.profile_orientation
-        method = self.settings.profile_method
-        text = "path,ch,x_sta,y_sta,width,hight,orientation,method,mean,std,median,min,max,fano\n"
-
-        targets = imgs if self.profile_tab.get_all_plane_data.isChecked() else [imgs[current_id]]
-
-        for img in targets:
-            path = img.get("path")
-            arr = img.get("base_array")
-            height, width = arr.shape[:2]
-            # ROI が画像の範囲外の場合は skip する
-            if x > width or (x + w) > width or y > height or (y + h) > height:
-                continue
-
-            if arr.ndim == 2:
-                arr = arr[:, :, np.newaxis]
-
-            for ch in range(arr.shape[2]):
-                data = arr[:, :, ch]
-                data_roi = data[y : y + h, x : x + w]
-                prof_roi = compute_profile_1d(data_roi, orientation, method)
-                mean, std, median, min, max, fano = calc_stats(prof_roi)
-                text += f"{path},{ch},{x},{y},{w},{h},{orientation},{method},{mean},{std},{median},{min},{max},{fano}\n"
-        QGuiApplication.clipboard().setText(text)
+        if not tab.get_all_plane_data.isChecked():
+            imgs = [imgs[self.viewer.state.current_index]]
+        images = [(img["path"], img["base_array"]) for img in imgs]
+        QGuiApplication.clipboard().setText(roi_stats_csv(images, self.viewer.state.roi.getRect(), profile))
 
     def _on_prof_orientation_toggle(self):
         if self.settings.profile_orientation == "h":

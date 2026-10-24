@@ -4,6 +4,8 @@ from pathlib import Path
 
 import numpy as np
 
+from PixelScopeViewer.core.image_io import format_file_size
+
 
 class StatusUpdater:
     """ImageViewer の状態を status bar と title bar に表示する。"""
@@ -88,18 +90,9 @@ class StatusUpdater:
         else:
             h, w, c = arr.shape[:3]
 
-        file_size_str = ""
         try:
-            file_size = Path(p).stat().st_size
-            if file_size < 1024:
-                file_size_str = f"{file_size}B"
-            elif file_size < 1024 * 1024:
-                file_size_str = f"{file_size / 1024:.1f}KB"
-            elif file_size < 1024 * 1024 * 1024:
-                file_size_str = f"{file_size / (1024 * 1024):.1f}MB"
-            else:
-                file_size_str = f"{file_size / (1024 * 1024 * 1024):.2f}GB"
-        except Exception:
+            file_size_str = format_file_size(Path(p).stat().st_size, sep="")
+        except OSError:
             file_size_str = ""
 
         size_part = f" ({file_size_str})" if file_size_str else ""

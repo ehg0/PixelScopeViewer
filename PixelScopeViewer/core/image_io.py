@@ -182,6 +182,17 @@ def is_image_file(path: str | Path) -> bool:
     return ext in custom_exts
 
 
+def format_file_size(size: int, sep: str = " ") -> str:
+    """byte 数を B / KB / MB / GB の表記にする。sep は数値と単位の間の文字列。"""
+    if size < 1024:
+        return f"{size}{sep}B"
+    if size < 1024**2:
+        return f"{size / 1024:.1f}{sep}KB"
+    if size < 1024**3:
+        return f"{size / 1024**2:.1f}{sep}MB"
+    return f"{size / 1024**3:.2f}{sep}GB"
+
+
 def get_image_metadata(path: str | Path, arr: np.ndarray = None) -> dict:
     """画像の metadata を取得する。
 
@@ -200,16 +211,7 @@ def get_image_metadata(path: str | Path, arr: np.ndarray = None) -> dict:
 
         try:
             metadata["Filepath"] = str(path_obj.resolve())
-            file_size = path_obj.stat().st_size
-            if file_size < 1024:
-                size_str = f"{file_size} B"
-            elif file_size < 1024 * 1024:
-                size_str = f"{file_size / 1024:.1f} KB"
-            elif file_size < 1024 * 1024 * 1024:
-                size_str = f"{file_size / (1024 * 1024):.1f} MB"
-            else:
-                size_str = f"{file_size / (1024 * 1024 * 1024):.2f} GB"
-            metadata["FileSize"] = size_str
+            metadata["FileSize"] = format_file_size(path_obj.stat().st_size)
         except Exception:
             pass
 

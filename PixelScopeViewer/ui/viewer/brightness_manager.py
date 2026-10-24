@@ -8,7 +8,7 @@ from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QMessageBox
 
 from PixelScopeViewer.core.brightness import apply_brightness_adjustment as apply_brightness_core
-from PixelScopeViewer.core.brightness import determine_dtype_defaults
+from PixelScopeViewer.core.brightness import determine_dtype_defaults, determine_dtype_group
 from PixelScopeViewer.core.constants import GAIN_STEP
 from PixelScopeViewer.ui.common.channel_display import (
     MODE_1CH_GRAYSCALE,
@@ -244,26 +244,10 @@ class BrightnessManager:
 
         変換式: gain * (x - offset) / (upper_level - offset) * 255
         """
-        dtype_key = self.viewer.brightness_manager._dtype_key(arr.dtype)
+        dtype_key = determine_dtype_group(arr)
         self.viewer.state.brightness = replace(self.viewer.state.brightness_by_dtype[dtype_key])
         b = self.viewer.state.brightness
         return apply_brightness_core(arr, b.offset, b.gain, b.upper_level)
-
-    # ------------------------ dtype ごとの設定の保存 ------------------------
-    def _dtype_key(self, dtype) -> str:
-        """numpy の dtype を保存用の key（float/uint8/uint16）に変換する。"""
-        try:
-            if np.issubdtype(dtype, np.floating):
-                return "float"
-            if np.issubdtype(dtype, np.integer):
-                try:
-                    max_val = np.iinfo(dtype).max
-                except Exception:
-                    max_val = 255
-                return "uint16" if max_val > 255 else "uint8"
-        except Exception:
-            pass
-        return "uint8"
 
     def _save_current_dtype_params(self) -> None:
         if self.viewer.state.current_index is None:
@@ -271,7 +255,7 @@ class BrightnessManager:
         try:
             img = self.viewer.images[self.viewer.state.current_index]
             arr = img.get("base_array", img.get("array"))
-            key = self._dtype_key(arr.dtype)
+            key = determine_dtype_group(arr)
             self.viewer.state.brightness_by_dtype[key] = replace(self.viewer.state.brightness)
         except Exception:
             pass

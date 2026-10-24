@@ -32,6 +32,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from PixelScopeViewer.core.brightness import determine_dtype_group
 from PixelScopeViewer.core.colormap import apply_jet_colormap, flow_to_hsv_rgb
 from PixelScopeViewer.core.constants import STANDARD_IMAGE_EXTENSIONS
 from PixelScopeViewer.core.image_io import ImageLoaderRegistry, is_image_file, load_image
@@ -569,7 +570,7 @@ class ImageViewer(QMainWindow):
         arr = img["array"]
         # dtype が切り替わった場合のみ、その dtype で保存した brightness を読み込む
         try:
-            dtype_key = self.brightness_manager._dtype_key(arr.dtype)
+            dtype_key = determine_dtype_group(arr)
             stored_params = self.state.brightness_by_dtype.get(dtype_key)
 
             if stored_params and stored_params != self.state.brightness:

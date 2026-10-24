@@ -24,7 +24,15 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from PixelScopeViewer.ui.analysis.tabs.channel_list import ChannelListWidget
 from PixelScopeViewer.ui.common import defaults, theme
+
+
+def _format_stat(value, is_int: bool) -> str:
+    """統計量を表示用の文字列にする。整数 dtype は整数で表示し、NaN（平均 0 の fano など）はそのまま表示する。"""
+    if is_int and np.isfinite(value):
+        return f"{int(value)}"
+    return f"{value:.4f}"
 
 
 class HistogramTab(QWidget):
@@ -56,7 +64,6 @@ class HistogramTab(QWidget):
         self.on_channel_changed = on_channel_changed
         self.on_spinbox_changed = on_spinbox_changed
         self.on_spinbox_bar_alpha_changed = on_spinbox_bar_alpha_changed
-        self.channel_checkboxes: list[QCheckBox] = []
 
         root = QHBoxLayout(self)
 
@@ -143,12 +150,9 @@ class HistogramTab(QWidget):
         scroll_layout.setContentsMargins(2, 2, 2, 2)
         scroll_layout.setSpacing(3)
 
-        for i in range(defaults.MAX_CHANNEL_CHECKBOXES):
-            cb = QCheckBox(f"C{i}")
-            cb.setVisible(False)
-            cb.stateChanged.connect(self._on_checkbox_changed)
-            scroll_layout.addWidget(cb)
-            self.channel_checkboxes.append(cb)
+        self.channel_list = ChannelListWidget()
+        self.channel_list.checks_changed.connect(self._on_checkbox_changed)
+        scroll_layout.addWidget(self.channel_list)
 
         scroll_layout.addStretch()
         scroll.setWidget(scroll_widget)
@@ -209,9 +213,8 @@ class HistogramTab(QWidget):
         right.addStretch(1)
         root.addLayout(right)
 
-    def _on_checkbox_changed(self):
+    def _on_checkbox_changed(self, checks: list[bool]):
         if self.on_channel_changed:
-            checks = [cb.isChecked() for cb in self.channel_checkboxes if cb.isVisible()]
             self.on_channel_changed(checks)
 
     def _on_spinbox_changed(self, value):
@@ -221,37 +224,14 @@ class HistogramTab(QWidget):
         self.on_spinbox_bar_alpha_changed(value)
 
     def update_channel_checkboxes(self, nch: int, checks: list[bool], channel_colors: list | None = None):
-        """channel の checkbox の表示・状態・色を更新する。
+        """channel の行（checkbox・label・色ボタン）を更新する。
 
         Args:
             nch: channel 数。
             checks: checkbox の状態。
             channel_colors: channel ごとの QColor。
         """
-        for i in range(defaults.MAX_CHANNEL_CHECKBOXES):
-            cb = self.channel_checkboxes[i]
-            if i < nch:
-                cb.setVisible(True)
-                # 更新中に signal が再帰的に発火しないようにする
-                cb.blockSignals(True)
-                cb.setChecked(checks[i] if i < len(checks) else True)
-                cb.blockSignals(False)
-                cb.setEnabled(nch > 1)
-
-                # 色見本の icon
-                if channel_colors and i < len(channel_colors):
-                    color = channel_colors[i]
-                    if hasattr(color, "name"):
-                        pix = QPixmap(14, 14)
-                        pix.fill(color)
-                        cb.setIcon(pix)
-                        cb.setIconSize(pix.size())
-                    else:
-                        cb.setIcon(QPixmap())
-                else:
-                    cb.setIcon(QPixmap())
-            else:
-                cb.setVisible(False)
+        self.channel_list.set_channels([f"C{i}" for i in range(nch)], checks, channel_colors or [])
 
     def update_plot(
         self,
@@ -300,9 +280,9 @@ class HistogramTab(QWidget):
             if rgb:
                 return QColor(rgb[0], rgb[1], rgb[2], alpha)
 
-            # 2. Intensity
+            # 2. Intensity（1ch）は channel 0 の色
             if label == "I":
-                qcolor = QColor(theme.PLOT_INTENSITY_COLOR)
+                qcolor = QColor(channel_colors[0]) if channel_colors else QColor(theme.PLOT_INTENSITY_COLOR)
                 qcolor.setAlpha(alpha)
                 return qcolor
 
@@ -328,10 +308,8 @@ class HistogramTab(QWidget):
                     fallback[ch_index] if ch_index is not None and ch_index < len(fallback) else theme.PLOT_MUTED_COLOR
                 )
 
+            # 灰色系を黒にするかは ChannelDisplay.plot_colors で決めているため、そのまま使う
             qcolor = QColor(color_val)
-            # grayscale の色は見やすさのため黒で描画する
-            if qcolor.red() == qcolor.green() == qcolor.blue():
-                qcolor = QColor(theme.PLOT_INTENSITY_COLOR)
             qcolor.setAlpha(alpha)
 
             return qcolor
@@ -444,13 +422,13 @@ class HistogramTab(QWidget):
             mi.setTextAlignment(Qt.AlignCenter)
             si = QTableWidgetItem(f"{r['std']:.4f}")
             si.setTextAlignment(Qt.AlignCenter)
-            mdi = QTableWidgetItem(f"{int(r['median'])}" if r["is_int"] else f"{r['median']:.4f}")
+            mdi = QTableWidgetItem(_format_stat(r["median"], r["is_int"]))
             mdi.setTextAlignment(Qt.AlignCenter)
-            mini = QTableWidgetItem(f"{int(r['min'])}" if r["is_int"] else f"{r['min']:.4f}")
+            mini = QTableWidgetItem(_format_stat(r["min"], r["is_int"]))
             mini.setTextAlignment(Qt.AlignCenter)
-            maxi = QTableWidgetItem(f"{int(r['max'])}" if r["is_int"] else f"{r['max']:.4f}")
+            maxi = QTableWidgetItem(_format_stat(r["max"], r["is_int"]))
             maxi.setTextAlignment(Qt.AlignCenter)
-            fanoi = QTableWidgetItem(f"{int(r['fano'])}" if r["is_int"] else f"{r['fano']:.4f}")
+            fanoi = QTableWidgetItem(_format_stat(r["fano"], r["is_int"]))
             fanoi.setTextAlignment(Qt.AlignCenter)
             self.stats_table.setItem(row_idx, 1, mi)
             self.stats_table.setItem(row_idx, 2, si)

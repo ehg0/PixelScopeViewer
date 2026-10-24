@@ -35,6 +35,14 @@ def get_default_channel_colors(n_channels: int) -> list:
     return colors
 
 
+def to_plot_color(color: QColor) -> QColor:
+    """グラフ用の色に変換する。白背景で見えるよう、RGB 値が同じ色（灰色系）は黒にする。"""
+    c = QColor(color)
+    if c.red() == c.green() == c.blue():
+        return QColor(theme.PLOT_INTENSITY_COLOR)
+    return c
+
+
 MODE_1CH_GRAYSCALE = "grayscale"
 MODE_1CH_JET = "jet"
 
@@ -52,10 +60,13 @@ class ChannelDisplay(QObject):
     colors_changed = Signal(int)  # 変更された channel 数
     checks_changed = Signal(int)
     modes_changed = Signal()
+    plot_colors_changed = Signal(int)
 
     def __init__(self, parent: QObject | None = None):
         super().__init__(parent)
         self._colors_by_n: dict[int, list[str]] = {}
+        # channel 数 → {channel index: hex}。解析 dialog で個別に設定したグラフの色
+        self._plot_overrides: dict[int, dict[int, str]] = {}
         self._checks_by_n: dict[int, list[bool]] = {}
         self.mode_1ch: str = MODE_1CH_GRAYSCALE
         self.mode_2ch: str = MODE_2CH_FLOW_HSV
@@ -75,10 +86,38 @@ class ChannelDisplay(QObject):
             return
         defaults = get_default_channel_colors(n_channels)
         names = [QColor(colors[i] if i < len(colors) else defaults[i]).name() for i in range(n_channels)]
-        if self._colors_by_n.get(n_channels) == names:
+        old = [c.name() for c in self.colors(n_channels)]
+        if old == names:
             return
         self._colors_by_n[n_channels] = names
+        # 後から変えた方を優先するため、表示色が変わった channel の plot 色の個別設定は破棄する
+        overrides = self._plot_overrides.get(n_channels, {})
+        dropped = [i for i in overrides if i < n_channels and old[i] != names[i]]
+        for i in dropped:
+            del overrides[i]
         self.colors_changed.emit(n_channels)
+        if dropped:
+            self.plot_colors_changed.emit(n_channels)
+
+    # ---- histogram・profile の色 ----
+    def plot_colors(self, n_channels: int) -> list[QColor]:
+        """グラフ用の色を返す。個別設定があればそのまま、なければ表示色（灰色系は黒）を返す。"""
+        overrides = self._plot_overrides.get(n_channels, {})
+        return [
+            QColor(overrides[i]) if i in overrides else to_plot_color(c) for i, c in enumerate(self.colors(n_channels))
+        ]
+
+    def set_plot_color(self, n_channels: int, idx: int, color: QColor) -> None:
+        """グラフ用の色を個別に設定する。"""
+        if n_channels <= 0 or not 0 <= idx < n_channels:
+            return
+        self._plot_overrides.setdefault(n_channels, {})[idx] = QColor(color).name()
+        self.plot_colors_changed.emit(n_channels)
+
+    def reset_plot_colors(self, n_channels: int) -> None:
+        """グラフ用の色の個別設定を消し、表示色に戻す。"""
+        if self._plot_overrides.pop(n_channels, None):
+            self.plot_colors_changed.emit(n_channels)
 
     # ---- 表示 ON/OFF ----
     def checks(self, n_channels: int) -> list[bool]:
@@ -114,6 +153,7 @@ class ChannelDisplay(QObject):
         return {
             "colors_by_n": {n: list(c) for n, c in self._colors_by_n.items()},
             "checks_by_n": {n: list(c) for n, c in self._checks_by_n.items()},
+            "plot_overrides": {n: dict(o) for n, o in self._plot_overrides.items()},
             "mode_1ch": self.mode_1ch,
             "mode_2ch": self.mode_2ch,
         }

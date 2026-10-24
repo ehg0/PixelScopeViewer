@@ -6,8 +6,9 @@ from fractions import Fraction
 import numpy as np
 import pyqtgraph as pg
 from PySide6.QtCore import QEvent, QRect, Qt
-from PySide6.QtGui import QColor, QGuiApplication
+from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
+    QColorDialog,
     QDialog,
     QDoubleSpinBox,
     QHBoxLayout,
@@ -41,8 +42,8 @@ from PixelScopeViewer.ui.analysis.state import AnalysisSettings
 from PixelScopeViewer.ui.analysis.tabs.histogram_tab import HistogramTab
 from PixelScopeViewer.ui.analysis.tabs.metadata_tab import MetadataTab
 from PixelScopeViewer.ui.analysis.tabs.profile_tab import ProfileTab
-from PixelScopeViewer.ui.common import defaults, theme
-from PixelScopeViewer.ui.common.channel_display import ChannelDisplay, get_default_channel_colors
+from PixelScopeViewer.ui.common import defaults
+from PixelScopeViewer.ui.common.channel_display import ChannelDisplay
 
 
 class AnalysisDialog(QDialog):
@@ -71,10 +72,12 @@ class AnalysisDialog(QDialog):
         channel_display: ChannelDisplay | None = None,
     ):
         super().__init__(parent)
-        # None の場合（複数画像比較から開いた場合）は既定の色を使う
+        # グラフの色の持ち主。表示色・個別設定のどちらが変わっても再描画する。
+        # None は色を自前で決める複数画像比較の解析 dialog（TilingAnalysisDialog）のみ
         self.channel_display = channel_display
         if channel_display is not None:
             channel_display.colors_changed.connect(self._on_channel_colors_changed)
+            channel_display.plot_colors_changed.connect(self._on_channel_colors_changed)
         self.viewer = parent
         self.update_window_title()
 
@@ -144,6 +147,8 @@ class AnalysisDialog(QDialog):
         self.prof_copy_btn.clicked.connect(self.copy_profile_to_clipboard)
         self.prof_copy_stats_btn.clicked.connect(self.copy_prof_stats_to_clipboard)
         self.tabs.addTab(self.profile_tab, "Profile")
+        self.profile_tab.channel_list.color_clicked.connect(self._on_plot_color_clicked)
+        self.profile_tab.channel_list.reset_requested.connect(self._on_plot_color_reset)
 
         self.hist_tab = HistogramTab(
             on_save_viewbox_state=lambda vb: self._save_viewbox_state(vb, "hist"),
@@ -168,6 +173,8 @@ class AnalysisDialog(QDialog):
         self.hist_copy_btn.clicked.connect(self.copy_histogram_to_clipboard)
         self.hist_copy_stats_btn.clicked.connect(self.copy_hist_stats_to_clipboard)
         self.tabs.addTab(self.hist_tab, "Histogram")
+        self.hist_tab.channel_list.color_clicked.connect(self._on_plot_color_clicked)
+        self.hist_tab.channel_list.reset_requested.connect(self._on_plot_color_reset)
 
         # status bar
         self.status = QStatusBar()
@@ -313,14 +320,10 @@ class AnalysisDialog(QDialog):
         hist_stats = histogram_stats(arr.astype(np.float64), self.settings.channel_checks)
         apply_log = self.settings.plot_settings.get("hist", {}).get("log", False)
         is_integer_type = np.issubdtype(arr.dtype, np.integer)
-        # channel_display がなければ（複数画像比較）既定の色（1ch は黒）を使う
-        if self.channel_display is not None:
-            channel_colors = self.channel_display.colors(arr.shape[2]) if arr.ndim >= 3 else []
-        else:
-            nch_local = int(arr.shape[2]) if arr.ndim == 3 and arr.shape[2] > 1 else 1
-            channel_colors = get_default_channel_colors(nch_local)
-            if nch_local == 1:
-                channel_colors = [QColor(theme.PLOT_INTENSITY_COLOR)]
+        # グラフの色（2 次元画像は 1ch として扱う）
+        n_plot = arr.shape[2] if arr.ndim == 3 else 1
+        self._n_plot = n_plot
+        channel_colors = self.channel_display.plot_colors(n_plot) if self.channel_display else []
 
         try:
             self.hist_tab.update_channel_checkboxes(nch, self.settings.channel_checks, channel_colors)
@@ -328,40 +331,14 @@ class AnalysisDialog(QDialog):
         except Exception:
             pass
 
-        # 統計量 table の色見本用の channel_color_map を作る
+        # 統計量 table の色見本用。番号と C{index} の両方を key にし、1ch は Intensity（I）にも割り当てる
         self.channel_color_map = {}
-        if channel_colors:
-            nch_local = arr.shape[2] if arr.ndim == 3 and arr.shape[2] > 1 else 1
-            for cindex in range(nch_local):
-                if cindex < len(channel_colors):
-                    color = channel_colors[cindex]
-                    try:
-                        r, g, b, _ = color.getRgb()
-                    except Exception:
-                        r, g, b = theme.PLOT_FALLBACK_RGB
-                    # 番号と C{index} の両方を key にする
-                    self.channel_color_map[f"C{cindex}"] = (r, g, b)
-                    self.channel_color_map[str(cindex)] = (r, g, b)
-            # 1ch は常に黒
-            if nch_local == 1:
-                intensity_rgb = QColor(theme.PLOT_INTENSITY_COLOR).getRgb()[:3]
-                self.channel_color_map["I"] = intensity_rgb
-                self.channel_color_map["0"] = intensity_rgb
-                self.channel_color_map["C0"] = intensity_rgb
-        else:
-            # 既定の色
-            default_palette = [QColor(c).getRgb()[:3] for c in theme.PLOT_FALLBACK_CHANNEL_COLORS]
-            nch_local = arr.shape[2] if arr.ndim == 3 and arr.shape[2] > 1 else 1
-            for cindex in range(nch_local):
-                rgb = default_palette[cindex] if cindex < len(default_palette) else theme.PLOT_FALLBACK_RGB
-                self.channel_color_map[f"C{cindex}"] = rgb
-                self.channel_color_map[str(cindex)] = rgb
-            if nch_local == 1:
-                # 1ch は常に黒
-                intensity_rgb = QColor(theme.PLOT_INTENSITY_COLOR).getRgb()[:3]
-                self.channel_color_map["I"] = intensity_rgb
-                self.channel_color_map["0"] = intensity_rgb
-                self.channel_color_map["C0"] = intensity_rgb
+        for cindex, color in enumerate(channel_colors):
+            rgb = color.getRgb()[:3]
+            self.channel_color_map[f"C{cindex}"] = rgb
+            self.channel_color_map[str(cindex)] = rgb
+        if n_plot == 1 and channel_colors:
+            self.channel_color_map["I"] = channel_colors[0].getRgb()[:3]
         self.hist_tab.update_plot(
             visible_hist_series,
             hist_stats,
@@ -483,6 +460,22 @@ class AnalysisDialog(QDialog):
             self.settings.hist_mode = "Histogram"
             self.hist_config_mode_btn.setText("Histogram")
         self.update_contents()
+
+    def _on_plot_color_clicked(self, idx: int):
+        """色選択 dialog で選んだ色を、この channel 数のグラフの色として設定する。"""
+        if self.channel_display is None:
+            return
+        n = getattr(self, "_n_plot", 0)
+        colors = self.channel_display.plot_colors(n)
+        if not 0 <= idx < len(colors):
+            return
+        color = QColorDialog.getColor(colors[idx], self, f"チャンネル {idx} の色を選択")
+        if color.isValid():
+            self.channel_display.set_plot_color(n, idx, color)
+
+    def _on_plot_color_reset(self):
+        if self.channel_display is not None:
+            self.channel_display.reset_plot_colors(getattr(self, "_n_plot", 0))
 
     def _on_channel_colors_changed(self, _n_channels: int):
         with contextlib.suppress(Exception):

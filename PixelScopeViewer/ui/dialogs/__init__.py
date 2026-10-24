@@ -1,4 +1,4 @@
-"""Dialogs package."""
+"""dialog window。"""
 
 from .analysis import AnalysisDialog
 from .diff_dialog import DiffDialog

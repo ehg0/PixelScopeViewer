@@ -1,8 +1,4 @@
-"""Diff dialog for creating difference images.
-
-This module provides a dialog for selecting two images from the
-loaded image list and creating a difference image with configurable offset.
-"""
+"""差分画像の作成 dialog。"""
 
 from PySide6.QtWidgets import (
     QComboBox,
@@ -17,11 +13,7 @@ from PySide6.QtWidgets import (
 
 
 class DiffDialog(QDialog):
-    """Dialog for creating difference images between two images.
-
-    Allows user to select two images from the loaded list and specify
-    an offset value for the difference calculation.
-    """
+    """差分を取る 2 枚の画像と offset を選択する dialog。"""
 
     def __init__(self, parent=None, image_list=None, default_offset: int = 256):
         super().__init__(parent)
@@ -78,10 +70,10 @@ class DiffDialog(QDialog):
         self.accept()
 
     def get_result(self):
-        """Get resulut of selections。
+        """選択結果を返す。
 
         Returns:
-            tuple: (image_a_index, image_b_index, offset) or None
+            (画像 A の index, 画像 B の index, offset)。未選択の要素は None。
         """
         return (
             getattr(self, "selected_a", None),

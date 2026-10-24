@@ -1,10 +1,4 @@
-"""Plotting helpers for pyqtgraph integration in Analysis dialogs.
-
-This module isolates pyqtgraph-specific interactions: saving/restoring
-ViewBox state, connecting control panel toggles, applying grid/log settings,
-and showing default context menus. It does not depend on Qt Widgets beyond
-what pyqtgraph provides.
-"""
+"""pyqtgraph の ViewBox 状態の保存・復元と、grid/log 設定の同期。"""
 
 from __future__ import annotations
 
@@ -12,7 +6,7 @@ import contextlib
 
 
 def save_viewbox_state(vb) -> dict | None:
-    """Return full ViewBox state if available."""
+    """ViewBox の状態を返す。取得できない場合は None。"""
     try:
         return vb.getState(copy=True)
     except Exception:
@@ -20,7 +14,7 @@ def save_viewbox_state(vb) -> dict | None:
 
 
 def apply_plot_settings(widget, which: str, plot_settings: dict[str, dict], saved_full_state: dict | None = None):
-    """Apply grid settings and restore saved ViewBox state if provided."""
+    """grid 設定を適用し、saved_full_state があれば ViewBox の状態を復元する。"""
     try:
         s = plot_settings.get(which, {})
         widget.showGrid(x=bool(s.get("grid", True)), y=bool(s.get("grid", True)))
@@ -36,14 +30,14 @@ def apply_plot_settings(widget, which: str, plot_settings: dict[str, dict], save
 
 
 def connect_plot_controls(plot_item, which: str, plot_settings: dict[str, dict], on_hist_log_changed=None):
-    """Connect PlotItem.ctrl toggles to persist grid/log settings.
+    """PlotItem の grid/log の checkbox の変更を plot_settings に保存するよう接続する。
 
-    For 'hist', also persists LogY and calls on_hist_log_changed when toggled.
+    which が 'hist' の場合は log Y の変更時に on_hist_log_changed を呼ぶ。
     """
     if not hasattr(plot_item, "ctrl"):
         return
     c = plot_item.ctrl
-    # initial grid sync
+    # 現在の grid 状態を反映する
     try:
         gval = False
         with contextlib.suppress(Exception):
@@ -52,7 +46,6 @@ def connect_plot_controls(plot_item, which: str, plot_settings: dict[str, dict],
     except Exception:
         pass
 
-    # connect grid toggles
     try:
         if hasattr(c, "xGridCheck"):
             c.xGridCheck.toggled.connect(lambda checked: _on_grid_toggled(which, plot_settings, checked))
@@ -64,7 +57,6 @@ def connect_plot_controls(plot_item, which: str, plot_settings: dict[str, dict],
     if which == "hist":
         try:
             if hasattr(c, "logYCheck"):
-                # initial sync
                 with contextlib.suppress(Exception):
                     plot_settings.setdefault("hist", {})["log"] = bool(c.logYCheck.isChecked())
                 c.logYCheck.toggled.connect(

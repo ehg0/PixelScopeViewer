@@ -1,8 +1,4 @@
-"""Core computation functions for analysis (Qt-independent).
-
-This module provides pure computation functions for histogram/profile
-generation and statistical calculations.
-"""
+"""Qt に依存しない解析の計算処理。"""
 
 from .compute import (
     calc_stats,

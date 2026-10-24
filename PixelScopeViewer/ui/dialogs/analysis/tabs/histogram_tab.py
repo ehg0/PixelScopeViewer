@@ -1,3 +1,5 @@
+"""histogram tab。"""
+
 from collections.abc import Callable
 
 import numpy as np
@@ -24,19 +26,19 @@ from PySide6.QtWidgets import (
 
 
 class HistogramTab(QWidget):
-    """Histogram tab UI with pyqtgraph plot, stats table, and controls.
+    """histogram の plot、統計量の table、設定 control を持つ tab。
 
-    Parameters
-    ----------
-    pyqtgraph_available: bool
-        Whether pyqtgraph is available. If False, plot widget is None.
-    on_save_viewbox_state: Optional[Callable[[object], None]]
-        Callback to persist ViewBox state; receives the ViewBox instance.
-    on_connect_plot_controls: Optional[Callable[[object], None]]
-        Callback to connect PlotItem control signals for persistence; receives PlotItem.
+    Args:
+        pyqtgraph_available: pyqtgraph が使えるか。False の場合 plot は作成しない。
+        on_save_viewbox_state: ViewBox の状態を保存する callback。
+        on_connect_plot_controls: PlotItem の control を接続する callback。
+        on_channel_changed: channel の表示 ON/OFF 変更時の callback。
+        on_spinbox_changed: bin step 変更時の callback。
+        on_spinbox_bar_alpha_changed: bar の alpha 変更時の callback。
+        parent: 親 widget。
     """
 
-    # ステータスバーに表示したい文字列を送るシグナルを定義
+    # status bar に表示する文字列
     status_changed = Signal(str)
 
     def __init__(
@@ -93,10 +95,9 @@ class HistogramTab(QWidget):
                 pass
             left.addWidget(self.hist_widget, 3)
 
-            # マウスオーバーしたら、ステータスバーにマウス位置の値を表示
+            # マウス位置の値を status bar に表示する
             self.hist_widget.scene().sigMouseMoved.connect(self._on_mouse_over)
 
-        # Stats table
         self.stats_table = QTableWidget()
         stats_headers = ["ch", "Mean", "Std", "Median", "Min", "Max", "Fano"]
         self.stats_table.setColumnCount(len(stats_headers))
@@ -105,7 +106,7 @@ class HistogramTab(QWidget):
         self.stats_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.stats_table.setSelectionMode(QTableWidget.ExtendedSelection)
         self.stats_table.setSelectionBehavior(QTableWidget.SelectItems)
-        # Allow more rows; enable scrolling rather than clipping
+        # 行が多い場合は切り詰めずに scroll させる
         self.stats_table.setMaximumHeight(240)
         self.stats_table.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         total_w = 600
@@ -124,7 +125,7 @@ class HistogramTab(QWidget):
 
         root.addLayout(left, 1)
 
-        # Right column with grouped controls
+        # 右側の control
         right = QVBoxLayout()
         right.setContentsMargins(10, 10, 10, 10)
         right.setSpacing(8)
@@ -147,10 +148,9 @@ class HistogramTab(QWidget):
         channels_layout = QVBoxLayout(channels_group)
         channels_layout.setContentsMargins(8, 5, 8, 8)
 
-        # Scroll area for checkboxes
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setMinimumHeight(120)  # Ensure 4 channels visible without scrolling
+        scroll.setMinimumHeight(120)  # 4 channel までは scroll なしで表示する
         scroll.setMaximumHeight(300)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
@@ -159,10 +159,9 @@ class HistogramTab(QWidget):
         scroll_layout.setContentsMargins(2, 2, 2, 2)
         scroll_layout.setSpacing(3)
 
-        # Create checkboxes for channels
         for i in range(self.MAX_CHANNELS):
             cb = QCheckBox(f"C{i}")
-            cb.setVisible(False)  # Initially hidden
+            cb.setVisible(False)
             cb.stateChanged.connect(self._on_checkbox_changed)
             scroll_layout.addWidget(cb)
             self.channel_checkboxes.append(cb)
@@ -187,9 +186,9 @@ class HistogramTab(QWidget):
         config_layout.addWidget(label)
         self.bar_alpha_spin_box_init = 120
         self.bar_alpha_spin_box = QSpinBox()
-        self.bar_alpha_spin_box.setRange(0, 255)  # 入力できる最小値・最大値
-        self.bar_alpha_spin_box.setSingleStep(10)  # 矢印を押したときの増減幅
-        self.bar_alpha_spin_box.setValue(self.bar_alpha_spin_box_init)  # 初期値
+        self.bar_alpha_spin_box.setRange(0, 255)
+        self.bar_alpha_spin_box.setSingleStep(10)
+        self.bar_alpha_spin_box.setValue(self.bar_alpha_spin_box_init)
         self.bar_alpha_spin_box.valueChanged.connect(self._on_spinbox_bar_alpha_changed)
         config_layout.addWidget(self.bar_alpha_spin_box)
         bis_step_layout = QHBoxLayout()
@@ -201,10 +200,10 @@ class HistogramTab(QWidget):
         config_layout.addLayout(bis_step_layout)
         self.bin_step_spin_box_init = 1.0
         self.bin_step_spin_box = QDoubleSpinBox()
-        self.bin_step_spin_box.setRange(0.001, 100.0)  # 入力できる最小値・最大値
-        self.bin_step_spin_box.setSingleStep(0.1)  # 矢印を押したときの増減幅
-        self.bin_step_spin_box.setDecimals(3)  # 小数点以下の桁数
-        self.bin_step_spin_box.setValue(self.bin_step_spin_box_init)  # 初期値
+        self.bin_step_spin_box.setRange(0.001, 100.0)
+        self.bin_step_spin_box.setSingleStep(0.1)
+        self.bin_step_spin_box.setDecimals(3)
+        self.bin_step_spin_box.setValue(self.bin_step_spin_box_init)
         self.bin_step_spin_box.valueChanged.connect(self._on_spinbox_changed)
         config_layout.addWidget(self.bin_step_spin_box)
         self.setLayout(config_layout)
@@ -229,7 +228,6 @@ class HistogramTab(QWidget):
         root.addLayout(right)
 
     def _on_checkbox_changed(self):
-        """Called when any checkbox changes state."""
         if self.on_channel_changed:
             checks = [cb.isChecked() for cb in self.channel_checkboxes if cb.isVisible()]
             self.on_channel_changed(checks)
@@ -241,28 +239,24 @@ class HistogramTab(QWidget):
         self.on_spinbox_bar_alpha_changed(value)
 
     def update_channel_checkboxes(self, nch: int, checks: list[bool], channel_colors: list | None = None):
-        """Update channel checkboxes visibility, state, and colors.
+        """channel の checkbox の表示・状態・色を更新する。
 
-        Parameters
-        ----------
-        nch: int
-            Number of channels
-        checks: list[bool]
-            Checkbox states
-        channel_colors: list, optional
-            List of QColor objects for channel colors
+        Args:
+            nch: channel 数。
+            checks: checkbox の状態。
+            channel_colors: channel ごとの QColor。
         """
         for i in range(self.MAX_CHANNELS):
             cb = self.channel_checkboxes[i]
             if i < nch:
                 cb.setVisible(True)
-                # Block signals while updating to prevent recursive updates
+                # 更新中に signal が再帰的に発火しないようにする
                 cb.blockSignals(True)
                 cb.setChecked(checks[i] if i < len(checks) else True)
                 cb.blockSignals(False)
-                cb.setEnabled(nch > 1)  # Disable if only 1 channel
+                cb.setEnabled(nch > 1)
 
-                # Add color swatch icon
+                # 色見本の icon
                 if channel_colors and i < len(channel_colors):
                     color = channel_colors[i]
                     if hasattr(color, "name"):
@@ -271,9 +265,9 @@ class HistogramTab(QWidget):
                         cb.setIcon(pix)
                         cb.setIconSize(pix.size())
                     else:
-                        cb.setIcon(QPixmap())  # Clear icon
+                        cb.setIcon(QPixmap())
                 else:
-                    cb.setIcon(QPixmap())  # Clear icon
+                    cb.setIcon(QPixmap())
             else:
                 cb.setVisible(False)
 
@@ -287,28 +281,23 @@ class HistogramTab(QWidget):
         chart_kind: str = "Line",
         bar_alpha: int = 120,
     ):
-        """Update histogram plot and statistics table with pre-computed data.
+        """計算済みのデータで histogram の plot と統計量の table を更新する。
 
-        Parameters
-        ----------
-        series: dict
-            Mapping of label -> (xs, ys) for histogram data
-        stats_rows: list[dict]
-            List of dicts with keys: ch, mean, std, median, min, max, is_int
-        apply_log: bool
-            If True, apply log10(y+1) transform to histogram counts
-        is_integer_type: bool
-            If True, format x-axis with integer ticks for integer data types
-        channel_colors: list, optional
-            List of QColor objects for channel colors from viewer
+        Args:
+            series: label から (x, 度数) への dict。
+            stats_rows: histogram_stats の戻り値。
+            apply_log: Y 軸を log 表示するか。
+            is_integer_type: 整数 dtype か。
+            channel_colors: channel ごとの QColor。
+            chart_kind: "Line" または "Bar"。
+            bar_alpha: Bar 表示時の alpha。
         """
         if self.hist_widget is None:
             return
 
-        # Clear and plot histogram
         self.hist_widget.clear()
 
-        # Resolve overlay color map if present (tiling comparison)
+        # 複数画像比較では親 dialog の overlay_color_map を使う
         overlay_map = {}
         dlg = self
         visited = set()
@@ -326,9 +315,8 @@ class HistogramTab(QWidget):
             else:
                 dlg = None
 
-        # Helper to resolve color per label
         def _color_for_label(label: str, alpha: int = 255) -> QColor:
-            # 1. Overlay mapping
+            # 1. overlay の色
             rgb = overlay_map.get(label)
             if rgb:
                 return QColor(rgb[0], rgb[1], rgb[2], alpha)
@@ -337,7 +325,7 @@ class HistogramTab(QWidget):
             if label == "I":
                 return QColor(0, 0, 0, alpha)
 
-            # 3. Channel index 抽出
+            # 3. label から channel index を取り出す
             ch_index = None
             if label.startswith("C") and label[1:].isdigit():
                 ch_index = int(label[1:])
@@ -348,7 +336,7 @@ class HistogramTab(QWidget):
                         ch_index = int(p[1:])
                         break
 
-            # 4. Color 決定（文字列または QColor オブジェクト）
+            # 4. 色を決める（文字列または QColor）
             color_val = None
             if ch_index is not None and channel_colors and 0 <= ch_index < len(channel_colors):
                 color_val = channel_colors[ch_index]
@@ -357,9 +345,8 @@ class HistogramTab(QWidget):
                 fallback = ["#ff0000", "#00c800", "#0066ff", "#7f7f7f"]
                 color_val = fallback[ch_index] if ch_index is not None and ch_index < len(fallback) else "#7f8c8d"
 
-            # QColor に変換して alpha を設定
             qcolor = QColor(color_val)
-            # 表示カラーがグレースケールの時はグラフ線色を黒にする
+            # grayscale の色は見やすさのため黒で描画する
             if qcolor.red() == qcolor.green() == qcolor.blue():
                 qcolor.setRgb(0, 0, 0)
             qcolor.setAlpha(alpha)
@@ -369,7 +356,7 @@ class HistogramTab(QWidget):
         for _, (label, (xs, ys)) in enumerate(series.items()):
             yplot = np.array(ys, dtype=float)
             if apply_log:
-                # 0のデータを0.1に置換（log10(0.1) = -1 として最下部に張り付く）
+                # 0 を 0.1 に置き換え、log10(0.1) = -1 として下端に表示する
                 yplot[yplot == 0] = 0.1
                 self.hist_widget.setLimits(yMin=-1)
 
@@ -384,31 +371,26 @@ class HistogramTab(QWidget):
                 )
                 self.hist_widget.addItem(item)
 
-        # Set title
         self.hist_widget.setTitle(f"Intensity {self.config_mode_btn.text()}", color="#2c3e50", size="12pt")
 
-        # Configure x-axis for integer types
         if is_integer_type and pg is not None:
             try:
                 axis = self.hist_widget.getAxis("bottom")
-                # Force integer ticks for integer data types
                 axis.setStyle(tickTextOffset=10)
             except Exception:
-                pass  # If axis configuration fails, just use default
+                pass
 
-        # Update statistics table
         self._populate_stats_table(stats_rows)
 
     def _populate_stats_table(self, rows: list[dict]):
-        """Populate stats table from computed statistics."""
-        # Locate parent dialog (has overlay_color_map or channel_color_map) safely
+        """統計量の table を更新する。"""
+        # 親 dialog の overlay_color_map（複数画像比較）または channel_color_map（通常）を探す
         dlg = self
         color_map = {}
         assign_colors = None
         visited = set()
         while dlg is not None and id(dlg) not in visited:
             visited.add(id(dlg))
-            # Check for overlay_color_map (tiling comparison) or channel_color_map (normal analysis)
             if hasattr(dlg, "overlay_color_map"):
                 color_map = getattr(dlg, "overlay_color_map", {}) or {}
                 assign_colors = getattr(dlg, "_assign_overlay_colors", None)
@@ -416,7 +398,6 @@ class HistogramTab(QWidget):
             elif hasattr(dlg, "channel_color_map"):
                 color_map = getattr(dlg, "channel_color_map", {}) or {}
                 break
-            # Obtain parent only if callable
             parent_attr = getattr(dlg, "parent", None)
             if callable(parent_attr):
                 try:
@@ -430,21 +411,21 @@ class HistogramTab(QWidget):
         for row_idx, r in enumerate(rows):
             ch_text = r["ch"]
             ch_item = QTableWidgetItem(ch_text)
-            # Color swatch based on curve_label mapping or direct channel label
+            # curve_label または channel の label から色見本を決める
             curve_label = r.get("curve_label")
             rgb = color_map.get(curve_label) if (curve_label and color_map) else None
 
-            # For normal analysis dialog, try direct channel numeric or symbolic label
+            # 通常の解析 dialog では channel 番号または C{index} で探す
             if rgb is None:
                 if ch_text in color_map:
                     rgb = color_map.get(ch_text)
                 else:
-                    symbolic = f"C{ch_text}"  # map digits -> C{index}
+                    symbolic = f"C{ch_text}"
                     if symbolic in color_map:
                         rgb = color_map.get(symbolic)
 
             if rgb is None:
-                # Fallback: support underscore pattern 'T{n}_C{k}' for tiling comparison
+                # 複数画像比較の 'T{n}_C{k}' 形式に対応する
                 tile_num = None
                 channel_code = None
                 if "_" in ch_text:
@@ -453,7 +434,7 @@ class HistogramTab(QWidget):
                         tile_num = tpart[1:]
                         channel_code = cpart
                 else:
-                    # legacy space separated pattern
+                    # 旧形式（空白区切り）
                     parts = ch_text.split()
                     if len(parts) == 2 and parts[0].startswith("T"):
                         tile_num = parts[0][1:]
@@ -506,20 +487,17 @@ class HistogramTab(QWidget):
             mouse_point = plot_item.vb.mapSceneToView(pos)
             x_val, y_val = mouse_point.x(), mouse_point.y()
 
-            # Logモード判定＆逆変換
+            # log 表示の場合は元の値に戻す
             vb_state = plot_item.vb.getState()
             is_log_x = vb_state.get("logMode", [False, False])[0]
             is_log_y = vb_state.get("logMode", [False, False])[1]
 
-            # X軸の逆変換
             if is_log_x:
                 x_val = 10**x_val
 
-            # Y軸の逆変換
             if is_log_y:
                 y_val = 10**y_val
             self.status_changed.emit(f"X: {x_val:.2f}, Y: {y_val:.2f}")
 
         else:
-            # 範囲外の場合は空文字を送信
             self.status_changed.emit("")

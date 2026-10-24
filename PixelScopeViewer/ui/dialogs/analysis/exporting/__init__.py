@@ -1,8 +1,4 @@
-"""CSV export utilities for analysis data.
-
-This module provides functions to export plot data and
-table contents to CSV format.
-"""
+"""解析データの CSV 出力。"""
 
 from .csv import (
     selection_to_csv,

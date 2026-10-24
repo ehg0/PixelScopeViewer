@@ -1,3 +1,5 @@
+"""profile tab。"""
+
 from collections.abc import Callable
 
 from PySide6.QtCore import Qt, Signal
@@ -19,25 +21,23 @@ from PySide6.QtWidgets import (
 try:
     import pyqtgraph as pg
     from pyqtgraph import PlotWidget
-except Exception:  # pragma: no cover - optional dependency
+except Exception:  # pyqtgraph がない環境では plot を作成しない
     pg = None
     PlotWidget = None
 
 
 class ProfileTab(QWidget):
-    """Profile tab UI with pyqtgraph plot, stats table, and controls.
+    """profile の plot、統計量の table、設定 control を持つ tab。
 
-    Parameters
-    ----------
-    pyqtgraph_available: bool
-        Whether pyqtgraph is available. If False, plot widget is None.
-    on_save_viewbox_state: Optional[Callable[[object], None]]
-        Callback to persist ViewBox state; receives the ViewBox instance.
-    on_connect_plot_controls: Optional[Callable[[object], None]]
-        Callback to connect PlotItem control signals for persistence; receives PlotItem.
+    Args:
+        pyqtgraph_available: pyqtgraph が使えるか。False の場合 plot は作成しない。
+        on_save_viewbox_state: ViewBox の状態を保存する callback。
+        on_connect_plot_controls: PlotItem の control を接続する callback。
+        on_channel_changed: channel の表示 ON/OFF 変更時の callback。
+        parent: 親 widget。
     """
 
-    # ステータスバーに表示したい文字列を送るシグナルを定義
+    # status bar に表示する文字列
     status_changed = Signal(str)
 
     def __init__(
@@ -57,7 +57,7 @@ class ProfileTab(QWidget):
 
         root = QHBoxLayout(self)
 
-        # Left side: plot + stats vertically
+        # 左側: plot と統計量
         left = QVBoxLayout()
 
         if pyqtgraph_available and PlotWidget is not None:
@@ -92,10 +92,9 @@ class ProfileTab(QWidget):
                 pass
             left.addWidget(self.prof_widget, 3)
 
-            # マウスオーバーしたら、ステータスバーにマウス位置の値を表示
+            # マウス位置の値を status bar に表示する
             self.prof_widget.scene().sigMouseMoved.connect(self._on_mouse_over)
 
-        # Stats table
         self.prof_stats_table = QTableWidget()
         stats_headers = ["ch", "Mean", "Std", "Median", "Min", "Max", "Fano"]
         self.prof_stats_table.setColumnCount(len(stats_headers))
@@ -104,7 +103,7 @@ class ProfileTab(QWidget):
         self.prof_stats_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.prof_stats_table.setSelectionMode(QTableWidget.ExtendedSelection)
         self.prof_stats_table.setSelectionBehavior(QTableWidget.SelectItems)
-        # Allow more rows; enable scrolling rather than clipping
+        # 行が多い場合は切り詰めずに scroll させる
         self.prof_stats_table.setMaximumHeight(240)
         self.prof_stats_table.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         total_w = 600
@@ -123,7 +122,7 @@ class ProfileTab(QWidget):
 
         root.addLayout(left, 1)
 
-        # Right column with grouped controls
+        # 右側の control
         right = QVBoxLayout()
         right.setContentsMargins(10, 10, 10, 10)
         right.setSpacing(8)
@@ -146,10 +145,9 @@ class ProfileTab(QWidget):
         channels_layout = QVBoxLayout(channels_group)
         channels_layout.setContentsMargins(8, 5, 8, 8)
 
-        # Scroll area for checkboxes
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setMinimumHeight(120)  # Ensure 4 channels visible without scrolling
+        scroll.setMinimumHeight(120)  # 4 channel までは scroll なしで表示する
         scroll.setMaximumHeight(300)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
@@ -158,10 +156,9 @@ class ProfileTab(QWidget):
         scroll_layout.setContentsMargins(2, 2, 2, 2)
         scroll_layout.setSpacing(3)
 
-        # Create checkboxes for channels
         for i in range(self.MAX_CHANNELS):
             cb = QCheckBox(f"C{i}")
-            cb.setVisible(False)  # Initially hidden
+            cb.setVisible(False)
             cb.stateChanged.connect(self._on_checkbox_changed)
             scroll_layout.addWidget(cb)
             self.channel_checkboxes.append(cb)
@@ -206,34 +203,29 @@ class ProfileTab(QWidget):
         root.addLayout(right)
 
     def _on_checkbox_changed(self):
-        """Called when any checkbox changes state."""
         if self.on_channel_changed:
             checks = [cb.isChecked() for cb in self.channel_checkboxes if cb.isVisible()]
             self.on_channel_changed(checks)
 
     def update_channel_checkboxes(self, nch: int, checks: list[bool], channel_colors: list | None = None):
-        """Update channel checkboxes visibility, state, and colors.
+        """channel の checkbox の表示・状態・色を更新する。
 
-        Parameters
-        ----------
-        nch: int
-            Number of channels
-        checks: list[bool]
-            Checkbox states
-        channel_colors: list, optional
-            List of QColor objects for channel colors
+        Args:
+            nch: channel 数。
+            checks: checkbox の状態。
+            channel_colors: channel ごとの QColor。
         """
         for i in range(self.MAX_CHANNELS):
             cb = self.channel_checkboxes[i]
             if i < nch:
                 cb.setVisible(True)
-                # Block signals while updating to prevent recursive updates
+                # 更新中に signal が再帰的に発火しないようにする
                 cb.blockSignals(True)
                 cb.setChecked(checks[i] if i < len(checks) else True)
                 cb.blockSignals(False)
-                cb.setEnabled(nch > 1)  # Disable if only 1 channel
+                cb.setEnabled(nch > 1)
 
-                # Add color swatch icon
+                # 色見本の icon
                 if channel_colors and i < len(channel_colors):
                     color = channel_colors[i]
                     if hasattr(color, "name"):
@@ -242,9 +234,9 @@ class ProfileTab(QWidget):
                         cb.setIcon(pix)
                         cb.setIconSize(pix.size())
                     else:
-                        cb.setIcon(QPixmap())  # Clear icon
+                        cb.setIcon(QPixmap())
                 else:
-                    cb.setIcon(QPixmap())  # Clear icon
+                    cb.setIcon(QPixmap())
             else:
                 cb.setVisible(False)
 
@@ -257,30 +249,22 @@ class ProfileTab(QWidget):
         method: str,
         channel_colors: list | None = None,
     ):
-        """Update profile plot and statistics table with pre-computed data.
+        """計算済みのデータで profile の plot と統計量の table を更新する。
 
-        Parameters
-        ----------
-        series: dict
-            Mapping of label -> (xs, ys) for profile data
-        stats_rows: list[dict]
-            List of dicts with keys: ch, mean, std, median, min, max, is_int
-        orientation: str
-            'h', or 'v' for horizontal/vertical
-        x_mode: str
-            'relative' or 'absolute' for x-axis mode
-        method: str
-            "mean", "std", "max", "min", "p2p", or "median" for profile computation
-        channel_colors: list, optional
-            List of QColor objects for channel colors from viewer
+        Args:
+            series: label から (x, y) への dict。
+            stats_rows: profile_stats の戻り値。
+            orientation: 'h'（水平）または 'v'（垂直）。
+            x_mode: 'relative' または 'absolute'。
+            method: 'mean', 'std', 'max', 'min', 'p2p', 'median' のいずれか。
+            channel_colors: channel ごとの QColor。
         """
         if self.prof_widget is None:
             return
 
-        # Clear and plot profile
         self.prof_widget.clear()
 
-        # Resolve overlay color map if present (tiling comparison)
+        # 複数画像比較では親 dialog の overlay_color_map を使う
         overlay_map = {}
         dlg = self
         visited = set()
@@ -301,11 +285,11 @@ class ProfileTab(QWidget):
         def _color_for_label(label: str) -> str:
             rgb = overlay_map.get(label)
             if rgb:
-                # 表示カラーがグレースケールの時はグラフ線色を黒にする
+                # grayscale の色は見やすさのため黒で描画する
                 if rgb[0] == rgb[1] == rgb[2]:
                     return "rgb(0, 0, 0)"
                 return f"rgb({rgb[0]},{rgb[1]},{rgb[2]})"
-            # Intensity always black
+            # Intensity は常に黒
             if label == "I":
                 return "#000000"
             ch_index = None
@@ -319,7 +303,7 @@ class ProfileTab(QWidget):
                         break
             if ch_index is not None and channel_colors and 0 <= ch_index < len(channel_colors):
                 c = channel_colors[ch_index]
-                # 表示カラーがグレースケールの時はグラフ線色を黒にする
+                # grayscale の色は見やすさのため黒で描画する
                 if c.red() == c.green() == c.blue():
                     return "#000000"
                 return c.name() if hasattr(c, "name") else "#7f8c8d"
@@ -332,7 +316,6 @@ class ProfileTab(QWidget):
             pen = pg.mkPen(color=_color_for_label(label), width=2) if pg else None
             self.prof_widget.plot(xs, ys, pen=pen, name=label if label != "I" else "Intensity")
 
-        # Set title and labels
         orientation_label = {"h": "Horizontal", "v": "Vertical", "d": "Diagonal"}[orientation]
         mode_label = "Absolute" if x_mode == "absolute" else "Relative"
         method_label = {
@@ -349,18 +332,17 @@ class ProfileTab(QWidget):
         self.prof_widget.setLabel("bottom", "Position" if x_mode == "relative" else "Absolute Position")
         self.prof_widget.setLabel("left", "Intensity")
 
-        # Update statistics table
         self._populate_stats_table(stats_rows)
 
     def _populate_stats_table(self, rows: list[dict]):
-        """Populate stats table from computed statistics."""
+        """統計量の table を更新する。"""
         dlg = self
         color_map = {}
         assign_colors = None
         visited = set()
         while dlg is not None and id(dlg) not in visited:
             visited.add(id(dlg))
-            # Check for overlay_color_map (tiling comparison) or channel_color_map (normal analysis)
+            # 複数画像比較の overlay_color_map または通常の channel_color_map を探す
             if hasattr(dlg, "overlay_color_map"):
                 color_map = getattr(dlg, "overlay_color_map", {}) or {}
                 assign_colors = getattr(dlg, "_assign_overlay_colors", None)
@@ -392,7 +374,7 @@ class ProfileTab(QWidget):
                         rgb = color_map.get(symbolic)
 
             if rgb is None:
-                # Attempt underscore fallback similar to histogram for tiling comparison
+                # 複数画像比較の 'T{n}_C{k}' 形式に対応する
                 ch_text = r.get("ch", "")
                 tile_num = None
                 channel_code = None
@@ -449,20 +431,17 @@ class ProfileTab(QWidget):
             mouse_point = plot_item.vb.mapSceneToView(pos)
             x_val, y_val = mouse_point.x(), mouse_point.y()
 
-            # Logモード判定＆逆変換
+            # log 表示の場合は元の値に戻す
             vb_state = plot_item.vb.getState()
             is_log_x = vb_state.get("logMode", [False, False])[0]
             is_log_y = vb_state.get("logMode", [False, False])[1]
 
-            # X軸の逆変換
             if is_log_x:
                 x_val = 10**x_val
 
-            # Y軸の逆変換
             if is_log_y:
                 y_val = 10**y_val
             self.status_changed.emit(f"X: {x_val:.2f}, Y: {y_val:.2f}")
 
         else:
-            # 範囲外の場合は空文字を送信
             self.status_changed.emit("")

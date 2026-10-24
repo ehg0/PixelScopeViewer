@@ -1,26 +1,4 @@
-"""Analysis dialog with tabbed interface for image analysis.
-
-This module provides the main AnalysisDialog which displays:
-- Histogram tab: Intensity histogram with customizable channels and statistical information
-- Profile tab: Line profile (horizontal/vertical/diagonal) with absolute/relative modes and statistical information
-- Metadata tab: Image metadata in table format with EXIF information
-
-The dialog supports pyqtgraph-based interactive plots with right-click
-context menus for plot configuration. If pyqtgraph is not available, the
-histogram and profile tabs will show empty placeholders.
-
-Statistical information displayed includes:
-- Mean: Average intensity value
-- Std: Standard deviation of intensity values
-- Min: Minimum intensity value
-- Max: Maximum intensity value
-- Median: Median intensity value
-
-Dependencies:
-    - pyqtgraph (optional): For fast histogram and profile plotting
-    - numpy: For data processing
-    - exifread: For comprehensive EXIF metadata reading
-"""
+"""単一画像の解析 dialog（metadata・profile・histogram）。"""
 
 import contextlib
 
@@ -76,49 +54,20 @@ from .tabs.profile_tab import ProfileTab
 
 
 class AnalysisDialog(QDialog):
-    """Main analysis dialog with tabbed interface for Metadata, Histogram, and Profile.
+    """ROI の metadata・profile・histogram を表示する modeless dialog。
 
-    This dialog provides three tabs for analyzing image selections:
-
-    1. Metadata Tab:
-       - Displays comprehensive image metadata including EXIF information
-       - Copyable table format
-
-    2. Histogram Tab:
-       - Shows intensity distribution across all channels
-       - Statistical information: mean, std, min, max, median for visible channels
-       - Customizable via "Channels..." button
-       - "Copy data" exports histogram as CSV to clipboard
-
-    4. Profile Tab:
-       - Shows averaged intensity profile along a direction
-       - Statistical information: mean, std, min, max, median for visible channels
-       - Customizable via "Channels..." button
-       - "Copy data" exports profile as CSV to clipboard
-
-    The dialog is modeless and updates automatically when the parent
-    viewer's selection changes (via set_image_and_rect).
+    親の ImageViewer から set_image_and_rect で画像と ROI が更新される。
 
     Args:
-        parent: Parent widget (typically ImageViewer)
-        image_array: NumPy array of the image or selection
-        image_rect: QRect defining the selection in image coordinates
-
-    Usage:
-        dlg = AnalysisDialog(parent, image_array=arr, image_rect=rect)
-        dlg.show()  # Modeless
-
-        # Update when selection changes:
-        dlg.set_image_and_rect(new_array, new_rect)
-
-    Note:
-        Requires pyqtgraph for histogram and profile plots. If pyqtgraph
-        is not available, those tabs will be empty.
+        parent: 親 widget（通常は ImageViewer）。
+        image_array: 画像配列。
+        image_rect: 画像座標の ROI。
+        image_path: metadata の取得に使う画像ファイルのパス。
     """
 
-    # Persist window geometry across openings so it doesn't jump based on cursor/OS heuristics
+    # 開き直したときに位置が変わらないよう geometry を class で保持する
     _saved_geometry = None
-    # Store position before minimize to restore after showNormal()
+    # 最小化からの復元時に元の位置へ戻すため保持する
     _position_before_minimize = None
 
     def __init__(
@@ -132,13 +81,13 @@ class AnalysisDialog(QDialog):
         self.viewer = parent
         self.update_window_title()
 
-        # 親側でROIが切り直されたときにタイトルを自動更新する設定
+        # 親で ROI が変わったら title を更新する
         if self.viewer and hasattr(self.viewer, "roi_changed"):
             self.viewer.roi_changed.connect(self.update_window_title)
 
         self.resize(900, 600)
 
-        # Set window flags to allow minimizing and prevent staying on top
+        # 最小化を許可し、最前面に固定しない
         flags = Qt.Window | Qt.WindowMinimizeButtonHint | Qt.WindowCloseButtonHint
         self.setWindowFlags(flags)
         self.setAttribute(Qt.WA_DeleteOnClose)
@@ -147,7 +96,6 @@ class AnalysisDialog(QDialog):
         self.image_rect = image_rect
         self.image_path = image_path
 
-        # state
         self.profile_orientation = "h"  # "h", "v"
         self.x_mode = "relative"  # "relative", "absolute"
         self.profile_compute_method = "mean"  # "mean", "std", "max", "min", "p2p", "median"
@@ -161,11 +109,10 @@ class AnalysisDialog(QDialog):
         self.last_hist_data = {}
         self.last_profile_data = {}
 
-        # Channel color mapping for color swatches (label -> rgb tuple)
+        # 統計量 table の色見本に使う label から RGB への dict
         self.channel_color_map: dict[str, tuple[int, int, int]] = {}
 
-        # Persisted plot settings for histogram/profile (kept across image switches)
-        # keys: 'hist' and 'prof' with values for grid/log/autorange
+        # 画像を切り替えても保持する plot 設定
         self.plot_settings = {
             "hist": {"grid": True, "log": False, "auto_range": True},
             "prof": {"grid": True, "auto_range": True},
@@ -173,7 +120,7 @@ class AnalysisDialog(QDialog):
 
         self._build_ui()
 
-        # Restore last window geometry if available to avoid cursor-dependent positioning
+        # 前回の geometry を復元する
         try:
             if AnalysisDialog._saved_geometry:
                 self.restoreGeometry(AnalysisDialog._saved_geometry)
@@ -188,15 +135,12 @@ class AnalysisDialog(QDialog):
         self.tabs = QTabWidget()
         main.addWidget(self.tabs)
 
-        # Metadata tab (modular)
         self.meta_tab = MetadataTab(self)
-        # Map child widgets to keep rest of code unchanged
         self.metadata_table = self.meta_tab.metadata_table
         self.metadata_copy_btn = self.meta_tab.copy_btn
         self.metadata_copy_btn.clicked.connect(self.copy_metadata_to_clipboard)
         self.tabs.addTab(self.meta_tab, "Metadata")
 
-        # Profile tab (modular)
         self.profile_tab = ProfileTab(
             PYQTGRAPH_AVAILABLE,
             on_save_viewbox_state=lambda vb: self._save_viewbox_state(vb, "prof"),
@@ -212,7 +156,6 @@ class AnalysisDialog(QDialog):
         self.prof_copy_btn = self.profile_tab.copy_btn
         self.prof_copy_stats_btn = self.profile_tab.copy_stats_btn
         self.prof_get_all_plane_data = self.profile_tab.get_all_plane_data
-        # Connect buttons to existing handlers
         self.prof_orientation_btn.clicked.connect(self._on_prof_orientation_toggle)
         self.prof_xmode_btn.clicked.connect(self._on_prof_xmode_toggle)
         self.prof_compute_method_combo.currentTextChanged.connect(self._on_prof_compute_method_combo)
@@ -220,7 +163,6 @@ class AnalysisDialog(QDialog):
         self.prof_copy_stats_btn.clicked.connect(self.copy_prof_stats_to_clipboard)
         self.tabs.addTab(self.profile_tab, "Profile")
 
-        # Histogram tab (modular)
         self.hist_tab = HistogramTab(
             PYQTGRAPH_AVAILABLE,
             on_save_viewbox_state=lambda vb: self._save_viewbox_state(vb, "hist"),
@@ -239,7 +181,6 @@ class AnalysisDialog(QDialog):
         self.hist_copy_btn = self.hist_tab.copy_btn
         self.hist_copy_stats_btn = self.hist_tab.copy_stats_btn
         self.hist_get_all_plane_data = self.hist_tab.get_all_plane_data
-        # Connect buttons to existing handlers
         self.hist_chart_kind_combo.currentTextChanged.connect(self._on_hist_chart_kind_combo)
         self.hist_config_mode_btn.clicked.connect(self.hist_config_mode_toggle)
         self.hist_config_reset_btn.clicked.connect(self.hist_config_reset)
@@ -247,7 +188,7 @@ class AnalysisDialog(QDialog):
         self.hist_copy_stats_btn.clicked.connect(self.copy_hist_stats_to_clipboard)
         self.tabs.addTab(self.hist_tab, "Histogram")
 
-        # ステータスバー
+        # status bar
         self.status = QStatusBar()
         self.status.setStyleSheet("QStatusBar, QLabel { font-size: 14px; }")
         main.addWidget(self.status)
@@ -263,39 +204,33 @@ class AnalysisDialog(QDialog):
         self.hist_tab.status_changed.connect(self.tabs_info.setText)
         self.profile_tab.status_changed.connect(self.tabs_info.setText)
 
-    # Note: Close button is intentionally omitted for a modeless dialog
-
     def update_window_title(self, *args):
-        """親の status_roi_area の値からウィンドウタイトルを更新する"""
+        """親の status bar の ROI 表示を window title に反映する。"""
         base_title = "解析ビュー"
 
         if self.viewer and hasattr(self.viewer, "status_roi_area"):
             roi_text = self.viewer.status_roi_area.text()
             if roi_text:
                 self.setWindowTitle(f"{base_title} | ROI={roi_text}")
-                return  # ← update_window_title 内での return はOKです！
+                return
 
-        # ROI情報が無い場合のデフォルトタイトル
         self.setWindowTitle(base_title)
 
     def changeEvent(self, event):
-        """Handle window state changes to preserve position during minimize/restore."""
+        # 最小化前の位置を保存し、復元時に戻す
         if event.type() == QEvent.WindowStateChange:
             if self.isMinimized():
-                # Save current position before minimize
                 AnalysisDialog._position_before_minimize = self.pos()
             elif event.oldState() & Qt.WindowMinimized and AnalysisDialog._position_before_minimize is not None:
                 self.move(AnalysisDialog._position_before_minimize)
         super().changeEvent(event)
 
     def moveEvent(self, event):
-        # Save geometry whenever the dialog is moved
         with contextlib.suppress(Exception):
             AnalysisDialog._saved_geometry = self.saveGeometry()
         super().moveEvent(event)
 
     def resizeEvent(self, event):
-        # Save geometry whenever the dialog is resized
         with contextlib.suppress(Exception):
             AnalysisDialog._saved_geometry = self.saveGeometry()
         super().resizeEvent(event)
@@ -306,15 +241,12 @@ class AnalysisDialog(QDialog):
         image_rect: QRect | None,
         image_path: str | None = None,
     ):
-        """Update the dialog display content with new image data and selection rectangle.
+        """画像と ROI を更新して表示を作り直す。
 
-        This method is expected to be called frequently from outside (parent viewer),
-        and it calls `update_contents` to rebuild the internal display after updating the model.
-
-        Arguments:
-            image_array: NumPy array of the image or selection
-            image_rect: Selection rectangle in image（QRect）
-            image_path: File path of the image (used for metadata extraction)
+        Args:
+            image_array: 画像配列。
+            image_rect: 画像座標の ROI。
+            image_path: 画像ファイルのパス。None の場合は前回の値を使う。
         """
         self.image_array = image_array
         self.image_rect = image_rect
@@ -324,11 +256,7 @@ class AnalysisDialog(QDialog):
         self.update_contents()
 
     def set_current_tab(self, tab):
-        """Switch tabs by name（prefix of 'Histogram','Profile','Info'  or index）
-
-        Arguments:
-            tab: String tab name or index（int）
-        """
+        """tab 名（前方一致）または index で tab を切り替える。"""
         if tab is None:
             return
         if isinstance(tab, int):
@@ -342,24 +270,10 @@ class AnalysisDialog(QDialog):
                 return
 
     def _on_channel_changed(self, new_checks: list[bool]):
-        """Called when channel checkboxes change in tabs.
-
-        Parameters
-        ----------
-        new_checks: list[bool]
-            New checkbox states
-        """
         self.channel_checks = new_checks
         self.update_contents()
 
     def _on_spinbox_changed(self, new_value: float):
-        """Called when the double spin box value changes.
-
-        Parameters
-        ----------
-        new_value: float
-            New spin box value
-        """
         self.spinbox_value = new_value
         self.update_contents()
 
@@ -368,12 +282,7 @@ class AnalysisDialog(QDialog):
         self.update_contents()
 
     def update_contents(self):
-        """Update all tabs based on current image data / settings
-
-        - Handle ROI region if it exits
-        - Update metadata tab
-        - Plot histogram / profile if pyqtgraph is availabel
-        """
+        """現在の画像・ROI・設定で全 tab を更新する。ROI がない場合は左上 1 pixel を対象にする。"""
         arr = self.image_array
         if arr is None:
             self._update_metadata()
@@ -389,13 +298,12 @@ class AnalysisDialog(QDialog):
         else:
             arr = arr[0:1, 0:1]
 
-        # Update metadata tab (always update when image changes)
         self._update_metadata()
 
         if not PYQTGRAPH_AVAILABLE:
             return
 
-        # Ensure channel_checks length for current image
+        # channel_checks の長さを channel 数に合わせる
         if arr.ndim == 3 and arr.shape[2] > 1:
             nch = arr.shape[2]
             if not self.channel_checks:
@@ -405,13 +313,13 @@ class AnalysisDialog(QDialog):
         else:
             nch = 1
 
-        # Histogram: compute data and delegate to tab
+        # histogram
         if self.hist_config_mode == "Histogram":
             bins = determine_hist_bins(arr, self.spinbox_value)
             hist_series = histogram_series(arr, bins=bins)
         elif self.hist_config_mode == "ECDF":
             hist_series = ecdf_series(arr)
-        # Filter visible channels
+        # 表示 ON の channel のみ plot する
         visible_hist_series = {}
         for label, (xs, ys) in hist_series.items():
             visible = True
@@ -423,15 +331,14 @@ class AnalysisDialog(QDialog):
                     visible = True
             if visible:
                 visible_hist_series[label] = (xs, ys)
-        self.last_hist_data = hist_series  # store all for copy
+        self.last_hist_data = hist_series  # コピー用に全 channel を保持する
         hist_stats = histogram_stats(arr.astype(np.float64), self.channel_checks)
         apply_log = self.plot_settings.get("hist", {}).get("log", False)
-        # Check if image is integer type for histogram x-axis formatting
         is_integer_type = np.issubdtype(arr.dtype, np.integer)
-        # Get channel colors with precedence:
-        # 1) self.channel_colors (explicit override)
-        # 2) if parent is a tiling dialog/window -> default palette per image (1ch=black)
-        # 3) parent().channel_colors
+        # channel の色の優先順位:
+        # 1) self.channel_colors
+        # 2) 親が複数画像比較の場合は既定の色（1ch は黒）
+        # 3) 親の channel_colors
         channel_colors = getattr(self, "channel_colors", None)
         if not channel_colors:
             is_tiling_parent = False
@@ -462,17 +369,15 @@ class AnalysisDialog(QDialog):
                 except Exception:
                     channel_colors = None
 
-        # Update channel checkboxes in tabs
         try:
             self.hist_tab.update_channel_checkboxes(nch, self.channel_checks, channel_colors)
             self.profile_tab.update_channel_checkboxes(nch, self.channel_checks, channel_colors)
         except Exception:
             pass
 
-        # Build channel_color_map for stats table color swatches
+        # 統計量 table の色見本用の channel_color_map を作る
         self.channel_color_map = {}
         if channel_colors:
-            # Determine channel count
             nch_local = arr.shape[2] if arr.ndim == 3 and arr.shape[2] > 1 else 1
             for cindex in range(nch_local):
                 if cindex < len(channel_colors):
@@ -481,16 +386,16 @@ class AnalysisDialog(QDialog):
                         r, g, b, _ = color.getRgb()
                     except Exception:
                         r, g, b = (127, 127, 127)
-                    # Store both numeric and symbolic keys
+                    # 番号と C{index} の両方を key にする
                     self.channel_color_map[f"C{cindex}"] = (r, g, b)
                     self.channel_color_map[str(cindex)] = (r, g, b)
-            # Intensity mapping (single-channel): always black
+            # 1ch は常に黒
             if nch_local == 1:
                 self.channel_color_map["I"] = (0, 0, 0)
                 self.channel_color_map["0"] = (0, 0, 0)
                 self.channel_color_map["C0"] = (0, 0, 0)
         else:
-            # Fallback default palette
+            # 既定の色
             default_palette = [
                 (255, 0, 0),
                 (0, 200, 0),
@@ -503,7 +408,7 @@ class AnalysisDialog(QDialog):
                 self.channel_color_map[f"C{cindex}"] = rgb
                 self.channel_color_map[str(cindex)] = rgb
             if nch_local == 1:
-                # 1ch: always black
+                # 1ch は常に黒
                 self.channel_color_map["I"] = (0, 0, 0)
                 self.channel_color_map["0"] = (0, 0, 0)
                 self.channel_color_map["C0"] = (0, 0, 0)
@@ -517,7 +422,7 @@ class AnalysisDialog(QDialog):
             bar_alpha=self.spinbox_bar_alpha_value,
         )
 
-        # Profile: compute data and delegate to tab
+        # profile
         pseries = profile_series(arr, orientation=self.profile_orientation, method=self.profile_compute_method)
         visible_prof_series = {}
         for label, prof in pseries.items():
@@ -535,7 +440,7 @@ class AnalysisDialog(QDialog):
                     visible = True
             if visible:
                 visible_prof_series[label] = (xs2, prof)
-        # Rebuild full last_profile_data for copy (include all channels)
+        # コピー用に全 channel の profile を保持する
         self.last_profile_data = {}
         for label, prof in pseries.items():
             if self.x_mode == "absolute" and self.image_rect is not None:
@@ -550,7 +455,6 @@ class AnalysisDialog(QDialog):
             method=self.profile_compute_method,
             channel_checks=self.channel_checks,
         )
-        # Use the same resolved channel_colors for profile tab
         self.profile_tab.update(
             visible_prof_series,
             prof_stats,
@@ -560,26 +464,25 @@ class AnalysisDialog(QDialog):
             channel_colors=channel_colors,
         )
 
-        # Ensure both widgets are in true "Auto" state for axes, unless we have a saved ViewBox state
+        # 保存済みの ViewBox 状態がなければ、データに合わせて表示範囲を自動調整する
         if PYQTGRAPH_AVAILABLE:
             try:
-                # Only perform autoRange if we don't already have a saved state for the viewboxes
                 if not hasattr(self, "viewbox_full_hist"):
                     hist_vb = self.hist_widget.getViewBox()
-                    hist_vb.autoRange()  # First fit to current data
-                    hist_vb.enableAutoRange(axis=pg.ViewBox.XYAxes)  # Then enable auto for future
+                    hist_vb.autoRange()
+                    hist_vb.enableAutoRange(axis=pg.ViewBox.XYAxes)
                 if not hasattr(self, "viewbox_full_prof"):
                     prof_vb = self.prof_widget.getViewBox()
-                    prof_vb.autoRange()  # First fit to current data
-                    prof_vb.enableAutoRange(axis=pg.ViewBox.XYAxes)  # Then enable auto for future
+                    prof_vb.autoRange()
+                    prof_vb.enableAutoRange(axis=pg.ViewBox.XYAxes)
             except Exception:
                 pass
 
-        # Re-apply any persisted plot settings (grid/log/auto-range, ViewBox state)
+        # 保存済みの plot 設定（grid、ViewBox 状態）を再適用する
         self._apply_plot_settings()
 
     def _update_metadata(self):
-        """Update the metadata tab with image file information in table format."""
+        """画像ファイルの metadata を metadata tab に表示する。"""
         if not hasattr(self, "metadata_table"):
             return
 
@@ -589,7 +492,6 @@ class AnalysisDialog(QDialog):
             return
 
         try:
-            # fall back to file path
             metadata = get_image_metadata(self.image_path, self.image_array)
 
             if not metadata:
@@ -597,27 +499,24 @@ class AnalysisDialog(QDialog):
                 self.last_metadata = []
                 return
 
-            # Prepare data in order: Basic info first, then EXIF tags
+            # 基本情報、EXIF の順に並べる
             rows = []
 
-            # 1. Basic information
             basic_keys = ["Filepath", "Format", "FileSize", "Size", "Channels", "DataType"]
             for key in basic_keys:
                 if key in metadata:
                     value_str = str(metadata[key])
                     rows.append((key, value_str))
 
-            # 2. EXIF tags
             exif_items = [(k, v) for k, v in metadata.items() if k not in basic_keys]
             for key, value in exif_items:
                 value_str = str(value)
                 rows.append((key, value_str))
                 if key == "EXIF_ExposureTime":
-                    # Add a human-readable exposure time
+                    # 露光時間を秒で併記する
                     exposure_time = eval(value)
                     rows.append((" -> (seconds)", f"{exposure_time:.3e}"))
 
-            # Store metadata for copying
             self.last_metadata = rows
             self.meta_tab.update(rows)
 
@@ -639,13 +538,12 @@ class AnalysisDialog(QDialog):
         self.hist_tab.bin_step_spin_box.setValue(self.hist_tab.bin_step_spin_box_init)
 
     def copy_metadata_to_clipboard(self):
-        """Copy metadata as comma-separated text to clipboard."""
+        """metadata をカンマ区切りで clipboard にコピーする。"""
         if not hasattr(self, "last_metadata") or not self.last_metadata:
             QMessageBox.information(self, "Copy", "No metadata to copy.")
             return
 
-        # Create comma-separated format
-        lines = ["Key,Value"]  # Header
+        lines = ["Key,Value"]
         for key, value in self.last_metadata:
             lines.append(f"{key},{value}")
 
@@ -653,31 +551,30 @@ class AnalysisDialog(QDialog):
         QGuiApplication.clipboard().setText(text)
 
     def copy_histogram_to_clipboard(self):
-        """Copy histogram data as CSV to clipboard."""
+        """histogram（または ECDF）のデータを CSV で clipboard にコピーする。"""
         if not getattr(self, "last_hist_data", None):
             QMessageBox.information(self, "Copy", "No data.")
             return
 
-        # Use numpy array operations for efficient data processing
         keys = list(self.last_hist_data.keys())
 
-        # 最初のキー（keys[0]）から、共通の x 軸（中心値）を取り出し
+        # 先頭の系列の x（bin の中心）を共通の x 軸として使う
         xs = np.array(self.last_hist_data[keys[0]][0]).flatten()
 
         if self.hist_config_mode == "Histogram":
-            # ビンの刻み幅を計算して、開始位置と終了位置を計算
+            # bin 幅から各 bin の開始・終了位置を求める
             bin_width = np.diff(xs)[0] if len(xs) > 1 else 1.0
             bin_starts = xs - (bin_width / 2)
             bin_ends = xs + (bin_width / 2)
 
             csv_data = {"bin_start": bin_starts, "bin_end": bin_ends, "bin_center": xs}
-            cast_int_keys = keys  # ヒストグラムは度数データをintにキャスト
+            cast_int_keys = keys  # 度数は int で出力する
 
         elif self.hist_config_mode == "ECDF":
             csv_data = {"value": xs}
             cast_int_keys = None
 
-        # 度数データ（Iなど）を合流させる
+        # 各系列の y を列として追加する
         for k in keys:
             csv_data[k] = np.array(self.last_hist_data[k][1]).flatten()
 
@@ -685,27 +582,24 @@ class AnalysisDialog(QDialog):
         QGuiApplication.clipboard().setText(text)
 
     def copy_profile_to_clipboard(self):
-        """Copy profile data as CSV to clipboard."""
+        """profile のデータを CSV で clipboard にコピーする。"""
         if not getattr(self, "last_profile_data", None):
             QMessageBox.information(self, "Copy", "No data.")
             return
 
-        # Use numpy array operations for efficient data processing
         keys = list(self.last_profile_data.keys())
         xs = self.last_profile_data[keys[0]][0]
 
-        # 1. 最初に x軸（例: "x"）のデータを辞書に入れる
         csv_data = {"x address": xs} if self.profile_orientation == "h" else {"y address": xs}
 
-        # 2. 残りの y軸シリーズ（float値）を同じ辞書に追加していく
         for k in keys:
             csv_data[k] = self.last_profile_data[k][1]
 
-        # 3. 新しい series_to_csv を呼び出す（float値なので cast_int_keys は不要）
         text = series_to_csv(csv_data)
         QGuiApplication.clipboard().setText(text)
 
     def copy_hist_stats_to_clipboard(self):
+        """ROI の統計量を CSV で clipboard にコピーする。"Target: All plane" の場合は全画像を対象にする。"""
         if not hasattr(self, "hist_stats_table"):
             QMessageBox.information(self, "Copy", "No histogram stats to copy.")
             return
@@ -720,7 +614,7 @@ class AnalysisDialog(QDialog):
             path = img.get("path")
             arr = img.get("base_array")
             height, width = arr.shape[:2]
-            # 例外処理
+            # ROI が画像の範囲外の場合は skip する
             if x > width or (x + w) > width or y > height or (y + h) > height:
                 continue
 
@@ -735,6 +629,7 @@ class AnalysisDialog(QDialog):
         QGuiApplication.clipboard().setText(text)
 
     def copy_prof_stats_to_clipboard(self):
+        """ROI の profile の統計量を CSV で clipboard にコピーする。"Target: All plane" の場合は全画像を対象にする。"""
         if not hasattr(self, "prof_stats_table"):
             QMessageBox.information(self, "Copy", "No profile stats to copy.")
             return
@@ -751,7 +646,7 @@ class AnalysisDialog(QDialog):
             path = img.get("path")
             arr = img.get("base_array")
             height, width = arr.shape[:2]
-            # 例外処理
+            # ROI が画像の範囲外の場合は skip する
             if x > width or (x + w) > width or y > height or (y + h) > height:
                 continue
 
@@ -767,7 +662,6 @@ class AnalysisDialog(QDialog):
         QGuiApplication.clipboard().setText(text)
 
     def _on_prof_orientation_toggle(self):
-        """Toggle profile orientation between horizontal and vertical."""
         if self.profile_orientation == "h":
             self.profile_orientation = "v"
             self.prof_orientation_btn.setText("Vertical")
@@ -777,7 +671,6 @@ class AnalysisDialog(QDialog):
         self.update_contents()
 
     def _on_prof_xmode_toggle(self):
-        """Toggle x-axis mode between relative and absolute."""
         if self.x_mode == "relative":
             self.x_mode = "absolute"
             self.prof_xmode_btn.setText("Absolute")
@@ -787,7 +680,6 @@ class AnalysisDialog(QDialog):
         self.update_contents()
 
     def _on_prof_compute_method_combo(self):
-        """Handle changes to the profile computation method selected in the combo box."""
         self.profile_compute_method = self.prof_compute_method_combo.currentText()
         self.update_contents()
 
@@ -800,7 +692,7 @@ class AnalysisDialog(QDialog):
         self.update_contents()
 
     def _on_external_log_toggled(self, checked: bool):
-        # When user toggles Log Y via pyqtgraph menu, update store and replot
+        # pyqtgraph の menu で log Y が切り替えられたら設定を保存して再描画する
         try:
             self.plot_settings.setdefault("hist", {})["log"] = bool(checked)
             self.update_contents()
@@ -808,7 +700,6 @@ class AnalysisDialog(QDialog):
             pass
 
     def _connect_plotitem_controls(self, plot_item, which: str):
-        # Thin wrapper delegating to plotting helper
         pg_connect_plot_controls(
             plot_item,
             which,
@@ -819,7 +710,6 @@ class AnalysisDialog(QDialog):
         )
 
     def _apply_plot_settings(self):
-        # Thin wrapper delegating to plotting helper
         try:
             if hasattr(self, "hist_widget") and self.hist_widget is not None:
                 pg_apply_plot_settings(
@@ -841,18 +731,13 @@ class AnalysisDialog(QDialog):
             pass
 
     def keyPressEvent(self, event):
-        """Override ESC key to prevent closing dialog.
-
-        ESC key will clear focus from spinbox/input fields without closing the dialog.
-        """
+        # Esc で dialog を閉じず、入力欄の focus を外すだけにする
         if event.key() == Qt.Key_Escape:
-            # If focus is on an input widget, clear focus to finish editing
             focused_widget = self.focusWidget()
             if focused_widget and isinstance(focused_widget, (QSpinBox, QDoubleSpinBox, QLineEdit)):
                 focused_widget.clearFocus()
                 event.accept()
                 return
-            # Otherwise, don't close dialog - just ignore
             event.ignore()
             return
         super().keyPressEvent(event)

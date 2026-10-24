@@ -1,8 +1,4 @@
-"""Computation helpers for AnalysisDialog.
-
-This module centralizes histogram/profile computations and related utilities
-without depending on Qt. It is safe to import in non-Qt contexts.
-"""
+"""histogram・profile・統計量の計算（Qt 非依存）。"""
 
 from __future__ import annotations
 
@@ -10,6 +6,7 @@ import numpy as np
 
 
 def determine_hist_bins(arr: np.ndarray, bin_step: float) -> np.ndarray:
+    """データの範囲を bin_step 刻みで覆う histogram の bin 境界を返す。"""
     step = bin_step
     data_min = np.floor(arr.min() / step) * step
     data_max = np.ceil(arr.max() / step) * step
@@ -17,10 +14,9 @@ def determine_hist_bins(arr: np.ndarray, bin_step: float) -> np.ndarray:
 
 
 def determine_hist_bins_auto(arr: np.ndarray) -> np.ndarray | int:
-    """Determine appropriate histogram bin count from array dtype.
+    """dtype に応じた histogram の bin を返す。
 
-    - Floating dtype: 256 bins
-    - Integer dtype: full value span (max - min + 1)
+    float は値の範囲に応じて 1 または 0.005 刻みの bin 境界、整数は (max - min + 1) 個の bin 数を返す。
     """
     if np.issubdtype(arr.dtype, np.floating):
         data_min = arr.min()
@@ -33,7 +29,7 @@ def determine_hist_bins_auto(arr: np.ndarray) -> np.ndarray | int:
             data_min = int(data_min * 100) / 100
             data_max = int(data_max * 100 + 0.5) / 100
             step = 0.005
-        bins = np.arange(data_min, data_max, step)  # ヒストグラムを1.0刻みでプロット
+        bins = np.arange(data_min, data_max, step)
         return bins
     data_min = arr.min()
     data_max = arr.max()
@@ -41,12 +37,10 @@ def determine_hist_bins_auto(arr: np.ndarray) -> np.ndarray | int:
 
 
 def histogram_series(arr: np.ndarray, *, bins: np.ndarray | None = None) -> dict[str, tuple[np.ndarray, np.ndarray]]:
-    """Compute per-channel histogram series.
+    """channel ごとの histogram を計算する。
 
-    Returns a mapping label -> (xs, counts).
-    Labels:
-      - Color: 'C{index}' per channel
-      - Grayscale: 'I'
+    Returns:
+        label から (x, 度数) への dict。label は多 channel なら 'C{index}'、1ch なら 'I'。
     """
     if bins is None:
         # 複数画像解析用
@@ -82,7 +76,7 @@ def histogram_series(arr: np.ndarray, *, bins: np.ndarray | None = None) -> dict
 
 
 def ecdf_series(arr: np.ndarray, *, max_points: int = 2000) -> dict[str, tuple[np.ndarray, np.ndarray]]:
-    """Compute per-channel ECDF with fast downsampling."""
+    """channel ごとの ECDF を、最大 max_points 点に間引いて計算する。"""
 
     def _calc_fast_ecdf(data: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         data = data.ravel()
@@ -111,10 +105,12 @@ def ecdf_series(arr: np.ndarray, *, max_points: int = 2000) -> dict[str, tuple[n
 
 
 def compute_profile_1d(channel_data: np.ndarray, orientation: str, method: str = "mean") -> np.ndarray:
-    """Compute 1D profile for a single-channel 2D array.
+    """1ch の 2 次元配列から profile を計算する。
 
-    orientation: 'h' (horizontal), 'v' (vertical)
-    method: `mean`, 'std', 'min', 'max', 'p2p', 'median'
+    Args:
+        channel_data: 1ch の 2 次元配列。
+        orientation: 'h'（水平）または 'v'（垂直）。
+        method: 'mean', 'std', 'min', 'max', 'p2p', 'median' のいずれか。
     """
     axis = 0 if orientation == "h" else 1
 
@@ -133,12 +129,10 @@ def compute_profile_1d(channel_data: np.ndarray, orientation: str, method: str =
 
 
 def profile_series(arr: np.ndarray, *, orientation: str = "h", method: str = "mean") -> dict[str, np.ndarray]:
-    """Compute per-channel profile series (y-values only).
+    """channel ごとの profile を計算する。
 
-    Returns a mapping label -> profile array.
-    Labels:
-      - Color: 'C{index}' per channel
-      - Grayscale: 'I'
+    Returns:
+        label から profile 配列への dict。label は多 channel なら 'C{index}'、1ch なら 'I'。
     """
     out: dict[str, np.ndarray] = {}
     if arr.ndim == 3 and arr.shape[2] > 1:
@@ -154,10 +148,7 @@ def profile_series(arr: np.ndarray, *, orientation: str = "h", method: str = "me
 
 
 def get_profile_offset(image_rect, orientation: str) -> int:
-    """Get x-axis offset for absolute mode given a QRect-like object.
-
-    image_rect: object with x(), y() methods (Qt QRect)
-    """
+    """absolute 表示で x 軸に加える offset（ROI の開始座標）を返す。"""
     if image_rect is None:
         return 0
     if orientation == "h":
@@ -167,10 +158,11 @@ def get_profile_offset(image_rect, orientation: str) -> int:
     return int(min(image_rect.x(), image_rect.y()))
 
 
-# --- Statistics helpers ---
+# --- 統計量 ---
 
 
 def calc_stats(data: np.ndarray) -> tuple[float, float, float, float, float]:
+    """mean, std, median, min, max, fano factor を返す。"""
     if data.size == 0:
         mean = std = median = min = max = np.nan
     else:
@@ -184,10 +176,14 @@ def calc_stats(data: np.ndarray) -> tuple[float, float, float, float, float]:
 
 
 def histogram_stats(arr: np.ndarray, channel_checks: list[bool] | None = None):
-    """Return per-channel stats for histogram display.
+    """histogram 表示用に channel ごとの統計量を計算する。
 
-    Returns list of dicts: { 'ch': label, 'mean':, 'std':, 'median':, 'min':, 'max':, 'is_int': bool }
-    Only includes channels where channel_checks[c] is True (if provided).
+    Args:
+        arr: 画像配列。
+        channel_checks: channel ごとの表示 ON/OFF。False の channel は除外する。
+
+    Returns:
+        ch, curve_label, mean, std, median, min, max, fano, is_int を持つ dict のリスト。
     """
     results = []
     if arr.ndim == 3 and arr.shape[2] > 1:
@@ -200,8 +196,8 @@ def histogram_stats(arr: np.ndarray, channel_checks: list[bool] | None = None):
             mean_v, std_v, median_v, min_v, max_v, fano_v = calc_stats(data)
             results.append(
                 {
-                    "ch": str(c),  # numeric index for legacy consumers
-                    "curve_label": f"C{c}",  # explicit channel label used for color mapping
+                    "ch": str(c),
+                    "curve_label": f"C{c}",  # 色の対応付けに使う label
                     "mean": mean_v,
                     "std": std_v,
                     "median": median_v,
@@ -218,7 +214,7 @@ def histogram_stats(arr: np.ndarray, channel_checks: list[bool] | None = None):
         results.append(
             {
                 "ch": "0",
-                "curve_label": "I",  # intensity label
+                "curve_label": "I",
                 "mean": mean_v,
                 "std": std_v,
                 "median": median_v,
@@ -234,7 +230,11 @@ def histogram_stats(arr: np.ndarray, channel_checks: list[bool] | None = None):
 def profile_stats(
     arr: np.ndarray, *, orientation: str = "h", method: str = "mean", channel_checks: list[bool] | None = None
 ):
-    """Return per-channel stats for profile display based on computed profiles."""
+    """profile 表示用に、channel ごとの profile の統計量を計算する。
+
+    Returns:
+        histogram_stats と同じ形式の dict のリスト。
+    """
     results = []
     if arr.ndim == 3 and arr.shape[2] > 1:
         nch = arr.shape[2]

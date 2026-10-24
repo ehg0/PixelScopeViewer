@@ -1,8 +1,4 @@
-"""Plotting utilities for pyqtgraph integration.
-
-This module provides pyqtgraph-specific state management,
-plot settings, and interaction handlers.
-"""
+"""pyqtgraph の plot 設定と状態管理。"""
 
 from .pyqtgraph import (
     apply_plot_settings,

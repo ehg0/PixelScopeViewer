@@ -67,7 +67,7 @@ class BrightnessManager:
             self.viewer.state.brightness.offset = params[0]
             self.viewer.state.brightness.gain = params[1]
             self.viewer.state.brightness.upper_level = params[2]
-            self.viewer.update_brightness_status()
+            self.viewer.status_updater.update_brightness_status()
         else:
             # update_for_new_image が brightness_changed を emit し、status bar も更新される
             self.viewer.brightness_dialog.update_for_new_image(
@@ -146,7 +146,7 @@ class BrightnessManager:
                     self.viewer.state.brightness.upper_level = dtype_defaults.get("initial_upper_level", 255)
                 except Exception:
                     pass
-            self.viewer.update_brightness_status()
+            self.viewer.status_updater.update_brightness_status()
 
         # 画像を切り替えても reset 後の値が保たれるよう保存する
         self._save_current_dtype_params()
@@ -162,7 +162,7 @@ class BrightnessManager:
 
         self._save_current_dtype_params()
 
-        self.viewer.update_brightness_status()
+        self.viewer.status_updater.update_brightness_status()
 
         self.viewer._cached_display_array = None
         self.viewer._cached_display_params = None
@@ -236,7 +236,7 @@ class BrightnessManager:
         if self.viewer.brightness_dialog is not None:
             self.viewer.brightness_dialog.set_gain(new_gain)
 
-        self.viewer.update_brightness_status()
+        self.viewer.status_updater.update_brightness_status()
 
         img = self.viewer.images[self.viewer.state.current_index]
         self.viewer.display_image(img["array"])

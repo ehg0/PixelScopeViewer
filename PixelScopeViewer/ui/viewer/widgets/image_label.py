@@ -65,6 +65,6 @@ class ImageLabel(RoiManagerMixin, RoiEditorMixin, BaseImageLabel):
         new_scale = max(MIN_ZOOM_SCALE, min(MAX_ZOOM_SCALE, new_scale))
 
         # status bar に表示中の座標を中心に zoom する
-        self.viewer.set_zoom_at_status_coords(new_scale)
+        self.viewer.zoom_manager.set_zoom_at_status_coords(new_scale)
 
         event.accept()

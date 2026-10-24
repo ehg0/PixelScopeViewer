@@ -189,45 +189,6 @@ class ImageViewer(QMainWindow):
         if self.state.current_index is not None:
             self.display_image(self.images[self.state.current_index]["array"])
 
-    # zoom_manager への委譲
-    def set_zoom(self, scale: float):
-        self.zoom_manager.set_zoom(scale)
-
-    def set_zoom_at_status_coords(self, scale: float):
-        self.zoom_manager.set_zoom_at_status_coords(scale)
-
-    def set_zoom_at_coords(self, scale: float, image_coords: tuple[float, float]):
-        self.zoom_manager.set_zoom_at_coords(scale, image_coords)
-
-    def fit_to_window(self):
-        self.zoom_manager.fit_to_window()
-
-    def toggle_fit_zoom(self):
-        self.zoom_manager.toggle_fit_zoom()
-
-    # brightness_manager への委譲
-    def show_brightness_dialog(self):
-        self.brightness_manager.show_brightness_dialog()
-
-    def reset_brightness_settings(self):
-        self.brightness_manager.reset_brightness_settings()
-
-    def adjust_gain_step(self, amount):
-        self.brightness_manager.adjust_gain_step(amount)
-
-    def apply_brightness_adjustment(self, arr: np.ndarray) -> np.ndarray:
-        return self.brightness_manager.apply_brightness_adjustment(arr)
-
-    # status_updater への委譲
-    def update_mouse_status(self, pos):
-        self.status_updater.update_mouse_status(pos)
-
-    def update_status(self):
-        self.status_updater.update_status()
-
-    def update_brightness_status(self):
-        self.status_updater.update_brightness_status()
-
     # 画像の読み込みと切り替え
     def show_analysis_dialog(self, tab: str | None = None):
         """表示中の画像と ROI の解析 dialog を表示する。
@@ -322,7 +283,7 @@ class ImageViewer(QMainWindow):
         """現在の 1ch/2ch 表示モードに合わせた thumbnail 用の配列を返す。"""
         if arr.ndim == 2 or (arr.ndim == 3 and arr.shape[2] == 1):
             # メイン表示と揃えるため brightness を適用する
-            adj = self.apply_brightness_adjustment(arr)
+            adj = self.brightness_manager.apply_brightness_adjustment(arr)
             if self.channel_display.mode_1ch == MODE_1CH_JET:
                 if adj.ndim == 3 and adj.shape[2] == 1:
                     adj = adj[..., 0]
@@ -339,7 +300,7 @@ class ImageViewer(QMainWindow):
                 return rgb
             else:
                 # composite: brightness 適用後、channel の表示 ON/OFF と色で合成する
-                adj = self.apply_brightness_adjustment(arr)
+                adj = self.brightness_manager.apply_brightness_adjustment(arr)
                 h, w, c = adj.shape
                 n = c
                 checks = self.channel_display.checks(n)
@@ -556,7 +517,7 @@ class ImageViewer(QMainWindow):
         """current_index の画像を表示し、関連する widget と dialog を更新する。"""
         if self.state.current_index is None or not self.images:
             self.image_label.clear()
-            self.update_status()
+            self.status_updater.update_status()
             return
 
         # 画像を切り替えたら fit zoom の状態と表示 cache を破棄する
@@ -573,7 +534,7 @@ class ImageViewer(QMainWindow):
         stored_params = self.state.brightness_by_dtype[determine_dtype_group(arr)]
         if stored_params != self.state.brightness:
             self.state.brightness = replace(stored_params)
-            self.update_brightness_status()
+            self.status_updater.update_brightness_status()
         self.display_image(arr)
         self.image_changed.emit()
         self.update_image_list_menu()
@@ -633,7 +594,7 @@ class ImageViewer(QMainWindow):
         try:
             if arr.ndim == 2 or (arr.ndim == 3 and arr.shape[2] == 1):
                 if self.channel_display.mode_1ch == MODE_1CH_JET:
-                    adj = self.apply_brightness_adjustment(arr)
+                    adj = self.brightness_manager.apply_brightness_adjustment(arr)
                     if adj.ndim == 3 and adj.shape[2] == 1:
                         adj = adj[..., 0]
                     result = apply_jet_colormap(adj)
@@ -659,7 +620,7 @@ class ImageViewer(QMainWindow):
             apply_adjust = True
 
         if apply_adjust:
-            arr = self.apply_brightness_adjustment(arr)
+            arr = self.brightness_manager.apply_brightness_adjustment(arr)
 
         # 表示する channel を選択した色で合成する
         channel_checks = self.channel_checks
@@ -702,7 +663,7 @@ class ImageViewer(QMainWindow):
 
         qimg = numpy_to_qimage(processed_arr)
         self.image_label.set_image(qimg, self.state.scale)
-        self.update_status()
+        self.status_updater.update_status()
 
     def next_image(self):
         if not self.images:
@@ -953,7 +914,7 @@ class ImageViewer(QMainWindow):
 
     def eventFilter(self, obj, event):
         if obj is self.image_label and event.type() == QEvent.MouseMove:
-            self.update_mouse_status(event.position().toPoint())
+            self.status_updater.update_mouse_status(event.position().toPoint())
             return False
         return super().eventFilter(obj, event)
 

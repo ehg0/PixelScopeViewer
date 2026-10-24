@@ -180,7 +180,8 @@ def calc_stats(data: np.ndarray) -> tuple[float, float, float, float, float, flo
     return mean, std, median, min, max, fano
 
 
-def _stats_row(index: int, label: str, data: np.ndarray, is_int: bool) -> dict:
+def stats_row(index: int, label: str, data: np.ndarray, is_int: bool) -> dict:
+    """統計量 table の 1 行（ch, curve_label, mean, std, median, min, max, fano, is_int）を返す。"""
     mean_v, std_v, median_v, min_v, max_v, fano_v = calc_stats(data)
     return {
         "ch": str(index),
@@ -215,7 +216,7 @@ def histogram_stats(arr: np.ndarray, channel_checks: list[bool] | None = None):
         ch, curve_label, mean, std, median, min, max, fano, is_int を持つ dict のリスト。
     """
     return [
-        _stats_row(c, label, channel.ravel(), bool(np.issubdtype(channel.dtype, np.integer)))
+        stats_row(c, label, channel.ravel(), bool(np.issubdtype(channel.dtype, np.integer)))
         for c, label, channel in _visible_channels(arr, channel_checks)
     ]
 
@@ -231,5 +232,5 @@ def profile_stats(
     rows = []
     for c, label, channel in _visible_channels(arr, channel_checks):
         prof = compute_profile_1d(channel, orientation, method)
-        rows.append(_stats_row(c, label, prof, bool(np.issubdtype(channel.dtype, np.integer))))
+        rows.append(stats_row(c, label, prof, bool(np.issubdtype(channel.dtype, np.integer))))
     return rows

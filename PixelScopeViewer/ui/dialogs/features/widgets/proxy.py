@@ -1,10 +1,12 @@
+"""読み込み済みの画像の行のみに絞り込む proxy model。"""
+
 from pathlib import Path
 
 from PySide6.QtCore import QModelIndex, QSortFilterProxyModel
 
 
 class LoadedOnlyProxyModel(QSortFilterProxyModel):
-    """Proxy model that can filter to show only loaded images."""
+    """読み込み済みの画像の行のみに絞り込める QSortFilterProxyModel。"""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -16,32 +18,27 @@ class LoadedOnlyProxyModel(QSortFilterProxyModel):
     def filterAcceptsRow(self, source_row: int, source_parent: QModelIndex) -> bool:
         if not super().filterAcceptsRow(source_row, source_parent):
             return False
-        # If not filtering by loaded-only, accept all rows
         if not self._loaded_only:
             return True
 
         try:
             src = self.sourceModel()
-            # The source model must have a `_loaded_paths` cache for this to work.
+            # source model の _loaded_paths の cache を使う。cache がなければ絞り込まない
             loaded_paths = getattr(src, "_loaded_paths", None)
             if loaded_paths is None:
-                # If the model doesn't support our expected cache, accept the row
-                # to avoid incorrectly hiding it.
                 return True
 
-            # If there are no loaded images at all, show all rows.
+            # 画像を 1 枚も読み込んでいない場合は全行を表示する
             if not loaded_paths:
                 return True
 
             fp = src.manager.get_value(source_row, "fullfilepath")
             if not fp:
-                # If there's no filepath, we can't determine if it's loaded,
-                # so we don't filter it out.
+                # パスがない行は判定できないので表示する
                 return True
 
             p = str(Path(str(fp)).resolve())
             return p in loaded_paths
         except Exception:
-            # On any error, accept the row to be safe.
             pass
         return True

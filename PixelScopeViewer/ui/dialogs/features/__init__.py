@@ -1,4 +1,4 @@
-"""Features dialog package."""
+"""特徴量の表示・編集 dialog。"""
 
 from .dialog import FeaturesDialog
 

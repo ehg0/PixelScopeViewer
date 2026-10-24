@@ -1,3 +1,5 @@
+"""特徴量の表示・編集 dialog。"""
+
 from __future__ import annotations
 
 import contextlib
@@ -36,7 +38,12 @@ from .widgets import (
 
 
 class FeaturesDialog(QDialog):
-    # Store position before minimize to restore after showNormal()
+    """特徴量ファイルの images・categories・annotations を表示し、images を編集・保存する dialog。
+
+    images の行を double click（または Enter）すると、対応する画像を viewer で表示する。
+    """
+
+    # 最小化からの復元時に元の位置へ戻すため保持する
     _position_before_minimize = None
 
     def __init__(self, viewer, manager: FeaturesManager):
@@ -44,12 +51,12 @@ class FeaturesDialog(QDialog):
         self.viewer = viewer
         self.manager = manager
 
-        # Set window flags to allow minimizing and prevent staying on top
+        # 最小化を許可し、最前面に固定しない
         flags = Qt.Window | Qt.WindowMinimizeButtonHint | Qt.WindowCloseButtonHint
         self.setWindowFlags(flags)
         self.setAttribute(Qt.WA_DeleteOnClose)
 
-        # Window title with last loaded path if available
+        # 最後に読み込んだファイルを title に表示する
         title = "特徴量表示"
         last_path = self.manager.get_last_loaded_path()
         if last_path:
@@ -59,7 +66,6 @@ class FeaturesDialog(QDialog):
 
         layout = QVBoxLayout(self)
 
-        # Menu bar inside dialog
         menubar = QMenuBar(self)
         file_menu = QMenu("ファイル", self)
         act_open_features = file_menu.addAction("特徴量ファイルを開く…")
@@ -67,7 +73,6 @@ class FeaturesDialog(QDialog):
         menubar.addMenu(file_menu)
         layout.setMenuBar(menubar)
 
-        # Controls
         ctrl = QHBoxLayout()
         self.filter_edit = QLineEdit()
         self.filter_edit.setPlaceholderText("フィルタ文字列を入力…")
@@ -90,15 +95,13 @@ class FeaturesDialog(QDialog):
         ctrl.addWidget(self.btn_save)
         layout.addLayout(ctrl)
 
-        # Tabs: Images / Categories / Annotations
         self.tabs = QTabWidget(self)
 
-        # Images tab
         self.model_images = FeaturesTableModel(self.viewer, self.manager)
         self.proxy_images = LoadedOnlyProxyModel(self)
         self.proxy_images.setSourceModel(self.model_images)
         self.proxy_images.setFilterCaseSensitivity(Qt.CaseInsensitive)
-        # Avoid dynamic resort/filter on every data change (costly for large datasets)
+        # 大きなデータでは重いため、データ変更のたびに sort/filter し直さない
         with contextlib.suppress(Exception):
             self.proxy_images.setDynamicSortFilter(False)
         self.table_images = QTableView(self)
@@ -107,29 +110,23 @@ class FeaturesDialog(QDialog):
         self.table_images.doubleClicked.connect(self._on_double_clicked)
         self.table_images.setSelectionBehavior(QTableView.SelectRows)
         self.table_images.setAlternatingRowColors(True)
-        # Performance-related view hints
+        # 大きな table の描画を軽くする設定
         try:
-            # Use uniform row heights for faster layout/painting when rows are same height
             self.table_images.setUniformRowHeights(True)
-            # Use pixel scrolling for smoother scrolling on large tables
             self.table_images.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
             self.table_images.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
-            # Avoid word-wrapping which can force heavy layout work
             self.table_images.setWordWrap(False)
         except Exception:
             pass
-        # Use plain text delegate to disable spinbox for numeric cells
+        # 数値の列でも spin box を使わない
         self.table_images.setItemDelegate(PlainTextDelegate(self.table_images))
-        # Hide vertical header (row numbers)
         self.table_images.verticalHeader().setVisible(False)
-        # Show horizontal header for all columns
         self.table_images.horizontalHeader().setVisible(True)
-        # Set minimum width for id column if exists
         cols = self.manager.get_columns()
         if "id" in cols:
             id_idx = cols.index("id")
             self.table_images.setColumnWidth(id_idx, 50)
-        # Enable tooltips for truncated text
+        # 省略表示されたセルの tooltip を出す
         self.table_images.setMouseTracking(True)
         w_images = QWidget(self)
         v_images = QVBoxLayout(w_images)
@@ -137,7 +134,7 @@ class FeaturesDialog(QDialog):
         v_images.addWidget(self.table_images)
         self.tabs.addTab(w_images, "Images")
 
-        # Categories tab (read-only)
+        # categories と annotations は読み取り専用
         self.model_categories = SimpleDictTableModel(
             self.manager.get_categories_rows, self.manager.get_categories_columns, editable=False
         )
@@ -153,7 +150,6 @@ class FeaturesDialog(QDialog):
         v_cat.addWidget(self.table_categories)
         self.tabs.addTab(w_cat, "Categories")
 
-        # Annotations tab (read-only)
         self.model_annotations = AnnotationsTableModel(self.manager)
         self.table_annotations = QTableView(self)
         self.table_annotations.setModel(self.model_annotations.as_proxy(self))
@@ -169,7 +165,6 @@ class FeaturesDialog(QDialog):
 
         layout.addWidget(self.tabs, 1)
 
-        # Wire up
         self.filter_edit.textChanged.connect(self._on_filter_changed)
         self.filter_column.currentIndexChanged.connect(self._on_filter_col_changed)
         self.tabs.currentChanged.connect(self._on_tab_changed)
@@ -177,28 +172,24 @@ class FeaturesDialog(QDialog):
         self.btn_save.clicked.connect(self._on_save)
         self.btn_toggle_cols.clicked.connect(self._on_toggle_columns)
         self.chk_show_loaded_only.toggled.connect(self._on_loaded_only_toggled)
-        # Listen to image change: refresh highlight and re-evaluate loaded-only filter
+        # 画像の変更時に強調表示と「読込済のみ」の絞り込みを更新する
         self.viewer.image_changed.connect(self._on_viewer_images_changed)
 
-        # Initialize filter
         self.refresh_filter_columns()
         self._on_filter_col_changed()
-        # Initialize button states based on initial tab
         self._on_tab_changed(0)
 
-        # Apply canonical initial sorts
         self._apply_initial_sorts()
 
     # ----- UI handlers -----
     def refresh_from_manager(self):
+        """FeaturesManager の内容を全 table に反映する。"""
         self.model_images.refresh()
         self.model_categories.refresh()
         self.model_annotations.refresh()
         self.refresh_filter_columns()
         self.refresh_roles()
-        # Re-apply canonical sorts after data refresh to keep ascending order
         self._apply_initial_sorts()
-        # Update title (last loaded path may change)
         title = "特徴量表示"
         last_path = self.manager.get_last_loaded_path()
         if last_path:
@@ -206,27 +197,19 @@ class FeaturesDialog(QDialog):
         self.setWindowTitle(title)
 
     def _apply_initial_sorts(self):
-        """Apply canonical ascending sorts regardless of load order or user action.
-
-        - Images: sort by leftmost key (prefer 'id' if available; fallback to column 0)
-        - Categories: sort by 'id' if available; else column 0
-        - Annotations: sort by 'image_id' if available; else column 0
-        """
-        # Images
+        """各 table を key 列（images・categories は id、annotations は image_id）の昇順に並べる。"""
         img_cols = self.manager.get_columns()
         if img_cols:
             img_key_col = img_cols.index("id") if "id" in img_cols else 0
             self.table_images.sortByColumn(img_key_col, Qt.AscendingOrder)
             with contextlib.suppress(Exception):
                 self.table_images.horizontalHeader().setSortIndicator(img_key_col, Qt.AscendingOrder)
-        # Categories
         cat_cols = self.manager.get_categories_columns() or []
         if cat_cols:
             cat_key_col = cat_cols.index("id") if "id" in cat_cols else 0
             self.table_categories.sortByColumn(cat_key_col, Qt.AscendingOrder)
             with contextlib.suppress(Exception):
                 self.table_categories.horizontalHeader().setSortIndicator(cat_key_col, Qt.AscendingOrder)
-        # Annotations
         ann_cols = self.model_annotations.get_columns()
         if ann_cols:
             ann_key_col = ann_cols.index("image_id") if "image_id" in ann_cols else 0
@@ -250,10 +233,8 @@ class FeaturesDialog(QDialog):
             self.model_images.dataChanged.emit(tl, br, [Qt.DisplayRole, Qt.BackgroundRole, Qt.ForegroundRole])
 
     def _on_viewer_images_changed(self):
-        # Recompute proxy filtering when the set of loaded images changes
         with contextlib.suppress(Exception):
             self.proxy_images.invalidateFilter()
-        # Refresh roles (loaded/current highlighting)
         self.refresh_roles()
 
     def _on_loaded_only_toggled(self, checked: bool):
@@ -328,7 +309,6 @@ class FeaturesDialog(QDialog):
         btns.accepted.connect(on_ok)
         btns.rejected.connect(dlg.reject)
 
-        # Add strectch for central alignment
         h_btns = QHBoxLayout()
         h_btns.addStretch(1)
         h_btns.addWidget(btns)
@@ -373,7 +353,7 @@ class FeaturesDialog(QDialog):
             proxy.setFilterKeyColumn(idx)
 
     def _on_tab_changed(self, idx: int):
-        # Only Images tab allows add/save/toggle/loaded-only
+        # 列追加・保存・列表示・読込済のみは images tab でのみ有効
         enable = idx == 0
         self.btn_add_col.setEnabled(enable)
         self.btn_save.setEnabled(enable)
@@ -419,7 +399,6 @@ class FeaturesDialog(QDialog):
         except Exception as e:
             QMessageBox.critical(self, "画像を開く", f"読み込みに失敗しました:\n{e}")
 
-    # Helpers for current tab
     def _current_proxy(self):
         i = self.tabs.currentIndex()
         return [self.proxy_images, self.model_categories.proxy, self.model_annotations.proxy][i]
@@ -444,15 +423,13 @@ class FeaturesDialog(QDialog):
                 self.table_annotations.clearSelection()
             event.accept()
         elif event.key() in (Qt.Key_Return, Qt.Key_Enter):
-            # Handle Enter key to load image from selected row
+            # 選択行の画像を開く
             i = self.tabs.currentIndex()
-            if i == 0:  # Images tab
-                # Get current selection
+            if i == 0:
                 selection = self.table_images.selectionModel()
                 if selection and selection.hasSelection():
                     indexes = selection.selectedRows()
                     if indexes:
-                        # Load the first selected row
                         proxy_index = indexes[0]
                         self._on_double_clicked(proxy_index)
                         event.accept()
@@ -462,10 +439,9 @@ class FeaturesDialog(QDialog):
             super().keyPressEvent(event)
 
     def changeEvent(self, event):
-        """Handle window state changes to preserve position during minimize/restore."""
+        # 最小化前の位置を保存し、復元時に戻す
         if event.type() == QEvent.WindowStateChange:
             if self.isMinimized():
-                # Save current position before minimize
                 FeaturesDialog._position_before_minimize = self.pos()
             elif event.oldState() & Qt.WindowMinimized & FeaturesDialog._position_before_minimize is not None:
                 self.move(FeaturesDialog._position_before_minimize)

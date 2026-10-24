@@ -1,3 +1,5 @@
+"""特徴量 dialog の table model。"""
+
 from __future__ import annotations
 
 import contextlib
@@ -11,19 +13,19 @@ from ....utils.features_manager import FeaturesManager
 
 
 class FeaturesTableModel(QAbstractTableModel):
+    """特徴量の行を表示・編集する model。読み込み済みの画像の行は黒、表示中の画像の行は黄色で示す。"""
+
     def __init__(self, viewer, manager: FeaturesManager):
         super().__init__()
         self.viewer = viewer
         self.manager = manager
         self._columns = self.manager.get_columns()
-        # Cache resolved loaded image paths and current image path to avoid
-        # repeated expensive resolution/loops during painting.
+        # 描画のたびにパスを解決しないよう、読み込み済み・表示中の画像のパスを cache する
         self._loaded_paths = set()
         self._current_path = None
         # 画像の追加・削除時に cache を再構築する
         with contextlib.suppress(Exception):
             self.viewer.image_changed.connect(self._rebuild_loaded_cache)
-        # Build initial cache
         self._rebuild_loaded_cache()
 
     def refresh(self):
@@ -56,19 +58,15 @@ class FeaturesTableModel(QAbstractTableModel):
         value = self.manager.get_value(row, col_name)
 
         if role == Qt.DisplayRole or role == Qt.EditRole:
-            # Avoid returning huge literal strings/arrays to the view; instead
-            # return small summaries for long sequences/arrays to keep painting
-            # cheap. For small values, return as-is.
+            # 描画を軽くするため、長い配列は要約して返す
             if value is None:
                 return ""
-            # If value is a sequence-like (but not string/dict/bytes), summarize
             try:
                 if not isinstance(value, (str, bytes, bytearray, dict)) and hasattr(value, "__len__"):
                     length = len(value)
                     if length > 20:
                         return f"<{type(value).__name__} len={length}>"
             except Exception:
-                # Fall back to returning the raw value if any check fails
                 pass
             return value
 
@@ -78,7 +76,7 @@ class FeaturesTableModel(QAbstractTableModel):
             return Qt.AlignLeft | Qt.AlignVCenter
 
         if role == Qt.ToolTipRole:
-            # Avoid generating huge tooltip strings for long sequences.
+            # 長い配列は tooltip でも要約する
             if value is None:
                 return None
             try:
@@ -147,12 +145,9 @@ class FeaturesTableModel(QAbstractTableModel):
         self.dataChanged.emit(index, index, [Qt.DisplayRole, Qt.EditRole])
         return True
 
-    # ---- cache maintenance ----
+    # ---- cache ----
     def _rebuild_loaded_cache(self):
-        """Rebuild cached sets for loaded images and current image path.
-
-        This is triggered on viewer.image_changed to avoid per-cell loops.
-        """
+        """読み込み済みの画像と表示中の画像のパスの cache を作り直す。"""
         loaded = set()
         cur_path = None
         try:
@@ -175,7 +170,7 @@ class FeaturesTableModel(QAbstractTableModel):
             pass
         self._loaded_paths = loaded
         self._current_path = cur_path
-        # Notify views that visual roles may have changed
+        # 文字色と背景色の更新を view に通知する
         try:
             r = self.rowCount()
             c = self.columnCount()
@@ -188,6 +183,8 @@ class FeaturesTableModel(QAbstractTableModel):
 
 
 class SimpleDictTableModel(QAbstractTableModel):
+    """rows_fn と cols_fn が返す dict のリストを表示する model。"""
+
     def __init__(self, rows_fn, cols_fn, editable: bool = False):
         super().__init__()
         self._rows_fn = rows_fn
@@ -251,6 +248,8 @@ class SimpleDictTableModel(QAbstractTableModel):
 
 
 class AnnotationsTableModel(QAbstractTableModel):
+    """annotation（image_id, category_id, bbox）を表示する model。"""
+
     def __init__(self, manager: FeaturesManager):
         super().__init__()
         self.manager = manager

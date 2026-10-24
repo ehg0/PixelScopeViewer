@@ -135,9 +135,6 @@ class BrightnessDialog(QDialog):
         """(offset, gain, upper_level) を返す。"""
         return self.brightness_tab.get_parameters()
 
-    def get_channel_colors(self):
-        return self.channel_tab.get_channel_colors()
-
     def set_channel_colors(self, colors):
         self.channel_tab.set_channel_colors(colors)
 

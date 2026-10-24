@@ -313,10 +313,6 @@ class TilingComparisonDialog(QDialog):
         if self.brightness_manager:
             self.brightness_manager.refresh_all_tiles()
 
-    def refresh_tiles_by_dtype_group(self, dtype_group: str):
-        if self.brightness_manager:
-            self.brightness_manager.refresh_tiles_by_dtype_group(dtype_group)
-
     def show_brightness_dialog(self):
         if not self.brightness_manager:
             return
@@ -421,12 +417,6 @@ class TilingComparisonDialog(QDialog):
                 image_array, roi_rect, file_path = self.get_active_tile_image_and_rect()
                 if image_array is not None:
                     self._analysis_dialog.set_image_and_rect(image_array, roi_rect, file_path)
-
-    def on_tile_roi_changed(self, roi_rect_in_image_coords: QRect):
-        if self.roi_manager:
-            self.roi_manager.on_tile_roi_changed(roi_rect_in_image_coords)
-            self.update_status_bar()
-            self._refresh_comparison_dialog_for_roi()
 
     def _on_mouse_coords_changed(self, coords):
         """いずれかの tile のマウス座標 (ix, iy)（または None）の変更時に、全 tile の pixel 値の表示を更新する。"""
@@ -730,53 +720,6 @@ class TilingComparisonDialog(QDialog):
         """全 tile の ROI の表示画像を grid に並べて clipboard にコピーする。"""
         if self.roi_manager:
             self.roi_manager.copy_all_tiles_roi_as_grid(self.grid_size)
-
-    def rotate_tiles_forward(self):
-        if self.tile_manager:
-            self.tile_manager.rotate_tiles_forward()
-            self._update_active_tile_visual()
-
-    def rotate_tiles_backward(self):
-        if self.tile_manager:
-            self.tile_manager.rotate_tiles_backward()
-            self._update_active_tile_visual()
-
-    def swap_with_next_tile(self):
-        if self.tile_manager:
-            self.tile_manager.swap_with_next_tile()
-            if self._analysis_dialog and self._analysis_dialog.isVisible():
-                image_array, roi_rect, file_path = self.get_active_tile_image_and_rect()
-                if image_array is not None:
-                    self._analysis_dialog.set_image_and_rect(image_array, roi_rect, file_path)
-
-    def swap_with_previous_tile(self):
-        if self.tile_manager:
-            self.tile_manager.swap_with_previous_tile()
-            if self._analysis_dialog and self._analysis_dialog.isVisible():
-                image_array, roi_rect, file_path = self.get_active_tile_image_and_rect()
-                if image_array is not None:
-                    self._analysis_dialog.set_image_and_rect(image_array, roi_rect, file_path)
-
-    def swap_tiles(self, index_a: int, index_b: int):
-        if self.tile_manager:
-            self.tile_manager.swap_tiles(index_a, index_b)
-
-    def _update_active_tile_visual(self):
-        if not self.tile_manager:
-            return
-
-        tiles = self.tile_manager.get_tiles()
-        active_idx = self.tile_manager.get_active_tile_index()
-        for i, tile in enumerate(tiles):
-            tile.set_active(i == active_idx)
-
-        if self.roi_manager and self.roi_manager.common_roi_rect:
-            self.roi_manager.sync_roi_to_all_tiles(self.roi_manager.common_roi_rect)
-
-        if self._analysis_dialog and self._analysis_dialog.isVisible():
-            image_array, roi_rect, file_path = self.get_active_tile_image_and_rect()
-            if image_array is not None:
-                self._analysis_dialog.set_image_and_rect(image_array, roi_rect, file_path)
 
     def update_status_bar(self):
         if self.current_mouse_coords:

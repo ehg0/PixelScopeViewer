@@ -99,9 +99,6 @@ class TileImageLabel(QLabel):
         self.roi_rect = roi_rect
         self.update()
 
-    def get_roi(self) -> list | None:
-        return self.roi_rect
-
     def clear_roi(self):
         self.roi_rect = None
         self.update()
@@ -277,10 +274,6 @@ class TileImageLabel(QLabel):
         self.zoom_factor = max(MIN_ZOOM_SCALE, min(MAX_ZOOM_SCALE, float(factor)))
         if self.qimage is not None:
             self._update_display()
-
-    def fit_to_view(self):
-        # fit は親の dialog で行うため何もしない
-        pass
 
     # --- 座標変換など ---
     def _widget_to_image_coords(self, pos) -> tuple[int, int]:

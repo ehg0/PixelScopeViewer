@@ -213,10 +213,6 @@ class TileWidget(QWidget):
     def set_image(self, array: np.ndarray, gain: float, offset: float, upper_level: float):
         self.image_label.set_image(array, gain, offset, upper_level)
 
-    def set_image_data(self, image_data: dict):
-        self.image_data = image_data
-        self.update_display()
-
     def update_display(self):
         """親 dialog の brightness を適用して画像とファイル名を表示する。"""
         arr = self.image_data.get("base_array")
@@ -275,9 +271,6 @@ class TileWidget(QWidget):
         else:
             self.image_label.set_roi(None)
 
-    def get_roi(self) -> list | None:
-        return self.image_label.get_roi()
-
     def clear_roi(self):
         self.image_label.clear_roi()
 
@@ -288,6 +281,3 @@ class TileWidget(QWidget):
 
     def set_zoom(self, factor: float):
         self.image_label.set_zoom(factor)
-
-    def fit_to_view(self):
-        self.image_label.fit_to_view()

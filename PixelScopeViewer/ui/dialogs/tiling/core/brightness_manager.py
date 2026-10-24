@@ -50,11 +50,6 @@ class BrightnessManager:
         for tile in self.tiles:
             tile.update_display()
 
-    def refresh_tiles_by_dtype_group(self, dtype_group: str):
-        for i, tile in enumerate(self.tiles):
-            if self.tile_dtype_groups[i] == dtype_group:
-                tile.update_display()
-
     def on_brightness_dialog_changed(self, full_params: dict):
         """表示設定 dialog の値を適用する。
 

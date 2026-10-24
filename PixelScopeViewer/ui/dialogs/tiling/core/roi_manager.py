@@ -22,10 +22,6 @@ class ROIManager:
         self.common_roi_changed = common_roi_changed_signal
         self.common_roi_rect: QRect | None = None
 
-    def on_tile_roi_changed(self, roi_rect_in_image_coords: QRect):
-        self.common_roi_rect = roi_rect_in_image_coords
-        self.common_roi_changed.emit(roi_rect_in_image_coords)
-
     def on_tile_roi_changed_list(self, roi_rect):
         """[x, y, w, h] 形式（または None）の ROI を共通 ROI にする。"""
         if roi_rect:

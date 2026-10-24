@@ -640,14 +640,3 @@ class TilingComparisonDialog(AnalysisDialog):
             return
         vis[ch_idx] = bool(checked)
         self.update_contents()
-
-    # ---- tile ごとの channel の表示 ON/OFF ----
-    def _ensure_overlay_channel_visibility(self, valid_tiles):
-        for tile in valid_tiles:
-            idx = tile["index"]
-            arr = tile["array"]
-            if idx not in self.overlay_channel_visibility:
-                if arr.ndim == 3:
-                    self.overlay_channel_visibility[idx] = [True] * arr.shape[2]
-                else:
-                    self.overlay_channel_visibility[idx] = [True]

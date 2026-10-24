@@ -328,9 +328,6 @@ class ChannelTab(QWidget):
             if i < len(self.checkboxes):
                 self.checkboxes[i].setChecked(state)
 
-    def get_channel_colors(self):
-        return self.channel_colors.copy()
-
     def set_channel_colors(self, colors):
         for i, color in enumerate(colors or []):
             if i < len(self.channel_colors):

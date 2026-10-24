@@ -414,7 +414,7 @@ class ImageViewer(QMainWindow):
                         if img_data is not None:
                             new_images.append(img_data)
 
-            except Exception as e:
+            except Exception as e:  # decoder・custom loader の失敗は様々なため、ファイルごとに記録してまとめて知らせる
                 failed_files.append((path, str(e)))
                 continue
 

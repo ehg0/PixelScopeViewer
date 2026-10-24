@@ -30,14 +30,10 @@ class StatusUpdater:
             v = arr[iy, ix]
 
             def _format_scalar(x, dtype):
-                try:
-                    if np.issubdtype(dtype, np.floating):
-                        xv = float(x)
-                        return f"{xv:.3f}"
-                    else:
-                        return str(int(x))
-                except Exception:
-                    return str(x)
+                if np.issubdtype(dtype, np.floating):
+                    return f"{float(x):.3f}"
+                # 整数と bool は整数で表示する（complex などはそのまま）
+                return str(int(x)) if np.issubdtype(dtype, np.integer) or dtype == np.bool_ else str(x)
 
             if np.ndim(v) == 0:
                 val_str = _format_scalar(v, arr.dtype)
@@ -101,36 +97,22 @@ class StatusUpdater:
         )
         self.viewer.setWindowTitle(title)
 
-        try:
-            self.viewer.status_scale.setText(f"Scale: {self.viewer.state.scale:.2f}x")
-        except Exception:
-            self.viewer.status_scale.setText("")
+        self.viewer.status_scale.setText(f"Scale: {self.viewer.state.scale:.2f}x")
 
         self.update_brightness_status()
 
     def update_brightness_status(self):
         """brightness の offset/gain/upper level を表示する。gain は値が小さいほど小数桁を増やす。"""
-        try:
-            if isinstance(self.viewer.state.brightness.offset, (int, np.integer)):
-                offset_str = str(self.viewer.state.brightness.offset)
-            else:
-                offset_str = f"{self.viewer.state.brightness.offset:.1f}"
-
-            if self.viewer.state.brightness.gain < 0.01:
-                gain_str = f"{self.viewer.state.brightness.gain:.6f}"
-            elif self.viewer.state.brightness.gain < 0.1:
-                gain_str = f"{self.viewer.state.brightness.gain:.5f}"
-            elif self.viewer.state.brightness.gain >= 100:
-                gain_str = f"{self.viewer.state.brightness.gain:.1f}"
-            else:
-                gain_str = f"{self.viewer.state.brightness.gain:.2f}"
-
-            if isinstance(self.viewer.state.brightness.upper_level, (int, np.integer)):
-                upper_str = str(self.viewer.state.brightness.upper_level)
-            else:
-                upper_str = f"{self.viewer.state.brightness.upper_level:.1f}"
-
-            brightness_text = f"Offset: {offset_str}, Gain: {gain_str}, Upper: {upper_str}"
-            self.viewer.status_brightness.setText(brightness_text)
-        except Exception:
-            self.viewer.status_brightness.setText("")
+        b = self.viewer.state.brightness
+        offset_str = str(b.offset) if isinstance(b.offset, (int, np.integer)) else f"{b.offset:.1f}"
+        upper_str = str(b.upper_level) if isinstance(b.upper_level, (int, np.integer)) else f"{b.upper_level:.1f}"
+        # 小さい gain ほど小数の桁を増やす
+        if b.gain < 0.01:
+            gain_str = f"{b.gain:.6f}"
+        elif b.gain < 0.1:
+            gain_str = f"{b.gain:.5f}"
+        elif b.gain >= 100:
+            gain_str = f"{b.gain:.1f}"
+        else:
+            gain_str = f"{b.gain:.2f}"
+        self.viewer.status_brightness.setText(f"Offset: {offset_str}, Gain: {gain_str}, Upper: {upper_str}")

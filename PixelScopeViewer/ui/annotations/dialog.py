@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QModelIndex, Qt, QTimer
+from PySide6.QtCore import QModelIndex, Qt, QTimer
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -36,26 +36,21 @@ from PixelScopeViewer.ui.annotations.widgets import (
 )
 from PixelScopeViewer.ui.annotations.widgets.tables import resolve_path
 from PixelScopeViewer.ui.common import defaults
+from PixelScopeViewer.ui.common.window import ToolDialog
 
 
-class AnnotationsDialog(QDialog):
+class AnnotationsDialog(ToolDialog):
     """特徴量ファイルの images・categories・annotations を表示し、images を編集・保存する dialog。
 
     images の行を double click（または Enter）すると、対応する画像を viewer で表示する。
     """
 
-    # 最小化からの復元時に元の位置へ戻すため保持する
-    _position_before_minimize = None
+    window_key = "annotations"
 
     def __init__(self, viewer, manager: AnnotationStore):
         super().__init__(viewer)
         self.viewer = viewer
         self.manager = manager
-
-        # 最小化を許可し、最前面に固定しない
-        flags = Qt.Window | Qt.WindowMinimizeButtonHint | Qt.WindowCloseButtonHint
-        self.setWindowFlags(flags)
-        self.setAttribute(Qt.WA_DeleteOnClose)
 
         # 最後に読み込んだファイルを title に表示する
         title = "特徴量表示"
@@ -425,12 +420,3 @@ class AnnotationsDialog(QDialog):
             super().keyPressEvent(event)
         else:
             super().keyPressEvent(event)
-
-    def changeEvent(self, event):
-        # 最小化前の位置を保存し、復元時に戻す
-        if event.type() == QEvent.WindowStateChange:
-            if self.isMinimized():
-                AnnotationsDialog._position_before_minimize = self.pos()
-            elif event.oldState() & Qt.WindowMinimized and AnnotationsDialog._position_before_minimize is not None:
-                self.move(AnnotationsDialog._position_before_minimize)
-        super().changeEvent(event)

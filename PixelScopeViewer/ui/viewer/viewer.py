@@ -43,6 +43,7 @@ from PixelScopeViewer.ui.common import defaults, theme
 from PixelScopeViewer.ui.common.channel_display import MODE_1CH_JET, MODE_2CH_FLOW_HSV, ChannelDisplay
 from PixelScopeViewer.ui.common.qt_image import numpy_to_qimage
 from PixelScopeViewer.ui.common.state_dump import to_jsonable
+from PixelScopeViewer.ui.common.window import ChildDialogs, bring_to_front
 from PixelScopeViewer.ui.diff import DiffDialog
 from PixelScopeViewer.ui.tiling import TilingDialog
 from PixelScopeViewer.ui.viewer.brightness_manager import BrightnessManager
@@ -69,15 +70,14 @@ class ImageViewer(QMainWindow):
 
     def __init__(self):
         super().__init__()
+        # 最小化・復元・前面表示・close を連動させる子 dialog。changeEvent は __init__ 中にも届くため最初に作る
+        self.child_dialogs = ChildDialogs()
         self.setWindowTitle("PixelScopeViewer")
         self.resize(*defaults.MAIN_WINDOW_SIZE)
         self.setMouseTracking(True)
 
         self.images = []
         self.state = ViewerState()
-
-        # window 状態（最小化など）を同期する子 dialog
-        self._child_dialogs = []
 
         # zoom の中心に使うマウス位置（画像座標）
         self.current_mouse_image_coords = None
@@ -205,10 +205,7 @@ class ImageViewer(QMainWindow):
 
         # 既に開いている場合は前面に出す
         if self._analysis_dialog is not None:
-            if self._analysis_dialog.isMinimized():
-                self._analysis_dialog.showNormal()
-            self._analysis_dialog.raise_()
-            self._analysis_dialog.activateWindow()
+            bring_to_front(self._analysis_dialog)
             self._analysis_dialog.set_current_tab(tab)
             return
 
@@ -219,18 +216,8 @@ class ImageViewer(QMainWindow):
         dlg = AnalysisDialog(
             self, image_array=arr, image_rect=sel, image_path=img_path, channel_display=self.channel_display
         )
-        dlg.show()
-        dlg.raise_()
-        dlg.activateWindow()
-        self._analysis_dialog = dlg
-        self._child_dialogs.append(dlg)
-
-        def on_closed():
-            if dlg in self._child_dialogs:
-                self._child_dialogs.remove(dlg)
-            self._analysis_dialog = None
-
-        dlg.finished.connect(on_closed)
+        bring_to_front(dlg)
+        self._analysis_dialog = self.child_dialogs.track(dlg, lambda: setattr(self, "_analysis_dialog", None))
         dlg.set_current_tab(tab)
 
     def open_files(self):
@@ -421,24 +408,11 @@ class ImageViewer(QMainWindow):
             if last_path:
                 title = f"特徴量表示 - {last_path}"
             self._annotations_dialog.setWindowTitle(title)
-            if self._annotations_dialog.isMinimized():
-                self._annotations_dialog.showNormal()
-            self._annotations_dialog.raise_()
-            self._annotations_dialog.activateWindow()
+            bring_to_front(self._annotations_dialog)
             return
         dlg = AnnotationsDialog(self, self.annotations)
-        dlg.show()
-        dlg.raise_()
-        dlg.activateWindow()
-        self._annotations_dialog = dlg
-        self._child_dialogs.append(dlg)
-
-        def on_closed():
-            if dlg in self._child_dialogs:
-                self._child_dialogs.remove(dlg)
-            self._annotations_dialog = None
-
-        dlg.finished.connect(on_closed)
+        bring_to_front(dlg)
+        self._annotations_dialog = self.child_dialogs.track(dlg, lambda: setattr(self, "_annotations_dialog", None))
 
     def update_image_list_menu(self):
         """画像 menu を読み込み済みの画像一覧で更新する。"""
@@ -693,9 +667,7 @@ class ImageViewer(QMainWindow):
             self._tiling_dialog = TilingDialog(self, image_list=self.images)
             self._tiling_dialog.finished.connect(lambda: setattr(self, "_tiling_dialog", None))
 
-        self._tiling_dialog.show()
-        self._tiling_dialog.raise_()
-        self._tiling_dialog.activateWindow()
+        bring_to_front(self._tiling_dialog)
 
     # ROI 操作
     def select_all(self):
@@ -779,31 +751,12 @@ class ImageViewer(QMainWindow):
     # event handler
     def changeEvent(self, event):
         # 最小化・復元を子 dialog にも反映する
-        if event.type() == QEvent.WindowStateChange:
-            if self.isMinimized():
-                for dlg in self._child_dialogs:
-                    try:
-                        if dlg.isVisible() and not dlg.isMinimized():
-                            dlg.showMinimized()
-                    except RuntimeError:
-                        pass  # dialog は削除済み
-            elif event.oldState() & Qt.WindowMinimized:
-                for dlg in self._child_dialogs:
-                    try:
-                        if dlg.isMinimized():
-                            dlg.showNormal()
-                    except RuntimeError:
-                        pass  # dialog は削除済み
+        self.child_dialogs.sync_window_state(self, event)
         super().changeEvent(event)
 
     def mousePressEvent(self, event):
         # クリック時に子 dialog も前面に出す
-        for dlg in self._child_dialogs:
-            try:
-                if dlg.isVisible() and not dlg.isMinimized():
-                    dlg.raise_()
-            except RuntimeError:
-                pass  # dialog は削除済み
+        self.child_dialogs.raise_visible()
         super().mousePressEvent(event)
 
     def eventFilter(self, obj, event):
@@ -823,34 +776,12 @@ class ImageViewer(QMainWindow):
 
     def closeEvent(self, event):
         # 子 window が残って操作不能にならないよう、modeless dialog をすべて閉じる
-        try:
+        self.child_dialogs.close_all()
+        # 複数画像比較と help は最小化の連動の対象外のため、個別に閉じる
+        with contextlib.suppress(RuntimeError):  # Qt 側で削除済み
             if self._tiling_dialog is not None:
                 self._tiling_dialog.close()
-        except RuntimeError:
-            pass  # Qt 側で削除済み
-
-        try:
-            if self.brightness_dialog and self.brightness_dialog.isVisible():
-                self.brightness_dialog.close()
-        except RuntimeError:
-            pass
-
-        try:
-            if self._annotations_dialog and self._annotations_dialog.isVisible():
-                self._annotations_dialog.close()
-        except RuntimeError:
-            pass
-
-        try:
-            if self._analysis_dialog and self._analysis_dialog.isVisible():
-                self._analysis_dialog.close()
-        except RuntimeError:
-            pass
-
-        try:
+        with contextlib.suppress(RuntimeError):
             if self.help_dialog and self.help_dialog.isVisible():
                 self.help_dialog.close()
-        except RuntimeError:
-            pass
-
         event.accept()

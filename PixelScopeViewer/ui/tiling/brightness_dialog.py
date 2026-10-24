@@ -1,9 +1,8 @@
 """複数画像比較の brightness 調整 dialog。"""
 
-from PySide6.QtCore import QEvent, Qt, Signal
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QCheckBox,
-    QDialog,
     QDoubleSpinBox,
     QGroupBox,
     QHBoxLayout,
@@ -15,9 +14,10 @@ from PySide6.QtWidgets import (
 from PixelScopeViewer.core.constants import get_dtype_defaults
 from PixelScopeViewer.ui.common import defaults
 from PixelScopeViewer.ui.common.widgets import set_value_silently
+from PixelScopeViewer.ui.common.window import ToolDialog
 
 
-class TilingBrightnessDialog(QDialog):
+class TilingBrightnessDialog(ToolDialog):
     """全 tile 共通の gain と、dtype group ごとの offset・upper level を調整する dialog。
 
     Args:
@@ -26,21 +26,15 @@ class TilingBrightnessDialog(QDialog):
         common_gain: 共通の gain。
     """
 
+    window_key = "tiling_brightness"
+
     # dtype group から {gain, offset, upper_level} への dict
     brightness_changed = Signal(dict)
-
-    # 最小化からの復元時に元の位置へ戻すため保持する
-    _position_before_minimize = None
 
     def __init__(self, parent, brightness_params_by_dtype: dict[str, dict[str, float]], common_gain: float):
         super().__init__(parent)
         self.setWindowTitle("複数画像比較 - 輝度調整")
         self.resize(*defaults.TILING_BRIGHTNESS_DIALOG_SIZE)
-
-        # 最小化を許可し、最前面に固定しない
-        flags = Qt.Window | Qt.WindowMinimizeButtonHint | Qt.WindowCloseButtonHint
-        self.setWindowFlags(flags)
-        self.setAttribute(Qt.WA_DeleteOnClose)
 
         self.brightness_params_by_dtype = brightness_params_by_dtype.copy()
         self.common_gain = common_gain
@@ -207,12 +201,3 @@ class TilingBrightnessDialog(QDialog):
     def get_brightness_params(self) -> tuple[dict[str, dict[str, float]], float]:
         """(dtype group ごとの parameter, 共通の gain) を返す。"""
         return (self.brightness_params_by_dtype.copy(), self.common_gain)
-
-    def changeEvent(self, event):
-        # 最小化前の位置を保存し、復元時に戻す
-        if event.type() == QEvent.WindowStateChange:
-            if self.isMinimized():
-                TilingBrightnessDialog._position_before_minimize = self.pos()
-            elif event.oldState() & Qt.WindowMinimized and TilingBrightnessDialog._position_before_minimize is not None:
-                self.move(TilingBrightnessDialog._position_before_minimize)
-        super().changeEvent(event)

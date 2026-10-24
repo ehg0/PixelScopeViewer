@@ -11,6 +11,7 @@ from PixelScopeViewer.core.brightness import BrightnessParams, determine_dtype_d
 from PixelScopeViewer.core.brightness import apply_brightness_adjustment as apply_brightness_core
 from PixelScopeViewer.core.constants import GAIN_STEP
 from PixelScopeViewer.ui.common.qt_image import numpy_to_qimage
+from PixelScopeViewer.ui.common.window import bring_to_front
 from PixelScopeViewer.ui.display import BrightnessDialog
 
 
@@ -55,14 +56,9 @@ class BrightnessManager:
             self.viewer.brightness_dialog.mode_1ch_changed.connect(self.viewer.brightness_manager.on_mode_1ch_changed)
             self.viewer.brightness_dialog.mode_2ch_changed.connect(self.viewer.brightness_manager.on_mode_2ch_changed)
             # window 状態の同期対象に加える
-            self.viewer._child_dialogs.append(self.viewer.brightness_dialog)
-
-            def on_closed():
-                if self.viewer.brightness_dialog in self.viewer._child_dialogs:
-                    self.viewer._child_dialogs.remove(self.viewer.brightness_dialog)
-                self.viewer.brightness_dialog = None
-
-            self.viewer.brightness_dialog.finished.connect(on_closed)
+            self.viewer.child_dialogs.track(
+                self.viewer.brightness_dialog, lambda: setattr(self.viewer, "brightness_dialog", None)
+            )
             params = self.viewer.brightness_dialog.get_brightness()
             self.viewer.state.brightness.offset = params[0]
             self.viewer.state.brightness.gain = params[1]
@@ -80,20 +76,10 @@ class BrightnessManager:
                 initial_mode_2ch=self.viewer.channel_display.mode_2ch,
             )
 
-        # 表示中の dialog に show() を再実行すると位置が変わるため前面に出すだけにする
-        if self.viewer.brightness_dialog.isVisible():
-            if self.viewer.brightness_dialog.isMinimized():
-                self.viewer.brightness_dialog.showNormal()
-            self.viewer.brightness_dialog.raise_()
-            self.viewer.brightness_dialog.activateWindow()
-            return
-
-        # 非表示の場合は保存済みの geometry を復元して表示する
-        if BrightnessDialog._saved_geometry:
-            self.viewer.brightness_dialog.restoreGeometry(BrightnessDialog._saved_geometry)
-        self.viewer.brightness_dialog.show()
-        self.viewer.brightness_dialog.raise_()
-        self.viewer.brightness_dialog.activateWindow()
+        # 非表示の場合は保存済みの geometry を復元してから表示する
+        if not self.viewer.brightness_dialog.isVisible():
+            self.viewer.brightness_dialog.restore_geometry()
+        bring_to_front(self.viewer.brightness_dialog)
 
     def _default_upper_level_for_dtype(self, dtype, current):
         """dtype に合う upper level を返す。

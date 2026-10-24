@@ -5,11 +5,10 @@ from fractions import Fraction
 
 import numpy as np
 import pyqtgraph as pg
-from PySide6.QtCore import QEvent, QRect, Qt
+from PySide6.QtCore import QRect, Qt
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QColorDialog,
-    QDialog,
     QDoubleSpinBox,
     QHBoxLayout,
     QLabel,
@@ -43,9 +42,10 @@ from PixelScopeViewer.ui.analysis.tabs.metadata_tab import MetadataTab
 from PixelScopeViewer.ui.analysis.tabs.profile_tab import ProfileTab
 from PixelScopeViewer.ui.common import defaults
 from PixelScopeViewer.ui.common.channel_display import ChannelDisplay
+from PixelScopeViewer.ui.common.window import ToolDialog
 
 
-class AnalysisDialog(QDialog):
+class AnalysisDialog(ToolDialog):
     """ROI の metadata・profile・histogram を表示する modeless dialog。
 
     親の ImageViewer から set_image_and_rect で画像と ROI が更新される。
@@ -57,10 +57,8 @@ class AnalysisDialog(QDialog):
         image_path: metadata の取得に使う画像ファイルのパス。
     """
 
-    # 開き直したときに位置が変わらないよう geometry を class で保持する
-    _saved_geometry = None
-    # 最小化からの復元時に元の位置へ戻すため保持する
-    _position_before_minimize = None
+    window_key = "analysis"
+    remember_geometry = True
 
     def __init__(
         self,
@@ -86,11 +84,6 @@ class AnalysisDialog(QDialog):
 
         self.resize(*defaults.ANALYSIS_DIALOG_SIZE)
 
-        # 最小化を許可し、最前面に固定しない
-        flags = Qt.Window | Qt.WindowMinimizeButtonHint | Qt.WindowCloseButtonHint
-        self.setWindowFlags(flags)
-        self.setAttribute(Qt.WA_DeleteOnClose)
-
         self.image_array = image_array
         self.image_rect = image_rect
         self.image_path = image_path
@@ -112,8 +105,7 @@ class AnalysisDialog(QDialog):
         self._build_ui()
 
         # 前回の geometry を復元する
-        if AnalysisDialog._saved_geometry:
-            self.restoreGeometry(AnalysisDialog._saved_geometry)
+        self.restore_geometry()
 
         if self.image_array is not None:
             self.update_contents()
@@ -186,23 +178,6 @@ class AnalysisDialog(QDialog):
                 return
 
         self.setWindowTitle(base_title)
-
-    def changeEvent(self, event):
-        # 最小化前の位置を保存し、復元時に戻す
-        if event.type() == QEvent.WindowStateChange:
-            if self.isMinimized():
-                AnalysisDialog._position_before_minimize = self.pos()
-            elif event.oldState() & Qt.WindowMinimized and AnalysisDialog._position_before_minimize is not None:
-                self.move(AnalysisDialog._position_before_minimize)
-        super().changeEvent(event)
-
-    def moveEvent(self, event):
-        AnalysisDialog._saved_geometry = self.saveGeometry()
-        super().moveEvent(event)
-
-    def resizeEvent(self, event):
-        AnalysisDialog._saved_geometry = self.saveGeometry()
-        super().resizeEvent(event)
 
     def set_image_and_rect(
         self,

@@ -1,7 +1,6 @@
 """単一画像の解析 dialog（metadata・profile・histogram）。"""
 
 import contextlib
-import copy
 from fractions import Fraction
 
 import numpy as np
@@ -38,6 +37,7 @@ from PixelScopeViewer.ui.analysis.exporting import series_to_csv
 from PixelScopeViewer.ui.analysis.plotting import apply_plot_settings as pg_apply_plot_settings
 from PixelScopeViewer.ui.analysis.plotting import connect_plot_controls as pg_connect_plot_controls
 from PixelScopeViewer.ui.analysis.plotting import save_viewbox_state as pg_save_viewbox_state
+from PixelScopeViewer.ui.analysis.state import AnalysisSettings
 from PixelScopeViewer.ui.analysis.tabs.histogram_tab import HistogramTab
 from PixelScopeViewer.ui.analysis.tabs.metadata_tab import MetadataTab
 from PixelScopeViewer.ui.analysis.tabs.profile_tab import ProfileTab
@@ -93,24 +93,13 @@ class AnalysisDialog(QDialog):
         self.image_rect = image_rect
         self.image_path = image_path
 
-        self.profile_orientation = defaults.PROFILE_ORIENTATION
-        self.x_mode = defaults.PROFILE_X_MODE
-        self.profile_compute_method = defaults.PROFILE_METHOD
-        self.hist_config_mode = defaults.HIST_MODE
-        self.hist_yscale = defaults.HIST_YSCALE
-        self.channel_checks: list[bool] = []
-        self.spinbox_value: float = defaults.HIST_BIN_STEP
-        self.hist_chart_kind = defaults.HIST_CHART_KIND
-        self.spinbox_bar_alpha_value: int = defaults.HIST_BAR_ALPHA
+        self.settings = AnalysisSettings()
 
         self.last_hist_data = {}
         self.last_profile_data = {}
 
         # 統計量 table の色見本に使う label から RGB への dict
         self.channel_color_map: dict[str, tuple[int, int, int]] = {}
-
-        # 画像を切り替えても保持する plot 設定
-        self.plot_settings = copy.deepcopy(defaults.PLOT_SETTINGS)
 
         self._build_ui()
 
@@ -262,15 +251,15 @@ class AnalysisDialog(QDialog):
                 return
 
     def _on_channel_changed(self, new_checks: list[bool]):
-        self.channel_checks = new_checks
+        self.settings.channel_checks = new_checks
         self.update_contents()
 
     def _on_spinbox_changed(self, new_value: float):
-        self.spinbox_value = new_value
+        self.settings.hist_bin_step = new_value
         self.update_contents()
 
     def _on_spinbox_bar_alpha_changed(self, new_value: int):
-        self.spinbox_bar_alpha_value = new_value
+        self.settings.hist_bar_alpha = new_value
         self.update_contents()
 
     def update_contents(self):
@@ -295,18 +284,18 @@ class AnalysisDialog(QDialog):
         # channel_checks の長さを channel 数に合わせる
         if arr.ndim == 3 and arr.shape[2] > 1:
             nch = arr.shape[2]
-            if not self.channel_checks:
-                self.channel_checks = [True] * nch
-            elif len(self.channel_checks) < nch:
-                self.channel_checks.extend([True] * (nch - len(self.channel_checks)))
+            if not self.settings.channel_checks:
+                self.settings.channel_checks = [True] * nch
+            elif len(self.settings.channel_checks) < nch:
+                self.settings.channel_checks.extend([True] * (nch - len(self.settings.channel_checks)))
         else:
             nch = 1
 
         # histogram
-        if self.hist_config_mode == "Histogram":
-            bins = determine_hist_bins(arr, self.spinbox_value)
+        if self.settings.hist_mode == "Histogram":
+            bins = determine_hist_bins(arr, self.settings.hist_bin_step)
             hist_series = histogram_series(arr, bins=bins)
-        elif self.hist_config_mode == "ECDF":
+        elif self.settings.hist_mode == "ECDF":
             hist_series = ecdf_series(arr)
         # 表示 ON の channel のみ plot する
         visible_hist_series = {}
@@ -315,14 +304,14 @@ class AnalysisDialog(QDialog):
             if label.startswith("C"):
                 try:
                     cindex = int(label[1:])
-                    visible = self.channel_checks[cindex]
+                    visible = self.settings.channel_checks[cindex]
                 except Exception:
                     visible = True
             if visible:
                 visible_hist_series[label] = (xs, ys)
         self.last_hist_data = hist_series  # コピー用に全 channel を保持する
-        hist_stats = histogram_stats(arr.astype(np.float64), self.channel_checks)
-        apply_log = self.plot_settings.get("hist", {}).get("log", False)
+        hist_stats = histogram_stats(arr.astype(np.float64), self.settings.channel_checks)
+        apply_log = self.settings.plot_settings.get("hist", {}).get("log", False)
         is_integer_type = np.issubdtype(arr.dtype, np.integer)
         # channel_display がなければ（複数画像比較）既定の色（1ch は黒）を使う
         if self.channel_display is not None:
@@ -334,8 +323,8 @@ class AnalysisDialog(QDialog):
                 channel_colors = [QColor(theme.PLOT_INTENSITY_COLOR)]
 
         try:
-            self.hist_tab.update_channel_checkboxes(nch, self.channel_checks, channel_colors)
-            self.profile_tab.update_channel_checkboxes(nch, self.channel_checks, channel_colors)
+            self.hist_tab.update_channel_checkboxes(nch, self.settings.channel_checks, channel_colors)
+            self.profile_tab.update_channel_checkboxes(nch, self.settings.channel_checks, channel_colors)
         except Exception:
             pass
 
@@ -379,16 +368,18 @@ class AnalysisDialog(QDialog):
             apply_log=apply_log,
             is_integer_type=is_integer_type,
             channel_colors=channel_colors,
-            chart_kind=self.hist_chart_kind,
-            bar_alpha=self.spinbox_bar_alpha_value,
+            chart_kind=self.settings.hist_chart_kind,
+            bar_alpha=self.settings.hist_bar_alpha,
         )
 
         # profile
-        pseries = profile_series(arr, orientation=self.profile_orientation, method=self.profile_compute_method)
+        pseries = profile_series(
+            arr, orientation=self.settings.profile_orientation, method=self.settings.profile_method
+        )
         visible_prof_series = {}
         for label, prof in pseries.items():
-            if self.x_mode == "absolute" and self.image_rect is not None:
-                offset = get_profile_offset(self.image_rect, self.profile_orientation)
+            if self.settings.profile_x_mode == "absolute" and self.image_rect is not None:
+                offset = get_profile_offset(self.image_rect, self.settings.profile_orientation)
                 xs2 = np.arange(prof.size) + offset
             else:
                 xs2 = np.arange(prof.size)
@@ -396,7 +387,7 @@ class AnalysisDialog(QDialog):
             if label.startswith("C"):
                 try:
                     cindex = int(label[1:])
-                    visible = self.channel_checks[cindex]
+                    visible = self.settings.channel_checks[cindex]
                 except Exception:
                     visible = True
             if visible:
@@ -404,24 +395,24 @@ class AnalysisDialog(QDialog):
         # コピー用に全 channel の profile を保持する
         self.last_profile_data = {}
         for label, prof in pseries.items():
-            if self.x_mode == "absolute" and self.image_rect is not None:
-                offset = get_profile_offset(self.image_rect, self.profile_orientation)
+            if self.settings.profile_x_mode == "absolute" and self.image_rect is not None:
+                offset = get_profile_offset(self.image_rect, self.settings.profile_orientation)
                 xs2 = np.arange(prof.size) + offset
             else:
                 xs2 = np.arange(prof.size)
             self.last_profile_data[label] = (xs2, prof)
         prof_stats = profile_stats(
             arr,
-            orientation=self.profile_orientation,
-            method=self.profile_compute_method,
-            channel_checks=self.channel_checks,
+            orientation=self.settings.profile_orientation,
+            method=self.settings.profile_method,
+            channel_checks=self.settings.channel_checks,
         )
         self.profile_tab.update_plot(
             visible_prof_series,
             prof_stats,
-            self.profile_orientation,
-            self.x_mode,
-            self.profile_compute_method,
+            self.settings.profile_orientation,
+            self.settings.profile_x_mode,
+            self.settings.profile_method,
             channel_colors=channel_colors,
         )
 
@@ -485,11 +476,11 @@ class AnalysisDialog(QDialog):
             self.last_metadata = []
 
     def hist_config_mode_toggle(self):
-        if self.hist_config_mode == "Histogram":
-            self.hist_config_mode = "ECDF"
+        if self.settings.hist_mode == "Histogram":
+            self.settings.hist_mode = "ECDF"
             self.hist_config_mode_btn.setText("ECDF")
         else:
-            self.hist_config_mode = "Histogram"
+            self.settings.hist_mode = "Histogram"
             self.hist_config_mode_btn.setText("Histogram")
         self.update_contents()
 
@@ -525,7 +516,7 @@ class AnalysisDialog(QDialog):
         # 先頭の系列の x（bin の中心）を共通の x 軸として使う
         xs = np.array(self.last_hist_data[keys[0]][0]).flatten()
 
-        if self.hist_config_mode == "Histogram":
+        if self.settings.hist_mode == "Histogram":
             # bin 幅から各 bin の開始・終了位置を求める
             bin_width = np.diff(xs)[0] if len(xs) > 1 else 1.0
             bin_starts = xs - (bin_width / 2)
@@ -534,7 +525,7 @@ class AnalysisDialog(QDialog):
             csv_data = {"bin_start": bin_starts, "bin_end": bin_ends, "bin_center": xs}
             cast_int_keys = keys  # 度数は int で出力する
 
-        elif self.hist_config_mode == "ECDF":
+        elif self.settings.hist_mode == "ECDF":
             csv_data = {"value": xs}
             cast_int_keys = None
 
@@ -554,7 +545,7 @@ class AnalysisDialog(QDialog):
         keys = list(self.last_profile_data.keys())
         xs = self.last_profile_data[keys[0]][0]
 
-        csv_data = {"x address": xs} if self.profile_orientation == "h" else {"y address": xs}
+        csv_data = {"x address": xs} if self.settings.profile_orientation == "h" else {"y address": xs}
 
         for k in keys:
             csv_data[k] = self.last_profile_data[k][1]
@@ -600,8 +591,8 @@ class AnalysisDialog(QDialog):
         imgs = self.viewer.images
         current_id = self.viewer.state.current_index
         x, y, w, h = self.viewer.state.roi.getRect()
-        orientation = self.profile_orientation
-        method = self.profile_compute_method
+        orientation = self.settings.profile_orientation
+        method = self.settings.profile_method
         text = "path,ch,x_sta,y_sta,width,hight,orientation,method,mean,std,median,min,max,fano\n"
 
         targets = imgs if self.prof_get_all_plane_data.isChecked() else [imgs[current_id]]
@@ -626,30 +617,30 @@ class AnalysisDialog(QDialog):
         QGuiApplication.clipboard().setText(text)
 
     def _on_prof_orientation_toggle(self):
-        if self.profile_orientation == "h":
-            self.profile_orientation = "v"
+        if self.settings.profile_orientation == "h":
+            self.settings.profile_orientation = "v"
             self.prof_orientation_btn.setText("Vertical")
         else:
-            self.profile_orientation = "h"
+            self.settings.profile_orientation = "h"
             self.prof_orientation_btn.setText("Horizontal")
         self.update_contents()
 
     def _on_prof_xmode_toggle(self):
-        if self.x_mode == "relative":
-            self.x_mode = "absolute"
+        if self.settings.profile_x_mode == "relative":
+            self.settings.profile_x_mode = "absolute"
             self.prof_xmode_btn.setText("Absolute")
         else:
-            self.x_mode = "relative"
+            self.settings.profile_x_mode = "relative"
             self.prof_xmode_btn.setText("Relative")
         self.update_contents()
 
     def _on_prof_compute_method_combo(self):
-        self.profile_compute_method = self.prof_compute_method_combo.currentText()
+        self.settings.profile_method = self.prof_compute_method_combo.currentText()
         self.update_contents()
 
     def _on_hist_chart_kind_combo(self):
-        self.hist_chart_kind = self.hist_chart_kind_combo.currentText()
-        if self.hist_chart_kind == "Bar":
+        self.settings.hist_chart_kind = self.hist_chart_kind_combo.currentText()
+        if self.settings.hist_chart_kind == "Bar":
             self.hist_bar_alpha_spin_box.setEnabled(True)
         else:
             self.hist_bar_alpha_spin_box.setEnabled(False)
@@ -658,7 +649,7 @@ class AnalysisDialog(QDialog):
     def _on_external_log_toggled(self, checked: bool):
         # pyqtgraph の menu で log Y が切り替えられたら設定を保存して再描画する
         try:
-            self.plot_settings.setdefault("hist", {})["log"] = bool(checked)
+            self.settings.plot_settings.setdefault("hist", {})["log"] = bool(checked)
             self.update_contents()
         except Exception:
             pass
@@ -667,19 +658,19 @@ class AnalysisDialog(QDialog):
         pg_connect_plot_controls(
             plot_item,
             which,
-            self.plot_settings,
+            self.settings.plot_settings,
             on_hist_log_changed=lambda: self._on_external_log_toggled(
-                self.plot_settings.get("hist", {}).get("log", False)
+                self.settings.plot_settings.get("hist", {}).get("log", False)
             ),
         )
 
     def _apply_plot_settings(self):
         try:
             pg_apply_plot_settings(
-                self.hist_widget, "hist", self.plot_settings, getattr(self, "viewbox_full_hist", None)
+                self.hist_widget, "hist", self.settings.plot_settings, getattr(self, "viewbox_full_hist", None)
             )
             pg_apply_plot_settings(
-                self.prof_widget, "prof", self.plot_settings, getattr(self, "viewbox_full_prof", None)
+                self.prof_widget, "prof", self.settings.plot_settings, getattr(self, "viewbox_full_prof", None)
             )
         except Exception:
             pass

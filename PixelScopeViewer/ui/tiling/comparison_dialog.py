@@ -256,10 +256,10 @@ class TilingAnalysisDialog(AnalysisDialog):
         first_arr = valid_tiles[0]["array"]
         if first_arr.ndim == 3 and first_arr.shape[2] > 1:
             nch = first_arr.shape[2]
-            if not self.channel_checks:
-                self.channel_checks = [True] * nch
-            elif len(self.channel_checks) < nch:
-                self.channel_checks.extend([True] * (nch - len(self.channel_checks)))
+            if not self.settings.channel_checks:
+                self.settings.channel_checks = [True] * nch
+            elif len(self.settings.channel_checks) < nch:
+                self.settings.channel_checks.extend([True] * (nch - len(self.settings.channel_checks)))
 
         self._ensure_overlay_channel_visibility(valid_tiles)
 
@@ -281,12 +281,12 @@ class TilingAnalysisDialog(AnalysisDialog):
             tile_idx = tile["index"]
             visibility = self.overlay_channel_visibility.get(tile_idx)
 
-            if self.hist_config_mode == "Histogram":
-                bins = determine_hist_bins(arr, self.spinbox_value)
+            if self.settings.hist_mode == "Histogram":
+                bins = determine_hist_bins(arr, self.settings.hist_bin_step)
                 hist_series = histogram_series(arr, bins=bins)
-            elif self.hist_config_mode == "ECDF":
+            elif self.settings.hist_mode == "ECDF":
                 hist_series = ecdf_series(arr)
-            stats = histogram_stats(arr, self.channel_checks)
+            stats = histogram_stats(arr, self.settings.channel_checks)
 
             tile_hist_series = {}
             for label, (xs, ys) in hist_series.items():
@@ -339,7 +339,7 @@ class TilingAnalysisDialog(AnalysisDialog):
         for series in all_hist_series.values():
             for label, data in series.items():
                 xs, ys = data
-                if self.hist_config_mode == "ECDF":
+                if self.settings.hist_mode == "ECDF":
                     # ECDF は np.interp で欠けている x を前後の累積確率で補間する
                     if len(xs) > 0:
                         ys_new = np.interp(x_common, xs, ys, left=0.0, right=1.0)
@@ -355,7 +355,7 @@ class TilingAnalysisDialog(AnalysisDialog):
         ordered_labels = list(merged_series.keys())
         palette_map = self._assign_overlay_colors(ordered_labels)
 
-        apply_log = self.plot_settings.get("hist", {}).get("log", False)
+        apply_log = self.settings.plot_settings.get("hist", {}).get("log", False)
 
         if self.hist_tab.hist_widget:
             self.hist_tab.hist_widget.clear()
@@ -369,23 +369,30 @@ class TilingAnalysisDialog(AnalysisDialog):
                         self.hist_tab.hist_widget.setLimits(yMin=-1)
 
                     rgb = palette_map.get(label, theme.PLOT_FALLBACK_RGB)
-                    if self.hist_chart_kind == "Line":
+                    if self.settings.hist_chart_kind == "Line":
                         pen = self._make_pen(rgb, width=2, alpha=255)
                         item = self.hist_tab.hist_widget.plot(xs, yplot, pen=pen, name=label)
 
-                    if self.hist_chart_kind == "Bar":
-                        pen = self._make_pen(rgb, width=2, alpha=self.spinbox_bar_alpha_value)
+                    if self.settings.hist_chart_kind == "Bar":
+                        pen = self._make_pen(rgb, width=2, alpha=self.settings.hist_bar_alpha)
                         item = pg.BarGraphItem(
-                            x=xs, height=yplot, width=self.spinbox_value, brush=pen.color(), pen=None, name=label
+                            x=xs,
+                            height=yplot,
+                            width=self.settings.hist_bin_step,
+                            brush=pen.color(),
+                            pen=None,
+                            name=label,
                         )
                         self.hist_tab.hist_widget.addItem(item)
                     self.hist_plot_items[label] = item
                 self.hist_tab.hist_widget.setTitle(
-                    f"{self.hist_config_mode} Overlay (All Tiles)", color=theme.PLOT_TEXT_COLOR, size="12pt"
+                    f"{self.settings.hist_mode} Overlay (All Tiles)", color=theme.PLOT_TEXT_COLOR, size="12pt"
                 )
             else:
                 self.hist_tab.hist_widget.setTitle(
-                    f"{self.hist_config_mode} Overlay (No channels visible)", color=theme.PLOT_MUTED_COLOR, size="11pt"
+                    f"{self.settings.hist_mode} Overlay (No channels visible)",
+                    color=theme.PLOT_MUTED_COLOR,
+                    size="11pt",
                 )
 
         self.hist_tab._populate_stats_table(all_stats)
@@ -404,12 +411,14 @@ class TilingAnalysisDialog(AnalysisDialog):
             roi_rect = tile.get("rect")
             visibility = self.overlay_channel_visibility.get(tile_idx)
 
-            pseries = profile_series(arr, orientation=self.profile_orientation, method=self.profile_compute_method)
+            pseries = profile_series(
+                arr, orientation=self.settings.profile_orientation, method=self.settings.profile_method
+            )
 
             tile_prof_series = {}
             for label, prof in pseries.items():
-                if self.x_mode == "absolute" and roi_rect is not None:
-                    offset = get_profile_offset(roi_rect, self.profile_orientation)
+                if self.settings.profile_x_mode == "absolute" and roi_rect is not None:
+                    offset = get_profile_offset(roi_rect, self.settings.profile_orientation)
                     xs = np.arange(prof.size) + offset
                 else:
                     xs = np.arange(prof.size)
@@ -458,8 +467,8 @@ class TilingAnalysisDialog(AnalysisDialog):
         if hasattr(self, "prof_widget") and self.prof_widget:
             self.prof_widget.clear()
             self.profile_plot_items.clear()
-            orientation_label = {"h": "Horizontal", "v": "Vertical"}[self.profile_orientation]
-            mode_label = "Absolute" if self.x_mode == "absolute" else "Relative"
+            orientation_label = {"h": "Horizontal", "v": "Vertical"}[self.settings.profile_orientation]
+            mode_label = "Absolute" if self.settings.profile_x_mode == "absolute" else "Relative"
             method_label = {
                 "mean": "Mean",
                 "std": "Std",
@@ -467,7 +476,7 @@ class TilingAnalysisDialog(AnalysisDialog):
                 "min": "Min",
                 "p2p": "Peak-to-Peak",
                 "median": "Median",
-            }[self.profile_compute_method]
+            }[self.settings.profile_method]
             if merged_series:
                 for label, (xs, ys) in merged_series.items():
                     rgb = prof_palette_map.get(label, theme.PLOT_FALLBACK_RGB)

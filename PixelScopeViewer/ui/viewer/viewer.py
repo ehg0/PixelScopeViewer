@@ -209,9 +209,7 @@ class ImageViewer(QMainWindow):
                 self._analysis_dialog.showNormal()
             self._analysis_dialog.raise_()
             self._analysis_dialog.activateWindow()
-            if tab is not None:
-                with contextlib.suppress(Exception):
-                    self._analysis_dialog.set_current_tab(tab)
+            self._analysis_dialog.set_current_tab(tab)
             return
 
         img = self.images[self.state.current_index]
@@ -233,9 +231,7 @@ class ImageViewer(QMainWindow):
             self._analysis_dialog = None
 
         dlg.finished.connect(on_closed)
-        if tab is not None:
-            with contextlib.suppress(Exception):
-                dlg.set_current_tab(tab)
+        dlg.set_current_tab(tab)
 
     def open_files(self):
         """ファイル選択 dialog から画像を読み込む。"""
@@ -271,13 +267,13 @@ class ImageViewer(QMainWindow):
         if annotation_files:
             try:
                 self.annotations.load_annotation_files(annotation_files)
-                # 特徴量 dialog を開き（既に開いていれば前面に出し）内容を反映する
-                self.show_annotations_dialog()
-                if self._annotations_dialog is not None:
-                    with contextlib.suppress(Exception):
-                        self._annotations_dialog.refresh_from_manager()
-            except Exception:
-                pass
+            except Exception as e:  # ユーザーのファイルの形式は様々なため、失敗はまとめて知らせる
+                QMessageBox.warning(self, "特徴量ファイル", f"特徴量ファイルを読み込めませんでした。\n{e}")
+                return
+            # 特徴量 dialog を開き（既に開いていれば前面に出し）内容を反映する
+            self.show_annotations_dialog()
+            if self._annotations_dialog is not None:
+                self._annotations_dialog.refresh_from_manager()
 
     def _prepare_thumbnail_array(self, arr: np.ndarray) -> np.ndarray:
         """現在の 1ch/2ch 表示モードに合わせた thumbnail 用の配列を返す。"""
@@ -330,11 +326,10 @@ class ImageViewer(QMainWindow):
         if arr is not None:
             details += f"\n配列形状: {arr.shape}\nデータ型: {arr.dtype}"
         elif Path(path).suffix.lower() == ".npy":
-            try:
+            # 形状と dtype は補足情報のため、npy として読めない場合は省略する
+            with contextlib.suppress(OSError, ValueError):
                 arr = np.load(path)
                 details += f"\n配列形状: {arr.shape}\nデータ型: {arr.dtype}"
-            except Exception:
-                pass
         if error_msg:
             details += f"\n\nエラー: {error_msg}"
         QMessageBox.warning(self, "画像読み込みエラー", details)
@@ -564,9 +559,7 @@ class ImageViewer(QMainWindow):
             self.image_label.roi_rect = rect
             self.image_label.update()
 
-        if self._analysis_dialog:
-            with contextlib.suppress(Exception):
-                self._analysis_dialog.set_image_and_rect(base_arr, self.state.roi, img_path)
+        self._update_analysis_dialog()
 
     def _get_displayed_array(self) -> np.ndarray | None:
         """brightness・channel 合成・colormap を適用した表示用の配列を返す。"""
@@ -591,24 +584,20 @@ class ImageViewer(QMainWindow):
             return self._cached_display_array
 
         # 疑似カラー表示（1ch の JET、2ch の flow-hsv）
-        try:
-            if arr.ndim == 2 or (arr.ndim == 3 and arr.shape[2] == 1):
-                if self.channel_display.mode_1ch == MODE_1CH_JET:
-                    adj = self.brightness_manager.apply_brightness_adjustment(arr)
-                    if adj.ndim == 3 and adj.shape[2] == 1:
-                        adj = adj[..., 0]
-                    result = apply_jet_colormap(adj)
-                    self._cached_display_array = result
-                    self._cached_display_params = cache_key
-                    return result
-            elif arr.ndim == 3 and arr.shape[2] == 2 and self.channel_display.mode_2ch == MODE_2CH_FLOW_HSV:
-                result = flow_to_hsv_rgb(arr)
+        if arr.ndim == 2 or (arr.ndim == 3 and arr.shape[2] == 1):
+            if self.channel_display.mode_1ch == MODE_1CH_JET:
+                adj = self.brightness_manager.apply_brightness_adjustment(arr)
+                if adj.ndim == 3 and adj.shape[2] == 1:
+                    adj = adj[..., 0]
+                result = apply_jet_colormap(adj)
                 self._cached_display_array = result
                 self._cached_display_params = cache_key
                 return result
-        except Exception:
-            # 通常の処理に fallback する
-            pass
+        elif arr.ndim == 3 and arr.shape[2] == 2 and self.channel_display.mode_2ch == MODE_2CH_FLOW_HSV:
+            result = flow_to_hsv_rgb(arr)
+            self._cached_display_array = result
+            self._cached_display_params = cache_key
+            return result
 
         apply_adjust = False
         if (
@@ -706,13 +695,10 @@ class ImageViewer(QMainWindow):
         self.images.clear()
         self.state.current_index = None
         self.image_label.clear()
-        with contextlib.suppress(Exception):
-            self.show_current_image()
-        with contextlib.suppress(Exception):
-            self.update_image_list_menu()
+        self.show_current_image()
+        self.update_image_list_menu()
         if self._analysis_dialog:
-            with contextlib.suppress(Exception):
-                self._analysis_dialog.set_image_and_rect(None, None)
+            self._analysis_dialog.set_image_and_rect(None, None)
 
     def collect_state(self) -> dict:
         """viewer・channel 表示設定と、開いている解析 dialog・複数画像比較の現在値を集める。"""
@@ -756,7 +742,7 @@ class ImageViewer(QMainWindow):
         try:
             diff = a - b + offset
             diff[diff < 0] = 0
-        except Exception:
+        except ValueError:
             QMessageBox.information(self, "差分", "差分の作成に失敗しました。画像サイズや型を確認してください。")
             return
 
@@ -809,15 +795,16 @@ class ImageViewer(QMainWindow):
             int(rect.height() / s),
         )
         self.status_updater.update_roi_status()
-        if self._analysis_dialog:
-            img = self.images[self.state.current_index] if self.state.current_index is not None else None
-            if img:
-                arr = img.get("base_array", img.get("array"))
-                img_path = img.get("path")
-                with contextlib.suppress(Exception):
-                    self._analysis_dialog.set_image_and_rect(arr, self.state.roi, img_path)
+        self._update_analysis_dialog()
 
         self.roi_changed.emit()
+
+    def _update_analysis_dialog(self):
+        """表示中の画像と ROI を解析 dialog に反映する。"""
+        if self._analysis_dialog is None or self.state.current_index is None:
+            return
+        img = self.images[self.state.current_index]
+        self._analysis_dialog.set_image_and_rect(img.get("base_array", img["array"]), self.state.roi, img.get("path"))
 
     def copy_roi_to_clipboard(self):
         """表示中の画像の ROI（ROI がなければ全体）を表示倍率で clipboard にコピーする。"""
@@ -859,28 +846,14 @@ class ImageViewer(QMainWindow):
 
         widget 座標を経由しないため、zoom 中でも丸め誤差なく反映される。
         """
-        try:
-            self.state.roi = rect_img
-            s = self.state.scale
-            rect_label = QRect(
-                int(rect_img.x() * s),
-                int(rect_img.y() * s),
-                int(rect_img.width() * s),
-                int(rect_img.height() * s),
-            )
-            self.image_label.roi_rect = rect_label
-            self.image_label.update()
-
-            if self._analysis_dialog:
-                img = self.images[self.state.current_index] if self.state.current_index is not None else None
-                if img:
-                    arr = img.get("base_array", img.get("array"))
-                    img_path = img.get("path")
-                    with contextlib.suppress(Exception):
-                        self._analysis_dialog.set_image_and_rect(arr, self.state.roi, img_path)
-            self.roi_changed.emit()
-        except Exception:
-            self.roi_changed.emit()
+        self.state.roi = rect_img
+        s = self.state.scale
+        self.image_label.roi_rect = QRect(
+            int(rect_img.x() * s), int(rect_img.y() * s), int(rect_img.width() * s), int(rect_img.height() * s)
+        )
+        self.image_label.update()
+        self._update_analysis_dialog()
+        self.roi_changed.emit()
 
     # event handler
     def changeEvent(self, event):

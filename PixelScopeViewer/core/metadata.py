@@ -71,7 +71,7 @@ def extract_exif(path: str | Path) -> dict:
                 clean_tag = tag.replace(" ", "_")
                 metadata[clean_tag] = value_str
 
-            except Exception as e:
+            except Exception as e:  # tag の値の形式は file ごとに様々なため、読めない tag は飛ばす
                 print(f"Error: {e}")
                 continue
     return metadata

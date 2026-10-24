@@ -1,7 +1,5 @@
 """表示領域の情報を表示する widget。"""
 
-import contextlib
-
 from PySide6.QtCore import QEvent, Qt
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QGroupBox, QMenu, QTableWidget, QTableWidgetItem, QVBoxLayout
@@ -22,8 +20,7 @@ class DisplayInfoWidget(QGroupBox):
         self.table.setRowCount(8)
         # 小さめの font と行高にして縦 scroll を出さない
         font = self.table.font()
-        with contextlib.suppress(Exception):
-            font.setPointSize(max(font.pointSize() - 1, 9))
+        font.setPointSize(max(font.pointSize() - 1, 9))
         self.table.setFont(font)
         self.table.verticalHeader().setDefaultSectionSize(18)
         self.table.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -56,22 +53,17 @@ class DisplayInfoWidget(QGroupBox):
         self.update_info()
 
     def _fit_table_height(self):
-        try:
-            vh = self.table.verticalHeader()
-            hh = self.table.horizontalHeader()
-            frame = 2 * self.table.frameWidth()
-            total = hh.height() + (vh.defaultSectionSize() * self.table.rowCount()) + frame
-            self.table.setMinimumHeight(total)
-            self.table.setMaximumHeight(total)
-        except Exception:
-            pass
+        # 全行が scroll なしで収まる高さに固定する
+        total = (
+            self.table.horizontalHeader().height()
+            + self.table.verticalHeader().defaultSectionSize() * self.table.rowCount()
+            + 2 * self.table.frameWidth()
+        )
+        self.table.setFixedHeight(total)
 
     def eventFilter(self, obj, event):
-        try:
-            if obj is self.viewer.scroll_area.viewport() and event.type() == QEvent.Resize:
-                self.update_info()
-        except Exception:
-            pass
+        if obj is self.viewer.scroll_area.viewport() and event.type() == QEvent.Resize:
+            self.update_info()
         return super().eventFilter(obj, event)
 
     def update_info(self):

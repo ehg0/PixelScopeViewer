@@ -1,10 +1,8 @@
 """複数画像比較の brightness 調整 dialog。"""
 
-from PySide6.QtCore import QEvent, Qt, Signal
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QCheckBox,
-    QDialog,
-    QDoubleSpinBox,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -14,9 +12,11 @@ from PySide6.QtWidgets import (
 
 from PixelScopeViewer.core.constants import get_dtype_defaults
 from PixelScopeViewer.ui.common import defaults
+from PixelScopeViewer.ui.common.widgets import make_spinbox, set_value_silently
+from PixelScopeViewer.ui.common.window import ToolDialog
 
 
-class TilingBrightnessDialog(QDialog):
+class TilingBrightnessDialog(ToolDialog):
     """全 tile 共通の gain と、dtype group ごとの offset・upper level を調整する dialog。
 
     Args:
@@ -25,21 +25,15 @@ class TilingBrightnessDialog(QDialog):
         common_gain: 共通の gain。
     """
 
+    window_key = "tiling_brightness"
+
     # dtype group から {gain, offset, upper_level} への dict
     brightness_changed = Signal(dict)
-
-    # 最小化からの復元時に元の位置へ戻すため保持する
-    _position_before_minimize = None
 
     def __init__(self, parent, brightness_params_by_dtype: dict[str, dict[str, float]], common_gain: float):
         super().__init__(parent)
         self.setWindowTitle("複数画像比較 - 輝度調整")
         self.resize(*defaults.TILING_BRIGHTNESS_DIALOG_SIZE)
-
-        # 最小化を許可し、最前面に固定しない
-        flags = Qt.Window | Qt.WindowMinimizeButtonHint | Qt.WindowCloseButtonHint
-        self.setWindowFlags(flags)
-        self.setAttribute(Qt.WA_DeleteOnClose)
 
         self.brightness_params_by_dtype = brightness_params_by_dtype.copy()
         self.common_gain = common_gain
@@ -56,11 +50,7 @@ class TilingBrightnessDialog(QDialog):
         gain_control_layout = QHBoxLayout()
         gain_control_layout.addWidget(QLabel("Gain:"))
 
-        self.gain_spinbox = QDoubleSpinBox()
-        self.gain_spinbox.setRange(0.0078125, 1024.0)  # 2^-7 〜 2^10
-        self.gain_spinbox.setDecimals(6)
-        self.gain_spinbox.setSingleStep(0.01)
-        self.gain_spinbox.setValue(self.common_gain)
+        self.gain_spinbox = make_spinbox((0.0078125, 1024.0), 6, 0.01, self.common_gain)  # 2^-7 〜 2^10
         self.gain_spinbox.valueChanged.connect(self._on_gain_spinbox_changed)
         gain_control_layout.addWidget(self.gain_spinbox)
 
@@ -78,16 +68,12 @@ class TilingBrightnessDialog(QDialog):
             offset_range = defaults["offset_range"]
             upper_level_range = defaults["upper_level_range"]
             is_float = defaults["is_float_type"]
-            decimals = 5 if is_float else 0
+            decimals, step = (5, 0.01) if is_float else (0, 1.0)
 
             offset_layout = QHBoxLayout()
             offset_layout.addWidget(QLabel("Offset:"))
 
-            offset_spinbox = QDoubleSpinBox()
-            offset_spinbox.setRange(offset_range[0], offset_range[1])
-            offset_spinbox.setDecimals(decimals)
-            offset_spinbox.setSingleStep(0.01 if is_float else 1.0)
-            offset_spinbox.setValue(0.0)
+            offset_spinbox = make_spinbox(offset_range, decimals, step, 0.0)
             offset_spinbox.valueChanged.connect(lambda v, dg=dtype_group: self._on_offset_spinbox_changed(dg, v))
             offset_layout.addWidget(offset_spinbox)
 
@@ -96,11 +82,7 @@ class TilingBrightnessDialog(QDialog):
             upper_level_layout = QHBoxLayout()
             upper_level_layout.addWidget(QLabel("Upper_level:"))
 
-            upper_level_spinbox = QDoubleSpinBox()
-            upper_level_spinbox.setRange(upper_level_range[0], upper_level_range[1])
-            upper_level_spinbox.setDecimals(decimals)
-            upper_level_spinbox.setSingleStep(0.01 if is_float else 1.0)
-            upper_level_spinbox.setValue(defaults["initial_upper_level"])
+            upper_level_spinbox = make_spinbox(upper_level_range, decimals, step, defaults["initial_upper_level"])
             upper_level_spinbox.valueChanged.connect(
                 lambda v, dg=dtype_group: self._on_upper_level_spinbox_changed(dg, v)
             )
@@ -138,24 +120,12 @@ class TilingBrightnessDialog(QDialog):
 
     def _update_values_from_params(self):
         """現在の parameter を widget に反映する。"""
-        self.gain_spinbox.blockSignals(True)
-        self.gain_spinbox.setValue(self.common_gain)
-        self.gain_spinbox.blockSignals(False)
+        set_value_silently(self.gain_spinbox, self.common_gain)
 
         for dtype_group, controls in self.dtype_controls.items():
             params = self.brightness_params_by_dtype[dtype_group]
-
-            offset = params["offset"]
-            upper_level = params["upper_level"]
-
-            controls["offset_spinbox"].blockSignals(True)
-            controls["upper_level_spinbox"].blockSignals(True)
-
-            controls["offset_spinbox"].setValue(offset)
-            controls["upper_level_spinbox"].setValue(upper_level)
-
-            controls["offset_spinbox"].blockSignals(False)
-            controls["upper_level_spinbox"].blockSignals(False)
+            set_value_silently(controls["offset_spinbox"], params["offset"])
+            set_value_silently(controls["upper_level_spinbox"], params["upper_level"])
 
     def _on_gain_spinbox_changed(self, value: float):
         self.common_gain = value
@@ -208,12 +178,3 @@ class TilingBrightnessDialog(QDialog):
     def get_brightness_params(self) -> tuple[dict[str, dict[str, float]], float]:
         """(dtype group ごとの parameter, 共通の gain) を返す。"""
         return (self.brightness_params_by_dtype.copy(), self.common_gain)
-
-    def changeEvent(self, event):
-        # 最小化前の位置を保存し、復元時に戻す
-        if event.type() == QEvent.WindowStateChange:
-            if self.isMinimized():
-                TilingBrightnessDialog._position_before_minimize = self.pos()
-            elif event.oldState() & Qt.WindowMinimized and TilingBrightnessDialog._position_before_minimize is not None:
-                self.move(TilingBrightnessDialog._position_before_minimize)
-        super().changeEvent(event)

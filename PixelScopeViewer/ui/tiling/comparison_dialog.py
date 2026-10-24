@@ -1,13 +1,11 @@
 """全 tile の histogram・profile を重ねて表示する、複数画像の解析 dialog。"""
 
-import contextlib
 from pathlib import Path
 
 import numpy as np
 import pyqtgraph as pg
 from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import (
-    QCheckBox,
     QColorDialog,
     QHBoxLayout,
     QHeaderView,
@@ -20,12 +18,15 @@ from PySide6.QtWidgets import (
 
 from PixelScopeViewer.core.image_io import get_image_metadata
 from PixelScopeViewer.core.statistics import (
+    crop_roi,
     determine_hist_bins,
     ecdf_series,
     get_profile_offset,
     histogram_series,
     histogram_stats,
+    merge_hist_series,
     profile_series,
+    stats_row,
 )
 from PixelScopeViewer.ui.analysis.dialog import AnalysisDialog
 from PixelScopeViewer.ui.analysis.tabs.channel_list import ChannelListWidget
@@ -65,6 +66,8 @@ class TilingAnalysisDialog(AnalysisDialog):
             tiling_state.overlay_color_overrides if tiling_state is not None else {}
         )
         self.hist_plot_items: dict[str, object] = {}
+        # tab ごとの全選択・全解除の button の行（初回の channel 一覧の作成時に作る）
+        self._overlay_button_rows: dict[str, QWidget] = {}
         self.profile_plot_items: dict[str, object] = {}
 
         super().__init__(parent=parent, image_array=image_array, image_rect=None, image_path=image_path)
@@ -85,30 +88,21 @@ class TilingAnalysisDialog(AnalysisDialog):
             if lbl in self._overlay_overrides:
                 self.overlay_color_map[lbl] = QColor(self._overlay_overrides[lbl]).getRgb()[:3]
                 continue
-            parts = lbl.split()
-            tile_num = 1
-            ch_index = 0
-            try:
-                if len(parts) >= 3 and parts[0] == "Tile":
-                    tile_num = int(parts[1])
-                    ch_code = parts[2]
-                    ch_index = int(ch_code[1:]) if ch_code.startswith("C") else 0
-                else:
-                    # 形式が異なる場合は数字と C{k} を探す
-                    for p in parts:
-                        if p.isdigit():
-                            tile_num = int(p)
-                            break
-                    for p in parts:
-                        if p.startswith("C") and p[1:].isdigit():
-                            ch_index = int(p[1:])
-                            break
-            except Exception:
-                tile_num = 1
-                ch_index = 0
+            # label は _overlay_curve_labels などで作る "Tile {n} C{k}" / "Tile {n} I" の形式
+            _, tile_num, ch_code = lbl.split()
+            ch_index = int(ch_code[1:]) if ch_code.startswith("C") else 0
+            tile_num = int(tile_num)
             idx = ((tile_num - 1) * 8 + ch_index) % len(theme.OVERLAY_PALETTE)
             self.overlay_color_map[lbl] = to_plot_color(QColor(theme.OVERLAY_PALETTE[idx])).getRgb()[:3]
         return {lbl: self.overlay_color_map[lbl] for lbl in labels}
+
+    @staticmethod
+    def _channel_visible(label: str, visibility: list[bool] | None) -> bool:
+        """label（C{k} / I）の channel が表示 ON か。設定がない channel は表示する。"""
+        if visibility is None:
+            return True
+        idx = 0 if label == "I" else int(label[1:])
+        return visibility[idx] if idx < len(visibility) else True
 
     def _make_pen(self, rgb: tuple[int, int, int], *, width: int = 2, alpha: int = 255):
         r, g, b = rgb
@@ -126,9 +120,6 @@ class TilingAnalysisDialog(AnalysisDialog):
 
     def _update_metadata(self):
         """全 tile の metadata を比較する table を表示する。"""
-        if not hasattr(self, "metadata_table"):
-            return
-
         if not self.tiles_data:
             self.meta_tab.set_rows([("Info", "No tiles available")])
             return
@@ -137,28 +128,16 @@ class TilingAnalysisDialog(AnalysisDialog):
         for tile_data in self.tiles_data:
             path = tile_data.get("path")
             arr = tile_data.get("array")
-
-            metadata = {}
-
-            if path:
-                with contextlib.suppress(Exception):
-                    metadata = get_image_metadata(path, arr) or {}
+            metadata = (get_image_metadata(path, arr) or {}) if path else {}
 
             # 基本情報は配列から必ず設定する
             if arr is not None:
                 h, w = arr.shape[:2]
                 metadata["Size"] = f"{w} x {h}"
-                if arr.ndim == 3:
-                    metadata["Channels"] = arr.shape[2]
-                elif arr.ndim == 2:
-                    metadata["Channels"] = 1
+                metadata["Channels"] = arr.shape[2] if arr.ndim == 3 else 1
                 metadata["DataType"] = str(arr.dtype)
 
             all_metadata.append({"index": tile_data["index"], "path": path, "metadata": metadata})
-
-        if not all_metadata:
-            self.meta_tab.set_rows([("Info", "No metadata available")])
-            return
 
         self._build_comparison_table(all_metadata)
 
@@ -177,7 +156,7 @@ class TilingAnalysisDialog(AnalysisDialog):
         num_tiles = len(all_metadata)
         num_rows = len(sorted_keys)
 
-        self.metadata_table.setColumnCount(1 + num_tiles)
+        self.meta_tab.metadata_table.setColumnCount(1 + num_tiles)
 
         headers = ["Property"]
         for tile_meta in all_metadata:
@@ -189,37 +168,30 @@ class TilingAnalysisDialog(AnalysisDialog):
             else:
                 headers.append(f"Tile {tile_idx}\n(no file)")
 
-        self.metadata_table.setHorizontalHeaderLabels(headers)
-        self.metadata_table.setRowCount(num_rows)
-        self.metadata_table.setMouseTracking(True)
+        self.meta_tab.metadata_table.setHorizontalHeaderLabels(headers)
+        self.meta_tab.metadata_table.setRowCount(num_rows)
+        self.meta_tab.metadata_table.setMouseTracking(True)
 
         diff_color = QColor(theme.HIGHLIGHT_BACKGROUND)
 
         for row_idx, key in enumerate(sorted_keys):
             prop_item = QTableWidgetItem(key)
-            self.metadata_table.setItem(row_idx, 0, prop_item)
+            self.meta_tab.metadata_table.setItem(row_idx, 0, prop_item)
 
-            values = []
-            for tile_meta in all_metadata:
-                value = tile_meta["metadata"].get(key, "")
-                values.append(str(value) if value else "")
+            values = [str(v) if (v := tile_meta["metadata"].get(key, "")) else "" for tile_meta in all_metadata]
 
             # 空でない値が tile 間で異なる行を強調表示する
-            unique_values = {v for v in values if v}
-            has_difference = len(unique_values) > 1
-
-            should_highlight = has_difference
+            has_difference = len({v for v in values if v}) > 1
 
             for col_idx, value in enumerate(values):
                 value_item = QTableWidgetItem(value)
-
-                if should_highlight and value:
+                if has_difference and value:
                     value_item.setBackground(QBrush(diff_color))
 
                 value_item.setToolTip(str(value))
-                self.metadata_table.setItem(row_idx, col_idx + 1, value_item)
+                self.meta_tab.metadata_table.setItem(row_idx, col_idx + 1, value_item)
 
-        header = self.metadata_table.horizontalHeader()
+        header = self.meta_tab.metadata_table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
         for i in range(1, 1 + num_tiles):
             header.setSectionResizeMode(i, QHeaderView.Stretch)
@@ -239,27 +211,11 @@ class TilingAnalysisDialog(AnalysisDialog):
                 continue
 
             roi_rect = tile_data.get("rect")
-            if roi_rect is not None:
-                x, y, w, h = (
-                    int(roi_rect.x()),
-                    int(roi_rect.y()),
-                    int(roi_rect.width()),
-                    int(roi_rect.height()),
-                )
-                arr = arr[y : y + h, x : x + w]
-            else:
-                arr = arr[0:1, 0:1]
-
+            arr = crop_roi(arr, roi_rect.getRect() if roi_rect is not None else None)
             if arr.size == 0:
                 continue
 
-            valid_tiles.append(
-                {
-                    "array": arr,
-                    "index": tile_data["index"],
-                    "rect": roi_rect,
-                }
-            )
+            valid_tiles.append({"array": arr, "index": tile_data["index"], "rect": roi_rect})
 
         if not valid_tiles:
             return
@@ -270,11 +226,7 @@ class TilingAnalysisDialog(AnalysisDialog):
 
         first_arr = valid_tiles[0]["array"]
         if first_arr.ndim == 3 and first_arr.shape[2] > 1:
-            nch = first_arr.shape[2]
-            if not self.settings.channel_checks:
-                self.settings.channel_checks = [True] * nch
-            elif len(self.settings.channel_checks) < nch:
-                self.settings.channel_checks.extend([True] * (nch - len(self.settings.channel_checks)))
+            self.settings.fit_channel_checks(first_arr.shape[2])
 
         self._ensure_overlay_channel_visibility(valid_tiles)
 
@@ -288,7 +240,7 @@ class TilingAnalysisDialog(AnalysisDialog):
         if not valid_tiles:
             return
 
-        all_hist_series = {}  # tile index -> {label -> (xs, ys)}
+        all_hist_series = {}  # "Tile {n} {label}" -> (xs, ys)
         all_stats = []  # 表示 ON の channel の統計量
 
         for tile in valid_tiles:
@@ -303,69 +255,19 @@ class TilingAnalysisDialog(AnalysisDialog):
                 hist_series = ecdf_series(arr)
             stats = histogram_stats(arr, self.settings.channel_checks)
 
-            tile_hist_series = {}
-            for label, (xs, ys) in hist_series.items():
-                channel_code = label
-                ch_visible = True
-                if visibility is not None:
-                    if label.startswith("C"):
-                        try:
-                            cindex = int(label[1:])
-                            if cindex < len(visibility):
-                                ch_visible = visibility[cindex]
-                        except Exception:
-                            ch_visible = True
-                    elif label == "I" and len(visibility) > 0:
-                        ch_visible = visibility[0]
-                if ch_visible:
-                    new_label = f"Tile {tile_idx + 1} {channel_code}"
-                    tile_hist_series[new_label] = (xs, ys)
-            all_hist_series[tile_idx] = tile_hist_series
+            for label, data in hist_series.items():
+                if self._channel_visible(label, visibility):
+                    all_hist_series[f"Tile {tile_idx + 1} {label}"] = data
 
             for stat in stats:
-                stat_ch_index = 0
-                try:
-                    stat_ch_index = int(stat["ch"])
-                except Exception:
-                    stat_ch_index = 0
-                stat_visible = True
-                if visibility is not None and stat_ch_index < len(visibility):
-                    stat_visible = visibility[stat_ch_index]
-                if stat_visible:
-                    stat_copy = stat.copy()
-                    # label は常に C{index}（1ch は C0）
-                    stat_label = f"C{stat_ch_index}"
-                    curve_label = f"Tile {tile_idx + 1} {stat_label}"
-                    stat_copy["ch"] = f"T{tile_idx + 1}_C{stat_ch_index}"
-                    stat_copy["curve_label"] = curve_label
-                    all_stats.append(stat_copy)
+                # 統計量の label は常に C{index}（1ch は C0）
+                k = int(stat["ch"])
+                if self._channel_visible(f"C{k}", visibility):
+                    all_stats.append(
+                        {**stat, "ch": f"T{tile_idx + 1}_C{k}", "curve_label": f"Tile {tile_idx + 1} C{k}"}
+                    )
 
-        # 全 tile の x の和集合（前後 1 step を含む）を共通の x 軸にする
-        all_xs = []
-        for series in all_hist_series.values():
-            for xs, _ in series.values():
-                xs = np.asarray(xs)
-                dx = xs[1] - xs[0] if len(xs) > 1 else 1.0
-                xs_extended = np.concatenate([xs, xs - dx, xs + dx])
-                all_xs.append(xs_extended)
-        x_common = np.array([]) if len(all_xs) == 0 else np.unique(np.concatenate(all_xs))
-
-        merged_series = {}
-        for series in all_hist_series.values():
-            for label, data in series.items():
-                xs, ys = data
-                if self.settings.hist_mode == "ECDF":
-                    # ECDF は np.interp で欠けている x を前後の累積確率で補間する
-                    if len(xs) > 0:
-                        ys_new = np.interp(x_common, xs, ys, left=0.0, right=1.0)
-                    else:
-                        ys_new = np.zeros_like(x_common, dtype=float)
-                else:
-                    ys_new = np.zeros_like(x_common, dtype=ys.dtype)
-                    indices = np.searchsorted(x_common, xs)
-                    valid = (indices >= 0) & (indices < len(x_common))
-                    ys_new[indices[valid]] = ys[valid]
-                merged_series[label] = (x_common, ys_new)
+        merged_series = merge_hist_series(all_hist_series, self.settings.hist_mode)
 
         ordered_labels = list(merged_series.keys())
         palette_map = self._assign_overlay_colors(ordered_labels)
@@ -396,185 +298,104 @@ class TilingAnalysisDialog(AnalysisDialog):
                         )
                         self.hist_tab.hist_widget.addItem(item)
                     self.hist_plot_items[label] = item
-                self.hist_tab.hist_widget.setTitle(
-                    f"{self.settings.hist_mode} Overlay (All Tiles)", color=theme.PLOT_TEXT_COLOR, size="12pt"
-                )
-            else:
-                self.hist_tab.hist_widget.setTitle(
-                    f"{self.settings.hist_mode} Overlay (No channels visible)",
-                    color=theme.PLOT_MUTED_COLOR,
-                    size="11pt",
-                )
+            self._set_overlay_title(self.hist_tab.hist_widget, f"{self.settings.hist_mode} Overlay", "", merged_series)
 
-        self.hist_tab._populate_stats_table(all_stats)
+        self._assign_overlay_colors([r["curve_label"] for r in all_stats])
+        self.hist_tab.stats_table.set_rows(all_stats, self.overlay_color_map)
 
         # コピー用（表示中の系列のみ）
         self.last_hist_data = merged_series
 
     def _update_profile_overlay(self, valid_tiles):
         """全 tile の profile を重ね描きする。"""
-        all_prof_series = {}  # tile index -> {label -> (xs, ys)}
+        merged_series = {}  # "Tile {n} {label}" -> (xs, ys)
         all_profile_stats = []
+        orientation = self.settings.profile_orientation
 
         for tile in valid_tiles:
-            arr = tile["array"]
             tile_idx = tile["index"]
             roi_rect = tile.get("rect")
             visibility = self.overlay_channel_visibility.get(tile_idx)
+            # absolute 表示では x に ROI の開始座標を加える
+            offset = 0
+            if self.settings.profile_x_mode == "absolute" and roi_rect is not None:
+                offset = get_profile_offset(roi_rect, orientation)
 
-            pseries = profile_series(
-                arr, orientation=self.settings.profile_orientation, method=self.settings.profile_method
-            )
-
-            tile_prof_series = {}
+            pseries = profile_series(tile["array"], orientation=orientation, method=self.settings.profile_method)
             for label, prof in pseries.items():
-                if self.settings.profile_x_mode == "absolute" and roi_rect is not None:
-                    offset = get_profile_offset(roi_rect, self.settings.profile_orientation)
-                    xs = np.arange(prof.size) + offset
-                else:
-                    xs = np.arange(prof.size)
+                if not self._channel_visible(label, visibility):
+                    continue
+                curve_label = f"Tile {tile_idx + 1} {label}"
+                merged_series[curve_label] = (np.arange(prof.size) + offset, prof)
+                k = 0 if label == "I" else int(label[1:])
+                row = stats_row(k, curve_label, prof, bool(np.issubdtype(prof.dtype, np.integer)))
+                row["ch"] = f"T{tile_idx + 1}_C{k}"
+                all_profile_stats.append(row)
 
-                ch_visible = True
-                if visibility is not None:
-                    if label.startswith("C"):
-                        try:
-                            cindex = int(label[1:])
-                            if cindex < len(visibility):
-                                ch_visible = visibility[cindex]
-                        except Exception:
-                            ch_visible = True
-                    elif label == "I" and len(visibility) > 0:
-                        ch_visible = visibility[0]
+        prof_palette_map = self._assign_overlay_colors(list(merged_series))
 
-                if ch_visible:
-                    channel_code = label
-                    new_label = f"Tile {tile_idx + 1} {channel_code}"
-                    tile_prof_series[new_label] = (xs, prof)
-                    is_int = np.issubdtype(prof.dtype, np.integer)
-                    all_profile_stats.append(
-                        {
-                            "ch": f"T{tile_idx + 1}_C{0 if label == 'I' else int(label[1:])}",
-                            "mean": float(prof.mean()) if prof.size else 0.0,
-                            "std": float(prof.std()) if prof.size else 0.0,
-                            "median": float(np.median(prof)) if prof.size else 0.0,
-                            "min": float(prof.min()) if prof.size else 0.0,
-                            "max": float(prof.max()) if prof.size else 0.0,
-                            "fano": float(prof.std() ** 2 / prof.mean()) if prof.size else 0.0,
-                            "is_int": bool(is_int),
-                            "curve_label": new_label,
-                        }
-                    )
+        self.profile_tab.prof_widget.clear()
+        self.profile_plot_items.clear()
+        for label, (xs, ys) in merged_series.items():
+            rgb = prof_palette_map.get(label, QColor(theme.PLOT_FALLBACK_COLOR).getRgb()[:3])
+            pen = self._make_pen(rgb, width=2, alpha=255)
+            self.profile_plot_items[label] = self.profile_tab.prof_widget.plot(xs, ys, pen=pen, name=label)
 
-            all_prof_series[tile_idx] = tile_prof_series
+        orientation_label = {"h": "Horizontal", "v": "Vertical"}[orientation]
+        mode_label = "Absolute" if self.settings.profile_x_mode == "absolute" else "Relative"
+        method_label = {
+            "mean": "Mean",
+            "std": "Std",
+            "max": "Max",
+            "min": "Min",
+            "p2p": "Peak-to-Peak",
+            "median": "Median",
+        }[self.settings.profile_method]
+        self._set_overlay_title(
+            self.profile_tab.prof_widget,
+            "Profile Overlay",
+            f" - {orientation_label} / {mode_label} / {method_label}",
+            merged_series,
+        )
 
-        merged_series = {}
-        for series in all_prof_series.values():
-            for label, data in series.items():
-                merged_series[label] = data
-
-        ordered_prof_labels = list(merged_series.keys())
-        prof_palette_map = self._assign_overlay_colors(ordered_prof_labels)
-
-        if hasattr(self, "prof_widget") and self.prof_widget:
-            self.prof_widget.clear()
-            self.profile_plot_items.clear()
-            orientation_label = {"h": "Horizontal", "v": "Vertical"}[self.settings.profile_orientation]
-            mode_label = "Absolute" if self.settings.profile_x_mode == "absolute" else "Relative"
-            method_label = {
-                "mean": "Mean",
-                "std": "Std",
-                "max": "Max",
-                "min": "Min",
-                "p2p": "Peak-to-Peak",
-                "median": "Median",
-            }[self.settings.profile_method]
-            if merged_series:
-                for label, (xs, ys) in merged_series.items():
-                    rgb = prof_palette_map.get(label, QColor(theme.PLOT_FALLBACK_COLOR).getRgb()[:3])
-                    pen = self._make_pen(rgb, width=2, alpha=255)
-                    item = self.prof_widget.plot(xs, ys, pen=pen, name=label)
-                    self.profile_plot_items[label] = item
-                self.prof_widget.setTitle(
-                    f"Profile Overlay (All Tiles) - {orientation_label} / {mode_label} / {method_label}",
-                    color=theme.PLOT_TEXT_COLOR,
-                    size="12pt",
-                )
-            else:
-                self.prof_widget.setTitle(
-                    f"Profile Overlay (No channels visible)  - {orientation_label} / {mode_label} / {method_label}",
-                    color=theme.PLOT_MUTED_COLOR,
-                    size="11pt",
-                )
-
-        if hasattr(self, "profile_tab"):
-            self.profile_tab._populate_stats_table(all_profile_stats)
+        self._assign_overlay_colors([r["curve_label"] for r in all_profile_stats])
+        self.profile_tab.stats_table.set_rows(all_profile_stats, self.overlay_color_map)
 
         self.last_profile_data = merged_series
 
-    # ---- tile ごとの channel の表示 ON/OFF ----
+    @staticmethod
+    def _set_overlay_title(widget, prefix: str, suffix: str, series: dict):
+        """重ね描きの title を設定する。表示する系列がない場合は、その旨を控えめな色で示す。"""
+        if series:
+            widget.setTitle(f"{prefix} (All Tiles){suffix}", color=theme.PLOT_TEXT_COLOR, size="12pt")
+        else:
+            widget.setTitle(f"{prefix} (No channels visible){suffix}", color=theme.PLOT_MUTED_COLOR, size="11pt")
+
     def _ensure_overlay_channel_visibility(self, valid_tiles):
+        # 初めて見る tile は全 channel を表示する
         for tile in valid_tiles:
-            idx = tile["index"]
             arr = tile["array"]
-            if idx not in self.overlay_channel_visibility:
-                if arr.ndim == 3:
-                    self.overlay_channel_visibility[idx] = [True] * arr.shape[2]
-                else:
-                    self.overlay_channel_visibility[idx] = [True]
+            self.overlay_channel_visibility.setdefault(tile["index"], [True] * (arr.shape[2] if arr.ndim == 3 else 1))
 
     def _setup_overlay_channel_checkboxes(self):
         """histogram・profile tab の channel の checkbox を、tile ごとの checkbox に置き換える。"""
-        if hasattr(self, "hist_tab"):
-            self._replace_tab_channel_ui(self.hist_tab)
-
-        if hasattr(self, "profile_tab"):
-            self._replace_tab_channel_ui(self.profile_tab)
+        self._replace_tab_channel_ui(self.hist_tab)
+        self._replace_tab_channel_ui(self.profile_tab)
 
     def _replace_tab_channel_ui(self, tab):
-        """tab の scroll area の中身を tile ごとの checkbox にし、その上に全選択・全解除の button を置く。"""
+        """tab の scroll area の中身を tile ごとの channel 一覧にし、その上に全選択・全解除の button を置く。"""
         # 削除済みの widget を参照しないよう、毎回 tab から探す
         scroll_area = tab.findChild(QScrollArea)
-        if scroll_area is None:
+        if scroll_area is None or scroll_area.widget() is None or scroll_area.parent() is None:
             return
-        scroll_widget = scroll_area.widget()
-        if scroll_widget is None:
-            return
-
-        parent_layout = scroll_area.parent().layout() if scroll_area.parent() else None
-        if parent_layout is None:
+        if scroll_area.parent().layout() is None:
             return
 
-        btn_row_name = "overlay_btn_row_hist" if tab is getattr(self, "hist_tab", None) else "overlay_btn_row_prof"
+        key = "hist" if tab is self.hist_tab else "prof"
+        if key not in self._overlay_button_rows:
+            self._overlay_button_rows[key] = self._make_select_buttons(scroll_area)
 
-        btn_row_widget = None
-        for idx in range(parent_layout.count()):
-            item = parent_layout.itemAt(idx)
-            w = item.widget()
-            if w is not None and w.objectName() == btn_row_name:
-                btn_row_widget = w
-                break
-        if btn_row_widget is None:
-            btn_row_widget = QWidget(scroll_area.parent())
-            btn_row_widget.setObjectName(btn_row_name)
-            btn_layout = QHBoxLayout(btn_row_widget)
-            btn_layout.setContentsMargins(0, 0, 0, 0)
-            select_all_btn = QPushButton("全選択", btn_row_widget)
-            select_all_btn.setObjectName(btn_row_name + "_select")
-            clear_all_btn = QPushButton("全解除", btn_row_widget)
-            clear_all_btn.setObjectName(btn_row_name + "_clear")
-            select_all_btn.setMaximumWidth(80)
-            clear_all_btn.setMaximumWidth(80)
-            btn_layout.addWidget(select_all_btn)
-            btn_layout.addWidget(clear_all_btn)
-
-            insert_index = 0
-            for idx in range(parent_layout.count()):
-                if parent_layout.itemAt(idx).widget() == scroll_area:
-                    insert_index = idx
-                    break
-            parent_layout.insertWidget(insert_index, btn_row_widget)
-
-        layout = scroll_widget.layout()
+        layout = scroll_area.widget().layout()
         if layout is not None:
             while layout.count():
                 item = layout.takeAt(0)
@@ -599,23 +420,29 @@ class TilingAnalysisDialog(AnalysisDialog):
 
         layout.addStretch()
 
-        select_btn = btn_row_widget.findChild(QPushButton, btn_row_name + "_select")
-        clear_btn = btn_row_widget.findChild(QPushButton, btn_row_name + "_clear")
-        if select_btn is not None and clear_btn is not None and not btn_row_widget.property("wired"):
-            select_btn.clicked.connect(lambda: self._apply_all_in_tab(tab, True))
-            clear_btn.clicked.connect(lambda: self._apply_all_in_tab(tab, False))
-            btn_row_widget.setProperty("wired", True)
+    def _make_select_buttons(self, scroll_area: QScrollArea) -> QWidget:
+        """全 tile の channel を全選択・全解除する button の行を、scroll area の上に置く。"""
+        row = QWidget(scroll_area.parent())
+        row_layout = QHBoxLayout(row)
+        row_layout.setContentsMargins(0, 0, 0, 0)
+        for text, value in (("全選択", True), ("全解除", False)):
+            btn = QPushButton(text, row)
+            btn.setMaximumWidth(80)
+            btn.clicked.connect(lambda _checked=False, v=value: self._apply_all(v))
+            row_layout.addWidget(btn)
 
-    def _apply_all_in_tab(self, tab, value: bool):
-        scroll_area = tab.findChild(QScrollArea)
-        if scroll_area is None:
+        parent_layout = scroll_area.parent().layout()
+        parent_layout.insertWidget(max(0, parent_layout.indexOf(scroll_area)), row)
+        return row
+
+    def _apply_all(self, value: bool):
+        """全 tile の全 channel の表示を value にする。変化がある場合だけ 1 回だけ描き直す。"""
+        visibility = self.overlay_channel_visibility.values()
+        if all(v == value for vis in visibility for v in vis):
             return
-        sw = scroll_area.widget()
-        if sw is None:
-            return
-        for cb in sw.findChildren(QCheckBox):
-            if cb.isChecked() != value:
-                cb.setChecked(value)
+        for vis in visibility:
+            vis[:] = [value] * len(vis)
+        self.update_contents()
 
     def _on_overlay_checks_changed(self, tile_idx: int, checks: list[bool]):
         vis = self.overlay_channel_visibility.get(tile_idx)

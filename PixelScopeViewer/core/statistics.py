@@ -36,6 +36,51 @@ def determine_hist_bins_auto(arr: np.ndarray) -> np.ndarray | int:
     return max(1, int(data_max - data_min) + 1)
 
 
+def crop_roi(arr: np.ndarray, rect: tuple[int, int, int, int] | None) -> np.ndarray:
+    """ROI (x, y, w, h) の範囲を切り出す。ROI がない場合は左上 1 pixel を返す。"""
+    if rect is None:
+        return arr[0:1, 0:1]
+    x, y, w, h = (int(v) for v in rect)
+    return arr[y : y + h, x : x + w]
+
+
+def merge_hist_series(
+    series: dict[str, tuple[np.ndarray, np.ndarray]], mode: str
+) -> dict[str, tuple[np.ndarray, np.ndarray]]:
+    """複数の histogram / ECDF の系列を共通の x 軸に揃える。
+
+    x 軸は全系列の x の和集合（前後 1 step を含む）。ECDF は前後の累積確率で補間し、Histogram は値のない x を 0 にする。
+    """
+    all_xs = []
+    for xs, _ in series.values():
+        xs = np.asarray(xs)
+        dx = xs[1] - xs[0] if len(xs) > 1 else 1.0
+        all_xs.append(np.concatenate([xs, xs - dx, xs + dx]))
+    x_common = np.unique(np.concatenate(all_xs)) if all_xs else np.array([])
+
+    merged = {}
+    for label, (xs, ys) in series.items():
+        if mode == "ECDF":
+            if len(xs) > 0:
+                ys_new = np.interp(x_common, xs, ys, left=0.0, right=1.0)
+            else:
+                ys_new = np.zeros_like(x_common, dtype=float)
+        else:
+            ys_new = np.zeros_like(x_common, dtype=ys.dtype)
+            indices = np.searchsorted(x_common, xs)
+            valid = (indices >= 0) & (indices < len(x_common))
+            ys_new[indices[valid]] = ys[valid]
+        merged[label] = (x_common, ys_new)
+    return merged
+
+
+def _iter_channels(arr: np.ndarray) -> list[tuple[int, str, np.ndarray]]:
+    """(channel index, label, 2 次元配列) のリストを返す。label は多 channel なら 'C{index}'、1ch なら 'I'。"""
+    if arr.ndim == 3 and arr.shape[2] > 1:
+        return [(c, f"C{c}", arr[:, :, c]) for c in range(arr.shape[2])]
+    return [(0, "I", arr if arr.ndim == 2 else arr[:, :, 0])]
+
+
 def histogram_series(arr: np.ndarray, *, bins: np.ndarray | None = None) -> dict[str, tuple[np.ndarray, np.ndarray]]:
     """channel ごとの histogram を計算する。
 
@@ -47,60 +92,30 @@ def histogram_series(arr: np.ndarray, *, bins: np.ndarray | None = None) -> dict
         bins = determine_hist_bins_auto(arr)
 
     out: dict[str, tuple[np.ndarray, np.ndarray]] = {}
-    if arr.ndim == 3 and arr.shape[2] > 1:
-        nch = arr.shape[2]
-        for c in range(nch):
-            data = arr[:, :, c].ravel()
-            if np.issubdtype(data.dtype, np.integer):
-                data_min = arr.min()
-                data_max = arr.max()
-                hist, edges = np.histogram(data, bins=bins, range=(data_min, data_max + 1))
-                xs = edges[:-1]
-            else:
-                hist, edges = np.histogram(data, bins=bins)
-                xs = (edges[:-1] + edges[1:]) / 2.0
-            out[f"C{c}"] = (xs, hist)
-    else:
-        gray = arr if arr.ndim == 2 else arr[:, :, 0]
-        data = gray.ravel()
+    for _, label, channel in _iter_channels(arr):
+        data = channel.ravel()
         if np.issubdtype(data.dtype, np.integer):
-            data_min = arr.min()
-            data_max = arr.max()
-            hist, edges = np.histogram(data, bins=bins, range=(data_min, data_max + 1))
+            # 整数は全 channel 共通の範囲で 1 刻みの bin にし、x は bin の左端
+            hist, edges = np.histogram(data, bins=bins, range=(arr.min(), arr.max() + 1))
             xs = edges[:-1]
         else:
             hist, edges = np.histogram(data, bins=bins)
             xs = (edges[:-1] + edges[1:]) / 2.0
-        out["I"] = (xs, hist)
+        out[label] = (xs, hist)
     return out
 
 
 def ecdf_series(arr: np.ndarray, *, max_points: int = 2000) -> dict[str, tuple[np.ndarray, np.ndarray]]:
     """channel ごとの ECDF を、最大 max_points 点に間引いて計算する。"""
-
-    def _calc_fast_ecdf(data: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        data = data.ravel()
-        n_samples = len(data)
-
-        if n_samples > max_points:
+    out: dict[str, tuple[np.ndarray, np.ndarray]] = {}
+    for _, label, channel in _iter_channels(arr):
+        data = channel.ravel()
+        if len(data) > max_points:
             # np.random.choice よりスライス（ストライド抽出）の方が高速
-            step = n_samples // max_points
-            data = data[::step][:max_points]
-
+            data = data[:: len(data) // max_points][:max_points]
         xs = np.sort(data)
         # 0.0 ~ 1.0 の累積確率
-        ys = np.linspace(1.0 / len(xs), 1.0, len(xs))
-        return xs, ys
-
-    out: dict[str, tuple[np.ndarray, np.ndarray]] = {}
-
-    if arr.ndim == 3 and arr.shape[2] > 1:
-        for c in range(arr.shape[2]):
-            out[f"C{c}"] = _calc_fast_ecdf(arr[:, :, c])
-    else:
-        gray = arr if arr.ndim == 2 else arr[:, :, 0]
-        out["I"] = _calc_fast_ecdf(gray)
-
+        out[label] = (xs, np.linspace(1.0 / len(xs), 1.0, len(xs)))
     return out
 
 
@@ -134,17 +149,7 @@ def profile_series(arr: np.ndarray, *, orientation: str = "h", method: str = "me
     Returns:
         label から profile 配列への dict。label は多 channel なら 'C{index}'、1ch なら 'I'。
     """
-    out: dict[str, np.ndarray] = {}
-    if arr.ndim == 3 and arr.shape[2] > 1:
-        nch = arr.shape[2]
-        for c in range(nch):
-            prof = compute_profile_1d(arr[:, :, c], orientation, method)
-            out[f"C{c}"] = prof
-    else:
-        gray = arr if arr.ndim == 2 else arr[:, :, 0]
-        prof = compute_profile_1d(gray, orientation, method)
-        out["I"] = prof
-    return out
+    return {label: compute_profile_1d(channel, orientation, method) for _, label, channel in _iter_channels(arr)}
 
 
 def get_profile_offset(image_rect, orientation: str) -> int:
@@ -175,6 +180,31 @@ def calc_stats(data: np.ndarray) -> tuple[float, float, float, float, float, flo
     return mean, std, median, min, max, fano
 
 
+def stats_row(index: int, label: str, data: np.ndarray, is_int: bool) -> dict:
+    """統計量 table の 1 行（ch, curve_label, mean, std, median, min, max, fano, is_int）を返す。"""
+    mean_v, std_v, median_v, min_v, max_v, fano_v = calc_stats(data)
+    return {
+        "ch": str(index),
+        "curve_label": label,  # 色の対応付けに使う label
+        "mean": mean_v,
+        "std": std_v,
+        "median": median_v,
+        "min": min_v,
+        "max": max_v,
+        "fano": fano_v,
+        "is_int": is_int,
+    }
+
+
+def _visible_channels(arr: np.ndarray, channel_checks: list[bool] | None):
+    """表示 ON の channel だけを返す。1ch の場合は channel_checks に関係なく返す。"""
+    channels = _iter_channels(arr)
+    if len(channels) == 1 and channels[0][1] == "I":
+        return channels
+    checks = channel_checks or [True] * len(channels)
+    return [ch for ch in channels if not (ch[0] < len(checks) and not checks[ch[0]])]
+
+
 def histogram_stats(arr: np.ndarray, channel_checks: list[bool] | None = None):
     """histogram 表示用に channel ごとの統計量を計算する。
 
@@ -185,46 +215,10 @@ def histogram_stats(arr: np.ndarray, channel_checks: list[bool] | None = None):
     Returns:
         ch, curve_label, mean, std, median, min, max, fano, is_int を持つ dict のリスト。
     """
-    results = []
-    if arr.ndim == 3 and arr.shape[2] > 1:
-        nch = arr.shape[2]
-        checks = channel_checks or [True] * nch
-        for c in range(nch):
-            if c < len(checks) and not checks[c]:
-                continue
-            data = arr[:, :, c].ravel()
-            mean_v, std_v, median_v, min_v, max_v, fano_v = calc_stats(data)
-            results.append(
-                {
-                    "ch": str(c),
-                    "curve_label": f"C{c}",  # 色の対応付けに使う label
-                    "mean": mean_v,
-                    "std": std_v,
-                    "median": median_v,
-                    "min": min_v,
-                    "max": max_v,
-                    "fano": fano_v,
-                    "is_int": bool(np.issubdtype(data.dtype, np.integer)),
-                }
-            )
-    else:
-        gray = arr if arr.ndim == 2 else arr[:, :, 0]
-        data = gray.ravel()
-        mean_v, std_v, median_v, min_v, max_v, fano_v = calc_stats(data)
-        results.append(
-            {
-                "ch": "0",
-                "curve_label": "I",
-                "mean": mean_v,
-                "std": std_v,
-                "median": median_v,
-                "min": min_v,
-                "max": max_v,
-                "fano": fano_v,
-                "is_int": bool(np.issubdtype(gray.dtype, np.integer)),
-            }
-        )
-    return results
+    return [
+        stats_row(c, label, channel.ravel(), bool(np.issubdtype(channel.dtype, np.integer)))
+        for c, label, channel in _visible_channels(arr, channel_checks)
+    ]
 
 
 def profile_stats(
@@ -235,43 +229,8 @@ def profile_stats(
     Returns:
         histogram_stats と同じ形式の dict のリスト。
     """
-    results = []
-    if arr.ndim == 3 and arr.shape[2] > 1:
-        nch = arr.shape[2]
-        checks = channel_checks or [True] * nch
-        for c in range(nch):
-            if c < len(checks) and not checks[c]:
-                continue
-            prof = compute_profile_1d(arr[:, :, c], orientation, method)
-            mean_v, std_v, median_v, min_v, max_v, fano_v = calc_stats(prof)
-            results.append(
-                {
-                    "ch": str(c),
-                    "curve_label": f"C{c}",
-                    "mean": mean_v,
-                    "std": std_v,
-                    "median": median_v,
-                    "min": min_v,
-                    "max": max_v,
-                    "fano": fano_v,
-                    "is_int": bool(np.issubdtype(arr[:, :, c].dtype, np.integer)),
-                }
-            )
-    else:
-        gray = arr if arr.ndim == 2 else arr[:, :, 0]
-        prof = compute_profile_1d(gray, orientation, method)
-        mean_v, std_v, median_v, min_v, max_v, fano_v = calc_stats(prof)
-        results.append(
-            {
-                "ch": "0",
-                "curve_label": "I",
-                "mean": mean_v,
-                "std": std_v,
-                "median": median_v,
-                "min": min_v,
-                "max": max_v,
-                "fano": fano_v,
-                "is_int": bool(np.issubdtype(gray.dtype, np.integer)) if prof.dtype else False,
-            }
-        )
-    return results
+    rows = []
+    for c, label, channel in _visible_channels(arr, channel_checks):
+        prof = compute_profile_1d(channel, orientation, method)
+        rows.append(stats_row(c, label, prof, bool(np.issubdtype(channel.dtype, np.integer))))
+    return rows

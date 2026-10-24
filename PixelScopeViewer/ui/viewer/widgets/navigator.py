@@ -38,17 +38,12 @@ class NavigatorWidget(QGroupBox):
         self.update_thumbnail()
 
     def eventFilter(self, obj, event):
-        try:
-            if obj is self.viewer.scroll_area.viewport() and event.type() == QEvent.Resize:
-                self.update_thumbnail()
-            elif (
-                obj is self.thumbnail_label
-                and event.type() == QEvent.MouseButtonPress
-                and event.button() == Qt.LeftButton
-            ):
-                self.handle_mouse_press(event)
-        except Exception:
-            pass
+        if obj is self.viewer.scroll_area.viewport() and event.type() == QEvent.Resize:
+            self.update_thumbnail()
+        elif (
+            obj is self.thumbnail_label and event.type() == QEvent.MouseButtonPress and event.button() == Qt.LeftButton
+        ):
+            self.handle_mouse_press(event)
         return super().eventFilter(obj, event)
 
     def handle_mouse_press(self, event: QMouseEvent):

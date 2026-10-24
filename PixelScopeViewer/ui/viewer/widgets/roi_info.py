@@ -1,7 +1,5 @@
 """ROI の情報を表示・編集する widget。"""
 
-import contextlib
-
 from PySide6.QtCore import QRect, Qt
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
@@ -14,6 +12,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+from PixelScopeViewer.ui.common.widgets import set_value_silently
 
 
 class ROIInfoWidget(QGroupBox):
@@ -31,8 +31,7 @@ class ROIInfoWidget(QGroupBox):
         self.table.horizontalHeader().setVisible(False)
         self.table.setRowCount(8)
         font = self.table.font()
-        with contextlib.suppress(Exception):
-            font.setPointSize(max(font.pointSize() - 1, 9))
+        font.setPointSize(max(font.pointSize() - 1, 9))
         self.table.setFont(font)
         self.table.verticalHeader().setDefaultSectionSize(18)
         self.table.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -79,15 +78,13 @@ class ROIInfoWidget(QGroupBox):
         self.update_info()
 
     def _fit_table_height(self):
-        try:
-            vh = self.table.verticalHeader()
-            hh = self.table.horizontalHeader()
-            frame = 2 * self.table.frameWidth()
-            total = hh.height() + (vh.defaultSectionSize() * self.table.rowCount()) + frame
-            self.table.setMinimumHeight(total)
-            self.table.setMaximumHeight(total)
-        except Exception:
-            pass
+        # 全行が scroll なしで収まる高さに固定する
+        total = (
+            self.table.horizontalHeader().height()
+            + self.table.verticalHeader().defaultSectionSize() * self.table.rowCount()
+            + 2 * self.table.frameWidth()
+        )
+        self.table.setFixedHeight(total)
 
     def on_spin_changed(self, row, value):
         """spin box の変更を画像範囲内に収めて ROI へ反映する。"""
@@ -108,50 +105,30 @@ class ROIInfoWidget(QGroupBox):
 
         if row == 0:  # X Start
             x = max(0, min(value, img_w - w))
-            self.spin_boxes[0].blockSignals(True)
-            self.spin_boxes[0].setValue(x)
-            self.spin_boxes[0].blockSignals(False)
+            set_value_silently(self.spin_boxes[0], x)
         elif row == 1:  # Y Start
             y = max(0, min(value, img_h - h))
-            self.spin_boxes[1].blockSignals(True)
-            self.spin_boxes[1].setValue(y)
-            self.spin_boxes[1].blockSignals(False)
+            set_value_silently(self.spin_boxes[1], y)
         elif row == 2:  # X End
             x_end = max(x, min(value, img_w - 1))
             w = x_end - x + 1
-            self.spin_boxes[2].blockSignals(True)
-            self.spin_boxes[2].setValue(x_end)
-            self.spin_boxes[2].blockSignals(False)
-            self.spin_boxes[4].blockSignals(True)
-            self.spin_boxes[4].setValue(w)
-            self.spin_boxes[4].blockSignals(False)
+            set_value_silently(self.spin_boxes[2], x_end)
+            set_value_silently(self.spin_boxes[4], w)
         elif row == 3:  # Y End
             y_end = max(y, min(value, img_h - 1))
             h = y_end - y + 1
-            self.spin_boxes[3].blockSignals(True)
-            self.spin_boxes[3].setValue(y_end)
-            self.spin_boxes[3].blockSignals(False)
-            self.spin_boxes[5].blockSignals(True)
-            self.spin_boxes[5].setValue(h)
-            self.spin_boxes[5].blockSignals(False)
+            set_value_silently(self.spin_boxes[3], y_end)
+            set_value_silently(self.spin_boxes[5], h)
         elif row == 4:  # Width
             w = max(1, min(value, img_w - x))
-            self.spin_boxes[4].blockSignals(True)
-            self.spin_boxes[4].setValue(w)
-            self.spin_boxes[4].blockSignals(False)
+            set_value_silently(self.spin_boxes[4], w)
             x_end = x + w - 1
-            self.spin_boxes[2].blockSignals(True)
-            self.spin_boxes[2].setValue(x_end)
-            self.spin_boxes[2].blockSignals(False)
+            set_value_silently(self.spin_boxes[2], x_end)
         elif row == 5:  # Height
             h = max(1, min(value, img_h - y))
-            self.spin_boxes[5].blockSignals(True)
-            self.spin_boxes[5].setValue(h)
-            self.spin_boxes[5].blockSignals(False)
+            set_value_silently(self.spin_boxes[5], h)
             y_end = y + h - 1
-            self.spin_boxes[3].blockSignals(True)
-            self.spin_boxes[3].setValue(y_end)
-            self.spin_boxes[3].blockSignals(False)
+            set_value_silently(self.spin_boxes[3], y_end)
 
         # 倍率による丸め誤差を避けるため画像座標で ROI を設定する
         new_rect_img = QRect(x, y, w, h)
@@ -203,9 +180,7 @@ class ROIInfoWidget(QGroupBox):
 
             values = [x, y, x_end, y_end, w, h]
             for i, value in enumerate(values):
-                self.spin_boxes[i].blockSignals(True)
-                self.spin_boxes[i].setValue(value)
-                self.spin_boxes[i].blockSignals(False)
+                set_value_silently(self.spin_boxes[i], value)
 
             diagonal = (w**2 + h**2) ** 0.5
             diagonal_item = QTableWidgetItem(f"{diagonal:.2f}")

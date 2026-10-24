@@ -8,8 +8,9 @@ from PySide6.QtWidgets import QVBoxLayout, QWidget
 
 from PixelScopeViewer.core.brightness import BrightnessParams, determine_dtype_defaults
 from PixelScopeViewer.core.constants import get_dtype_defaults
+from PixelScopeViewer.ui.common.widgets import set_value_silently
+from PixelScopeViewer.ui.display.tabs.logic import brightness_builder as builder
 from PixelScopeViewer.ui.display.tabs.logic import clamp_value, round_to_power_of_2
-from PixelScopeViewer.ui.display.tabs.logic.brightness_builder import BrightnessUIBuilder
 
 
 class BrightnessTab(QWidget):
@@ -58,8 +59,6 @@ class BrightnessTab(QWidget):
         main_layout.setSpacing(20)
         main_layout.setContentsMargins(25, 25, 25, 25)
 
-        builder = BrightnessUIBuilder(self)
-
         self.dtype_combo = builder.build_dtype_selector(main_layout, self.current_dtype, self._on_dtype_changed)
 
         self.auto_scale_cb, self.use_roi_cb, self.set_as_default = builder.build_autoscale(
@@ -99,25 +98,19 @@ class BrightnessTab(QWidget):
 
     # ------------------------ slot ------------------------
     def _on_offset_slider_changed(self, value):
-        self.offset_spinbox.blockSignals(True)
-        self.offset_spinbox.setValue(value)
-        self.offset_spinbox.blockSignals(False)
+        set_value_silently(self.offset_spinbox, value)
         self._save_current_params()
         self._emit_brightness_changed()
 
     def _on_offset_spinbox_changed(self, value):
-        self.offset_slider.blockSignals(True)
-        self.offset_slider.setValue(int(value))
-        self.offset_slider.blockSignals(False)
+        set_value_silently(self.offset_slider, int(value))
         self._save_current_params()
         self._emit_brightness_changed()
 
     def _on_gain_slider_changed(self, value):
         # slider の値は log2(gain)
         actual_value = 2**value
-        self.gain_spinbox.blockSignals(True)
-        self.gain_spinbox.setValue(actual_value)
-        self.gain_spinbox.blockSignals(False)
+        set_value_silently(self.gain_spinbox, actual_value)
         self._save_current_params()
         self._emit_brightness_changed()
 
@@ -127,13 +120,9 @@ class BrightnessTab(QWidget):
             rounded = round_to_power_of_2(value, self._gain_log2_min, self._gain_log2_max)
             log2_value = round(math.log2(rounded))
 
-            self.gain_spinbox.blockSignals(True)
-            self.gain_spinbox.setValue(rounded)
-            self.gain_spinbox.blockSignals(False)
+            set_value_silently(self.gain_spinbox, rounded)
 
-            self.gain_slider.blockSignals(True)
-            self.gain_slider.setValue(log2_value)
-            self.gain_slider.blockSignals(False)
+            set_value_silently(self.gain_slider, log2_value)
 
             self._save_current_params()
             self._emit_brightness_changed()
@@ -141,16 +130,12 @@ class BrightnessTab(QWidget):
             self._reset_gain_to_default()
 
     def _on_upper_level_slider_changed(self, value):
-        self.upper_level_spinbox.blockSignals(True)
-        self.upper_level_spinbox.setValue(value)
-        self.upper_level_spinbox.blockSignals(False)
+        set_value_silently(self.upper_level_spinbox, value)
         self._save_current_params()
         self._emit_brightness_changed()
 
     def _on_upper_level_spinbox_changed(self, value):
-        self.upper_level_slider.blockSignals(True)
-        self.upper_level_slider.setValue(int(value))
-        self.upper_level_slider.blockSignals(False)
+        set_value_silently(self.upper_level_slider, int(value))
         self._save_current_params()
         self._emit_brightness_changed()
 
@@ -287,24 +272,14 @@ class BrightnessTab(QWidget):
 
     def _sync_to_manager(self):
         """現在の dtype の設定を viewer の brightness_manager に反映する。"""
-        try:
-            dialog = self.parent()
-            if dialog and hasattr(dialog, "parent") and callable(dialog.parent):
-                viewer = dialog.parent()
-                if viewer and hasattr(viewer, "state"):
-                    offset, gain, upper_level = self.dtype_params.get(self.current_dtype, (0, 1.0, 255))
-                    viewer.state.brightness_by_dtype[self.current_dtype] = BrightnessParams(offset, gain, upper_level)
-        except Exception:
-            pass
+        if self.viewer is not None:
+            offset, gain, upper_level = self.dtype_params.get(self.current_dtype, (0, 1.0, 255))
+            self.viewer.state.brightness_by_dtype[self.current_dtype] = BrightnessParams(offset, gain, upper_level)
 
     def _reset_gain_to_default(self):
-        self.gain_spinbox.blockSignals(True)
-        self.gain_spinbox.setValue(1.0)
-        self.gain_spinbox.blockSignals(False)
+        set_value_silently(self.gain_spinbox, 1.0)
 
-        self.gain_slider.blockSignals(True)
-        self.gain_slider.setValue(0)
-        self.gain_slider.blockSignals(False)
+        set_value_silently(self.gain_slider, 0)
 
         self._save_current_params()
         self._emit_brightness_changed()
@@ -407,10 +382,9 @@ class BrightnessTab(QWidget):
         if keep_settings:
             self.dtype_params[old_dtype] = old_params
 
-        if hasattr(self, "dtype_combo"):
-            self.dtype_combo.blockSignals(True)
-            self.dtype_combo.setCurrentText(self.current_dtype)
-            self.dtype_combo.blockSignals(False)
+        self.dtype_combo.blockSignals(True)
+        self.dtype_combo.setCurrentText(self.current_dtype)
+        self.dtype_combo.blockSignals(False)
 
         if keep_settings and self.current_dtype in self.dtype_params:
             new_offset, new_gain, new_upper_level = self.dtype_params[self.current_dtype]
@@ -435,7 +409,7 @@ class BrightnessTab(QWidget):
 
     def _get_roi(self):
         """親の ROI を (x, y, w, h) で返す。ROI がない場合は None。"""
-        if self.viewer and hasattr(self.viewer, "state"):
+        if self.viewer is not None:
             r = self.viewer.state.roi
             if r and not r.isEmpty():
                 return r.x(), r.y(), r.width(), r.height()

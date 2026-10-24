@@ -157,6 +157,10 @@ class ROIManager:
 
             if is_color and len(img.shape) == 2:
                 img = np.stack([img] * num_channels, axis=2)
+            elif is_color and img.shape[2] != num_channels:
+                # channel 数が異なる tile は grayscale にして揃える
+                gray = img.mean(axis=2).astype(img.dtype)
+                img = np.stack([gray] * num_channels, axis=2)
             elif not is_color and len(img.shape) == 3:
                 img = img[:, :, 0]
 

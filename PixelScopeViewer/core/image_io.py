@@ -272,7 +272,7 @@ def get_image_metadata(path: str | Path, arr: np.ndarray = None) -> dict:
             pass
 
         ext = path_obj.suffix.lower()
-        if ext in (".exr"):
+        if ext == ".exr":
             try:
                 img = oiio.ImageInput.open(str(path_obj))
                 spec = img.spec()
@@ -316,7 +316,7 @@ def get_image_metadata(path: str | Path, arr: np.ndarray = None) -> dict:
             except Exception as e:
                 metadata["Error (EXIF)"] = str(e)
 
-            if ext in (".png"):
+            if ext == ".png":
                 try:
                     png_metadata = extract_png_metadata(path_obj)
                     for k, v in png_metadata.items():

@@ -112,7 +112,6 @@ class FeaturesDialog(QDialog):
         self.table_images.setAlternatingRowColors(True)
         # 大きな table の描画を軽くする設定
         try:
-            self.table_images.setUniformRowHeights(True)
             self.table_images.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
             self.table_images.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
             self.table_images.setWordWrap(False)
@@ -443,6 +442,6 @@ class FeaturesDialog(QDialog):
         if event.type() == QEvent.WindowStateChange:
             if self.isMinimized():
                 FeaturesDialog._position_before_minimize = self.pos()
-            elif event.oldState() & Qt.WindowMinimized & FeaturesDialog._position_before_minimize is not None:
+            elif event.oldState() & Qt.WindowMinimized and FeaturesDialog._position_before_minimize is not None:
                 self.move(FeaturesDialog._position_before_minimize)
         super().changeEvent(event)

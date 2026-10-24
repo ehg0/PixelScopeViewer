@@ -1,6 +1,7 @@
 """単一画像の解析 dialog（metadata・profile・histogram）。"""
 
 import contextlib
+from fractions import Fraction
 
 import numpy as np
 from PySide6.QtCore import QEvent, QRect, Qt
@@ -514,7 +515,7 @@ class AnalysisDialog(QDialog):
                 rows.append((key, value_str))
                 if key == "EXIF_ExposureTime":
                     # 露光時間を秒で併記する
-                    exposure_time = eval(value)
+                    exposure_time = float(Fraction(value))
                     rows.append((" -> (seconds)", f"{exposure_time:.3e}"))
 
             self.last_metadata = rows

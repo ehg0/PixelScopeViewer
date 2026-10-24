@@ -361,7 +361,7 @@ class TileImageLabel(QLabel):
                 event.accept()
                 return
             factor = 2.0 if dy > 0 else 0.5
-            self.zoom_requested.emit(factor)
+            self.zoom_requested.emit(factor, None)
             event.accept()
             return
         event.ignore()

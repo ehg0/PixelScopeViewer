@@ -161,10 +161,10 @@ def get_profile_offset(image_rect, orientation: str) -> int:
 # --- 統計量 ---
 
 
-def calc_stats(data: np.ndarray) -> tuple[float, float, float, float, float]:
-    """mean, std, median, min, max, fano factor を返す。"""
+def calc_stats(data: np.ndarray) -> tuple[float, float, float, float, float, float]:
+    """mean, std, median, min, max, fano factor を返す。データが空の場合はすべて NaN。"""
     if data.size == 0:
-        mean = std = median = min = max = np.nan
+        mean = std = median = min = max = fano = np.nan
     else:
         mean = np.mean(data)
         std = np.std(data)

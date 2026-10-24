@@ -50,7 +50,7 @@ class StatusUpdater:
             self.viewer.status_pixel.setText("")
             self.viewer.current_mouse_image_coords = None
 
-    def update_roi_status(self) -> str:
+    def update_roi_status(self) -> None:
         """ROI の範囲を表示する。"""
         if self.viewer.current_index is None or not self.viewer.images:
             self.viewer.status_roi_area.setText("")

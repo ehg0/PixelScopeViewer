@@ -24,7 +24,7 @@ PLOT_MUTED_COLOR = "#7f8c8d"
 PLOT_INTENSITY_COLOR = "#000000"
 # channel の色が渡されないときの curve の色
 PLOT_FALLBACK_CHANNEL_COLORS = ("#ff0000", "#00c800", "#0066ff", "#7f7f7f")
-PLOT_FALLBACK_RGB = (127, 127, 127)
+PLOT_FALLBACK_COLOR = "#7f7f7f"
 
 # 複数画像比較の重ね描きの色（Tableau 20）。灰色系はグラフ上では黒で描く
 OVERLAY_PALETTE: tuple[str, ...] = (

@@ -382,7 +382,7 @@ class TilingAnalysisDialog(AnalysisDialog):
                         yplot[yplot == 0] = 0.1
                         self.hist_tab.hist_widget.setLimits(yMin=-1)
 
-                    rgb = palette_map.get(label, theme.PLOT_FALLBACK_RGB)
+                    rgb = palette_map.get(label, QColor(theme.PLOT_FALLBACK_COLOR).getRgb()[:3])
                     if self.settings.hist_chart_kind == "Line":
                         pen = self._make_pen(rgb, width=2, alpha=255)
                         item = self.hist_tab.hist_widget.plot(xs, yplot, pen=pen, name=label)
@@ -493,7 +493,7 @@ class TilingAnalysisDialog(AnalysisDialog):
             }[self.settings.profile_method]
             if merged_series:
                 for label, (xs, ys) in merged_series.items():
-                    rgb = prof_palette_map.get(label, theme.PLOT_FALLBACK_RGB)
+                    rgb = prof_palette_map.get(label, QColor(theme.PLOT_FALLBACK_COLOR).getRgb()[:3])
                     pen = self._make_pen(rgb, width=2, alpha=255)
                     item = self.prof_widget.plot(xs, ys, pen=pen, name=label)
                     self.profile_plot_items[label] = item

@@ -1,7 +1,7 @@
 """解析 dialog の channel ごとの表示 ON/OFF と色の一覧。"""
 
 from PySide6.QtCore import Signal
-from PySide6.QtGui import QColor, QIcon, QPixmap
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QCheckBox, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from PixelScopeViewer.ui.common import defaults, theme
@@ -80,11 +80,11 @@ class ChannelListWidget(QWidget):
 
     @staticmethod
     def _set_button_color(button: QPushButton, color: QColor | None):
+        # icon だと枠との間に余白ができるため、button の背景を塗りつぶす
         if color is None:
-            button.setIcon(QIcon())
+            button.setStyleSheet("")
             return
-        pixmap = QPixmap(32, 12)
-        pixmap.fill(QColor(color))
-        button.setIcon(QIcon(pixmap))
-        button.setIconSize(pixmap.size())
-        button.setStyleSheet(f"border: 1px solid {theme.COLOR_BUTTON_BORDER};")
+        fill = QColor(color).name()
+        button.setStyleSheet(
+            f"QPushButton {{ background-color: {fill}; border: 1px solid {theme.COLOR_BUTTON_BORDER}; }}"
+        )

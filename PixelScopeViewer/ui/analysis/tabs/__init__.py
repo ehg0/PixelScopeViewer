@@ -1,0 +1,1 @@
+"""AnalysisDialog の tab widget。"""

@@ -278,20 +278,21 @@ PixelScopeViewer/
 ├── tests/                     # テストコード
 └── PixelScopeViewer/          # メインパッケージ
     ├── app.py                 # アプリケーション起動
-    ├── core/                  # UI非依存ユーティリティ
-    │   ├── image_io.py        # 画像I/O、EXIF読み取り
-    │   └── metadata_utils.py  # メタデータ処理
-    └── ui/                    # UIコンポーネント
-        ├── utils/             # UI共通ユーティリティ (色設定等)
-        ├── viewer/            # メインビューアウィンドウ
-        ├── widgets/           # カスタムウィジェット (ROI、ナビゲーター等)
-        └── dialogs/           # ダイアログウィンドウ
-            ├── help_dialog.py    # ヘルプ
-            ├── diff_dialog.py    # 差分画像
-            ├── display/          # 表示設定 (輝度・チャンネル)
-            ├── analysis/         # 解析 (ヒストグラム・プロファイル・メタデータ)
-            ├── features/         # 特徴量表示 (ダイアログ本体・モデル・プロキシ・デリゲート)
-            └── tiling/           # 複数画像比較 (タイル表示・解析(オーバーレイ含む))
+    ├── core/                  # Qt 非依存の処理 (UI から一方向に参照される)
+    │   ├── constants.py       # 拡張子・zoom/gain の範囲・dtype ごとの brightness 初期値
+    │   ├── image_io.py        # 画像I/O、custom loader の登録
+    │   ├── metadata.py        # EXIF・PNG chunk の読み取り
+    │   ├── statistics.py      # histogram・profile・統計量
+    │   ├── brightness.py      # brightness 調整と dtype 判定
+    │   └── colormap.py        # JET・optical flow の colormap
+    └── ui/                    # 機能ごとの UI
+        ├── common/            # 機能をまたいで共有する部品 (色・初期値・channel 表示設定)
+        ├── viewer/            # メインビューアウィンドウ (dock の widget・ヘルプを含む)
+        ├── analysis/          # 解析 (ヒストグラム・プロファイル・メタデータ)
+        ├── display/           # 表示設定 (輝度・チャンネル)
+        ├── tiling/            # 複数画像比較 (タイル表示・解析(オーバーレイ含む))
+        ├── annotations/       # 特徴量表示 (ダイアログ本体・モデル・プロキシ・デリゲート)
+        └── diff/              # 差分画像
 ```
 
 

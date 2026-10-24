@@ -1,51 +1,15 @@
-"""PixelScopeViewer - A scientific image viewer with analysis tools.
+"""解析機能付きの画像ビューア PixelScopeViewer。"""
 
-This package provides a Qt-based image viewer optimized for scientific
-and technical images with the following features:
+from PixelScopeViewer.app import main
+from PixelScopeViewer.core import get_image_metadata, is_image_file, load_image
+from PixelScopeViewer.ui.analysis import AnalysisDialog
+from PixelScopeViewer.ui.common.qt_image import numpy_to_qimage
+from PixelScopeViewer.ui.diff import DiffDialog
+from PixelScopeViewer.ui.display import BrightnessDialog
+from PixelScopeViewer.ui.viewer import ImageViewer
+from PixelScopeViewer.ui.viewer.help_dialog import HelpDialog
 
-Core Features:
-    - Multi-image loading and navigation
-    - Pixel-aligned selection with keyboard editing
-    - Zoom in/out with smooth scaling
-    - Bit-shift operations for raw/scientific data visualization
-
-Analysis Tools:
-    - Histogram with linear/logarithmic scales
-    - Line profiles (horizontal/vertical, absolute/relative)
-    - Channel selection for multi-channel images
-    - Difference image creation
-    - CSV export of analysis data
-
-UI Components:
-    - Main viewer window (ImageViewer)
-    - Analysis dialog with tabbed interface (AnalysisDialog)
-    - Help dialog with keyboard shortcuts (HelpDialog)
-    - Difference dialog (DiffDialog)
-
-Image I/O:
-    - NumPy array to QImage conversion
-    - Support for common formats: PNG, JPEG, TIFF, BMP
-
-Package Structure:
-    - core/: UI-independent utilities (image I/O)
-    - ui/: UI components (viewer, widgets, dialogs)
-    - ui/dialogs/: Dialog windows
-    - ui/dialogs/analysis/: Analysis dialog and controls
-
-Quick Start:
-    from PixelScopeViewer import main
-    main()
-
-Dependencies:
-    - PySide6: Qt for Python
-    - numpy: Array operations
-"""
-
-from .app import main
-from .ui import ImageViewer, HelpDialog, DiffDialog, AnalysisDialog, BrightnessDialog
-from .core import numpy_to_qimage, load_image, is_image_file, get_image_metadata
-
-__version__ = "0.1.0"
+__version__ = "0.2.1"
 __all__ = [
     "main",
     "ImageViewer",

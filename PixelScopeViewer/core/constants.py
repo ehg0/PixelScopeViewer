@@ -1,18 +1,22 @@
-"""Application-wide constants for PixelScopeViewer.
+"""アプリケーション全体で共有する定数。"""
 
-This module contains shared constants used across the application.
-"""
+# 標準 loader が対応する拡張子
+OIIO_EXTENSIONS: tuple[str, ...] = (".exr", ".hdr")
+OPENCV_EXTENSIONS: tuple[str, ...] = (".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".gif", ".webp")
+STANDARD_IMAGE_EXTENSIONS: tuple[str, ...] = (*OPENCV_EXTENSIONS, *OIIO_EXTENSIONS, ".npy", ".bin")
 
-# Zoom scale limits
-MIN_ZOOM_SCALE: float = 1.0 / 32.0  # 1/32x (0.03125)
-MAX_ZOOM_SCALE: float = 32.0  # 32x
+# zoom 倍率の範囲と、1 操作あたりの倍率
+MIN_ZOOM_SCALE: float = 1.0 / 32.0
+MAX_ZOOM_SCALE: float = 32.0
+ZOOM_STEP: float = 2.0
 
-# Brightness gain limits (matching zoom range for consistency)
-MIN_BRIGHTNESS_GAIN: float = 1.0 / 128.0  # 1/128x
-MAX_BRIGHTNESS_GAIN: float = 128.0  # 128x
+# brightness gain の範囲と、1 操作あたりの倍率
+MIN_BRIGHTNESS_GAIN: float = 1.0 / 128.0
+MAX_BRIGHTNESS_GAIN: float = 128.0
+GAIN_STEP: float = 2.0
 
 
-# Brightness, get_dtype_defaults
+# dtype ごとの brightness 初期値と入力範囲
 DTYPE_DEFAULTS = {
     "float": {
         "dtype_key": "float",
@@ -45,5 +49,5 @@ DTYPE_DEFAULTS = {
 
 
 def get_dtype_defaults(dtype_key: str) -> dict:
-    """指定されたdtypeのデフォルト設定を取得（該当がない場合はfloatを返す）"""
+    """dtype の brightness 初期設定を返す。該当しない dtype は uint8 の設定を返す。"""
     return DTYPE_DEFAULTS.get(dtype_key, DTYPE_DEFAULTS["uint8"]).copy()

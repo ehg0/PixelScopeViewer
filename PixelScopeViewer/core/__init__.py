@@ -1,7 +1,7 @@
-"""Core utilities (UI-independent functionality)."""
+"""UI に依存しない共通処理。"""
 
-from .image_io import get_image_metadata, is_image_file, load_image, numpy_to_qimage
-from .metadata_utils import extract_exif, extract_png_metadata
+from PixelScopeViewer.core.image_io import get_image_metadata, is_image_file, load_image
+from PixelScopeViewer.core.metadata import extract_exif, extract_png_metadata
 
 __all__ = [
     "extract_exif",
@@ -9,5 +9,4 @@ __all__ = [
     "get_image_metadata",
     "is_image_file",
     "load_image",
-    "numpy_to_qimage",
 ]

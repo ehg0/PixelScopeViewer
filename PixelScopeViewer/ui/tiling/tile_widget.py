@@ -103,7 +103,7 @@ class TileWidget(QWidget):
                 if dy != 0:
                     factor = 2.0 if dy > 0 else 0.5
                     # event の座標は受け取った object 基準なので viewport 座標に変換する
-                    event_pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
+                    event_pos = event.position().toPoint()
                     if obj is self.scroll_area.viewport():
                         mouse_pos = event_pos
                     elif obj is self.image_label:
@@ -180,7 +180,7 @@ class TileWidget(QWidget):
         if arr is None:
             return
 
-        if hasattr(self.parent_dialog, "brightness_manager") and self.parent_dialog.brightness_manager:
+        if self.parent_dialog.brightness_manager:
             brightness_params = self.parent_dialog.brightness_manager.get_brightness_params()
             dtype_group = self.parent_dialog.tile_manager.get_tile_dtype_groups()[self.tile_index]
             params = brightness_params["params_by_dtype"][dtype_group]
@@ -200,7 +200,7 @@ class TileWidget(QWidget):
     def get_displayed_array(self) -> np.ndarray:
         """brightness を適用した表示用の配列を返す。"""
         arr = self.image_data.get("base_array")
-        if hasattr(self.parent_dialog, "brightness_manager") and self.parent_dialog.brightness_manager:
+        if self.parent_dialog.brightness_manager:
             brightness_params = self.parent_dialog.brightness_manager.get_brightness_params()
             dtype_group = self.parent_dialog.tile_manager.get_tile_dtype_groups()[self.tile_index]
             params = brightness_params["params_by_dtype"][dtype_group]

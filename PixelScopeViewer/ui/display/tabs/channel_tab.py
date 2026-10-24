@@ -120,7 +120,7 @@ class ChannelTab(QWidget):
         self.color_buttons = []
         self.channel_colors = []
 
-        if self.image_array is not None and getattr(self.image_array, "ndim", 0) >= 3:
+        if self.image_array is not None and self.image_array.ndim >= 3:
             n_channels = self.image_array.shape[2]
             resolved_colors = self._default_colors(n_channels, initial_colors)
 
@@ -200,7 +200,7 @@ class ChannelTab(QWidget):
         """表示モードの radio button を作り直す（colorbar はそのまま残す）。"""
         self._clear_layout(controls_layout)
 
-        ndim = getattr(self.image_array, "ndim", 0) if self.image_array is not None else 0
+        ndim = self.image_array.ndim if self.image_array is not None else 0
         nchan = self.image_array.shape[2] if (ndim >= 3) else (1 if ndim == 2 else 0)
 
         if nchan in (1, 2):
@@ -251,7 +251,7 @@ class ChannelTab(QWidget):
     def _update_colorbar(self):
         if self._colorbar_label is None:
             return
-        ndim = getattr(self.image_array, "ndim", 0) if self.image_array is not None else 0
+        ndim = self.image_array.ndim if self.image_array is not None else 0
         nchan = self.image_array.shape[2] if (ndim >= 3) else (1 if ndim == 2 else 0)
         if nchan == 1 and self._mode1 == "jet":
             # brightness から両端の値を求めて label にする
@@ -351,7 +351,7 @@ class ChannelTab(QWidget):
         self.color_buttons.clear()
         self.channel_colors.clear()
 
-        if self.image_array is not None and getattr(self.image_array, "ndim", 0) >= 3:
+        if self.image_array is not None and self.image_array.ndim >= 3:
             n_channels = self.image_array.shape[2]
             resolved_colors = self._default_colors(n_channels, channel_colors)
 

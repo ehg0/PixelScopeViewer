@@ -214,7 +214,7 @@ class TilingDialog(QDialog):
             if 0 <= ix < w and 0 <= iy < h:
                 try:
                     v = arr[iy, ix]
-                    if hasattr(v, "shape") and len(getattr(v, "shape", ())) > 0:
+                    if np.ndim(v) > 0:
                         flat = np.array(v).ravel().tolist()
                         preview = ", ".join(str(x) for x in flat[:4])
                         txt = f"[{preview}{', …' if len(flat) > 4 else ''}]"
@@ -448,9 +448,7 @@ class TilingDialog(QDialog):
                             except Exception:
                                 return str(v)
 
-                        if isinstance(val, np.ndarray) or (
-                            hasattr(val, "shape") and len(getattr(val, "shape", ())) > 0
-                        ):
+                        if isinstance(val, np.ndarray) or (np.ndim(val) > 0):
                             flat = np.array(val).ravel().tolist()
                             preview = ", ".join(_fmt(x) for x in flat[:4])
                             text = f"[{preview}{', …' if len(flat) > 4 else ''}]"
@@ -509,7 +507,7 @@ class TilingDialog(QDialog):
             roi_rect = self.state.common_roi
 
         file_path = None
-        if hasattr(active_tile, "image_data") and active_tile.image_data:
+        if active_tile.image_data:
             file_path = active_tile.image_data.get("path")
 
         return image_array, roi_rect, file_path
@@ -537,7 +535,7 @@ class TilingDialog(QDialog):
                 continue
 
             file_path = None
-            if hasattr(tile, "image_data") and tile.image_data:
+            if tile.image_data:
                 file_path = tile.image_data.get("path")
 
             tiles_data.append({"array": image_array, "rect": roi_rect, "path": file_path, "index": i})

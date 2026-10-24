@@ -166,6 +166,7 @@ class ImageViewer(QMainWindow):
         self.setAcceptDrops(True)
         # modeless dialog が GC されないよう参照を保持する
         self._analysis_dialog = None
+        self._tiling_dialog = None
 
     # channel の表示設定（channel_display から表示中の画像の channel 数に対応する値を読む）
     def _current_n_channels(self) -> int:
@@ -770,7 +771,8 @@ class ImageViewer(QMainWindow):
         }
         if self._analysis_dialog is not None:
             state["analysis"] = self._analysis_dialog.settings
-        tiling = getattr(self, "_tiling_dialog", None)
+        tiling = self._tiling_dialog
+        # 画像選択を cancel した dialog は state を持たない
         if tiling is not None and hasattr(tiling, "state"):
             state["tiling"] = tiling.state
         return to_jsonable(state)
@@ -829,7 +831,7 @@ class ImageViewer(QMainWindow):
             QMessageBox.information(self, "複数画像比較", "比較する画像が2枚以上必要です。")
             return
         # modeless で開き、GC されないよう参照を保持する
-        if not hasattr(self, "_tiling_dialog") or self._tiling_dialog is None:
+        if self._tiling_dialog is None:
             self._tiling_dialog = TilingDialog(self, image_list=self.images)
             self._tiling_dialog.finished.connect(lambda: setattr(self, "_tiling_dialog", None))
 
@@ -977,7 +979,7 @@ class ImageViewer(QMainWindow):
     def closeEvent(self, event):
         # 子 window が残って操作不能にならないよう、modeless dialog をすべて閉じる
         try:
-            if hasattr(self, "_tiling_dialog") and self._tiling_dialog is not None:
+            if self._tiling_dialog is not None:
                 self._tiling_dialog.close()
         except RuntimeError:
             pass  # Qt 側で削除済み

@@ -503,9 +503,8 @@ class TilingAnalysisDialog(AnalysisDialog):
                 size="11pt",
             )
 
-        if hasattr(self, "profile_tab"):
-            self._assign_overlay_colors([r["curve_label"] for r in all_profile_stats])
-            self.profile_tab.stats_table.set_rows(all_profile_stats, self.overlay_color_map)
+        self._assign_overlay_colors([r["curve_label"] for r in all_profile_stats])
+        self.profile_tab.stats_table.set_rows(all_profile_stats, self.overlay_color_map)
 
         self.last_profile_data = merged_series
 
@@ -522,11 +521,8 @@ class TilingAnalysisDialog(AnalysisDialog):
 
     def _setup_overlay_channel_checkboxes(self):
         """histogram・profile tab の channel の checkbox を、tile ごとの checkbox に置き換える。"""
-        if hasattr(self, "hist_tab"):
-            self._replace_tab_channel_ui(self.hist_tab)
-
-        if hasattr(self, "profile_tab"):
-            self._replace_tab_channel_ui(self.profile_tab)
+        self._replace_tab_channel_ui(self.hist_tab)
+        self._replace_tab_channel_ui(self.profile_tab)
 
     def _replace_tab_channel_ui(self, tab):
         """tab の scroll area の中身を tile ごとの checkbox にし、その上に全選択・全解除の button を置く。"""
@@ -542,7 +538,7 @@ class TilingAnalysisDialog(AnalysisDialog):
         if parent_layout is None:
             return
 
-        btn_row_name = "overlay_btn_row_hist" if tab is getattr(self, "hist_tab", None) else "overlay_btn_row_prof"
+        btn_row_name = "overlay_btn_row_hist" if tab is self.hist_tab else "overlay_btn_row_prof"
 
         btn_row_widget = None
         for idx in range(parent_layout.count()):

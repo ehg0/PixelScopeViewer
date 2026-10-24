@@ -234,7 +234,7 @@ class TileImageLabel(QLabel):
             ix, iy = self._widget_to_image_coords(event.pos())
             try:
                 val = self.array[iy, ix]
-                if isinstance(val, np.ndarray) or (hasattr(val, "shape") and len(getattr(val, "shape", ())) > 0):
+                if np.ndim(val) > 0:
                     flat = np.array(val).ravel().tolist()
                     preview = ", ".join(str(x) for x in flat[:4])
                     text = f"[{preview}{', …' if len(flat) > 4 else ''}]"

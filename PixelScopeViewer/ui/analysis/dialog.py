@@ -99,6 +99,12 @@ class AnalysisDialog(QDialog):
         self.settings = AnalysisSettings()
 
         self.last_hist_data = {}
+        self.last_metadata: list[tuple[str, str]] = []
+        # 表示中の画像の channel 数（2 次元画像は 1）
+        self._n_plot = 0
+        # 全体表示の ViewBox の状態（初回描画後に保存される）
+        self.viewbox_full_hist = None
+        self.viewbox_full_prof = None
         self.last_profile_data = {}
 
         # 統計量 table の色見本に使う label から RGB への dict
@@ -338,11 +344,11 @@ class AnalysisDialog(QDialog):
 
         # 保存済みの ViewBox 状態がなければ、データに合わせて表示範囲を自動調整する
         try:
-            if not hasattr(self, "viewbox_full_hist"):
+            if self.viewbox_full_hist is None:
                 hist_vb = self.hist_tab.hist_widget.getViewBox()
                 hist_vb.autoRange()
                 hist_vb.enableAutoRange(axis=pg.ViewBox.XYAxes)
-            if not hasattr(self, "viewbox_full_prof"):
+            if self.viewbox_full_prof is None:
                 prof_vb = self.profile_tab.prof_widget.getViewBox()
                 prof_vb.autoRange()
                 prof_vb.enableAutoRange(axis=pg.ViewBox.XYAxes)
@@ -414,7 +420,7 @@ class AnalysisDialog(QDialog):
         """色選択 dialog で選んだ色を、この channel 数のグラフの色として設定する。"""
         if self.channel_display is None:
             return
-        n = getattr(self, "_n_plot", 0)
+        n = self._n_plot
         colors = self.channel_display.plot_colors(n)
         if not 0 <= idx < len(colors):
             return
@@ -424,7 +430,7 @@ class AnalysisDialog(QDialog):
 
     def _on_plot_color_reset(self):
         if self.channel_display is not None:
-            self.channel_display.reset_plot_colors(getattr(self, "_n_plot", 0))
+            self.channel_display.reset_plot_colors(self._n_plot)
 
     def _on_channel_colors_changed(self, _n_channels: int):
         with contextlib.suppress(Exception):
@@ -436,7 +442,7 @@ class AnalysisDialog(QDialog):
 
     def copy_metadata_to_clipboard(self):
         """metadata をカンマ区切りで clipboard にコピーする。"""
-        if not hasattr(self, "last_metadata") or not self.last_metadata:
+        if not self.last_metadata:
             QMessageBox.information(self, "Copy", "No metadata to copy.")
             return
 
@@ -449,7 +455,7 @@ class AnalysisDialog(QDialog):
 
     def copy_histogram_to_clipboard(self):
         """histogram（または ECDF）のデータを CSV で clipboard にコピーする。"""
-        if not getattr(self, "last_hist_data", None):
+        if not self.last_hist_data:
             QMessageBox.information(self, "Copy", "No data.")
             return
 
@@ -480,7 +486,7 @@ class AnalysisDialog(QDialog):
 
     def copy_profile_to_clipboard(self):
         """profile のデータを CSV で clipboard にコピーする。"""
-        if not getattr(self, "last_profile_data", None):
+        if not self.last_profile_data:
             QMessageBox.information(self, "Copy", "No data.")
             return
 
@@ -603,13 +609,13 @@ class AnalysisDialog(QDialog):
     def _apply_plot_settings(self):
         try:
             pg_apply_plot_settings(
-                self.hist_tab.hist_widget, "hist", self.settings.plot_settings, getattr(self, "viewbox_full_hist", None)
+                self.hist_tab.hist_widget, "hist", self.settings.plot_settings, self.viewbox_full_hist
             )
             pg_apply_plot_settings(
                 self.profile_tab.prof_widget,
                 "prof",
                 self.settings.plot_settings,
-                getattr(self, "viewbox_full_prof", None),
+                self.viewbox_full_prof,
             )
         except Exception:
             pass

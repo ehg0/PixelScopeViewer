@@ -287,15 +287,9 @@ class BrightnessTab(QWidget):
 
     def _sync_to_manager(self):
         """現在の dtype の設定を viewer の brightness_manager に反映する。"""
-        try:
-            dialog = self.parent()
-            if dialog and hasattr(dialog, "parent") and callable(dialog.parent):
-                viewer = dialog.parent()
-                if viewer and hasattr(viewer, "state"):
-                    offset, gain, upper_level = self.dtype_params.get(self.current_dtype, (0, 1.0, 255))
-                    viewer.state.brightness_by_dtype[self.current_dtype] = BrightnessParams(offset, gain, upper_level)
-        except Exception:
-            pass
+        if self.viewer is not None:
+            offset, gain, upper_level = self.dtype_params.get(self.current_dtype, (0, 1.0, 255))
+            self.viewer.state.brightness_by_dtype[self.current_dtype] = BrightnessParams(offset, gain, upper_level)
 
     def _reset_gain_to_default(self):
         self.gain_spinbox.blockSignals(True)
@@ -407,10 +401,9 @@ class BrightnessTab(QWidget):
         if keep_settings:
             self.dtype_params[old_dtype] = old_params
 
-        if hasattr(self, "dtype_combo"):
-            self.dtype_combo.blockSignals(True)
-            self.dtype_combo.setCurrentText(self.current_dtype)
-            self.dtype_combo.blockSignals(False)
+        self.dtype_combo.blockSignals(True)
+        self.dtype_combo.setCurrentText(self.current_dtype)
+        self.dtype_combo.blockSignals(False)
 
         if keep_settings and self.current_dtype in self.dtype_params:
             new_offset, new_gain, new_upper_level = self.dtype_params[self.current_dtype]
@@ -435,7 +428,7 @@ class BrightnessTab(QWidget):
 
     def _get_roi(self):
         """親の ROI を (x, y, w, h) で返す。ROI がない場合は None。"""
-        if self.viewer and hasattr(self.viewer, "state"):
+        if self.viewer is not None:
             r = self.viewer.state.roi
             if r and not r.isEmpty():
                 return r.x(), r.y(), r.width(), r.height()

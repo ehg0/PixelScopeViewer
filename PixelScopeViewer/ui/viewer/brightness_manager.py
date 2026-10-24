@@ -99,7 +99,7 @@ class BrightnessManager:
 
         # 非表示の場合は保存済みの geometry を復元して表示する
         try:
-            if getattr(BrightnessDialog, "_saved_geometry", None):
+            if BrightnessDialog._saved_geometry:
                 self.viewer.brightness_dialog.restoreGeometry(BrightnessDialog._saved_geometry)
         except Exception:
             pass
@@ -204,8 +204,7 @@ class BrightnessManager:
                         250, 250, Qt.KeepAspectRatio, Qt.SmoothTransformation
                     )
                     img["thumbnail_pixmap"] = thumb_pixmap
-                    if hasattr(self.viewer, "navigator_widget"):
-                        self.viewer.navigator_widget.update_thumbnail()
+                    self.viewer.navigator_widget.update_thumbnail()
                 except Exception:
                     pass
             self.viewer.display_image(img["array"])
@@ -232,8 +231,7 @@ class BrightnessManager:
                     )
                     img["thumbnail_pixmap"] = thumb_pixmap
 
-                    if hasattr(self.viewer, "navigator_widget"):
-                        self.viewer.navigator_widget.update_thumbnail()
+                    self.viewer.navigator_widget.update_thumbnail()
                 except Exception:
                     pass
 

@@ -115,19 +115,11 @@ class BrightnessDialog(QDialog):
         self.brightness_tab.upper_level_spinbox.setValue(upper_level)
 
     def set_gain(self, gain_value: float):
-        try:
-            if hasattr(self, "brightness_tab") and hasattr(self.brightness_tab, "set_gain"):
-                self.brightness_tab.set_gain(gain_value)
-        except Exception:
-            pass
+        self.brightness_tab.set_gain(gain_value)
 
     def reset_parameters(self):
         """brightness を初期値に戻し、brightness_changed を emit する。"""
-        try:
-            if hasattr(self, "brightness_tab") and hasattr(self.brightness_tab, "reset_parameters"):
-                self.brightness_tab.reset_parameters()
-        except Exception:
-            pass
+        self.brightness_tab.reset_parameters()
 
     def set_channels(self, channels):
         self.channel_tab.set_channel_states(channels)

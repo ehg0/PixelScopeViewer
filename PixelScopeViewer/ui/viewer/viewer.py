@@ -37,7 +37,7 @@ from PixelScopeViewer.ui.analysis import AnalysisDialog
 from PixelScopeViewer.ui.annotations import AnnotationsDialog
 from PixelScopeViewer.ui.annotations.model import AnnotationStore
 from PixelScopeViewer.ui.common import defaults, theme
-from PixelScopeViewer.ui.common.channel_display import MODE_1CH_JET, MODE_2CH_FLOW_HSV, ChannelColorManager
+from PixelScopeViewer.ui.common.channel_display import MODE_1CH_JET, MODE_2CH_FLOW_HSV, ChannelDisplay
 from PixelScopeViewer.ui.common.qt_image import numpy_to_qimage
 from PixelScopeViewer.ui.diff import DiffDialog
 from PixelScopeViewer.ui.tiling import TilingDialog
@@ -87,9 +87,6 @@ class ImageViewer(QMainWindow):
         self.brightness_offset = initial["initial_offset"]
         self.brightness_gain = initial["initial_gain"]
         self.brightness_upper_level = initial["initial_upper_level"]
-
-        self.channel_checks = []
-        self.channel_colors = []
 
         # brightness 調整後の表示用配列の cache
         self._cached_display_array = None
@@ -167,12 +164,37 @@ class ImageViewer(QMainWindow):
         self.annotations = AnnotationStore()
         self._annotations_dialog = None
 
-        self.color_manager = ChannelColorManager()
+        # channel の色・表示 ON/OFF・表示モードの唯一の持ち主。dialog にはこの instance を渡す
+        self.channel_display = ChannelDisplay(self)
+        self.channel_display.colors_changed.connect(self._on_channel_display_changed)
+        self.channel_display.checks_changed.connect(self._on_channel_display_changed)
+        self.channel_display.modes_changed.connect(self._on_channel_display_changed)
 
         create_menus(self)
         self.setAcceptDrops(True)
         # modeless dialog が GC されないよう参照を保持する
         self._analysis_dialog = None
+
+    # channel の表示設定（channel_display から表示中の画像の channel 数に対応する値を読む）
+    def _current_n_channels(self) -> int:
+        if self.current_index is None:
+            return 0
+        arr = self.images[self.current_index]["array"]
+        return arr.shape[2] if arr.ndim >= 3 else 0
+
+    @property
+    def channel_colors(self) -> list[QColor]:
+        return self.channel_display.colors(self._current_n_channels())
+
+    @property
+    def channel_checks(self) -> list[bool]:
+        return self.channel_display.checks(self._current_n_channels())
+
+    def _on_channel_display_changed(self, *_):
+        self._cached_display_array = None
+        self._cached_display_params = None
+        if self.current_index is not None:
+            self.display_image(self.images[self.current_index]["array"])
 
     # zoom_manager への委譲
     def set_zoom(self, scale: float):
@@ -242,7 +264,9 @@ class ImageViewer(QMainWindow):
         arr = img.get("base_array", img.get("array"))
         sel = self.current_roi_rect
         img_path = img.get("path")
-        dlg = AnalysisDialog(self, image_array=arr, image_rect=sel, image_path=img_path)
+        dlg = AnalysisDialog(
+            self, image_array=arr, image_rect=sel, image_path=img_path, channel_display=self.channel_display
+        )
         dlg.show()
         dlg.raise_()
         dlg.activateWindow()
@@ -306,7 +330,7 @@ class ImageViewer(QMainWindow):
         if arr.ndim == 2 or (arr.ndim == 3 and arr.shape[2] == 1):
             # メイン表示と揃えるため brightness を適用する
             adj = self.apply_brightness_adjustment(arr)
-            if self.color_manager.mode_1ch == MODE_1CH_JET:
+            if self.channel_display.mode_1ch == MODE_1CH_JET:
                 if adj.ndim == 3 and adj.shape[2] == 1:
                     adj = adj[..., 0]
                 return apply_jet_colormap(adj)
@@ -316,7 +340,7 @@ class ImageViewer(QMainWindow):
                 return adj
 
         if arr.ndim == 3 and arr.shape[2] == 2:
-            if self.color_manager.mode_2ch == MODE_2CH_FLOW_HSV:
+            if self.channel_display.mode_2ch == MODE_2CH_FLOW_HSV:
                 # flow-hsv は brightness を適用せず元データから変換する
                 rgb = flow_to_hsv_rgb(arr)
                 return rgb
@@ -325,13 +349,8 @@ class ImageViewer(QMainWindow):
                 adj = self.apply_brightness_adjustment(arr)
                 h, w, c = adj.shape
                 n = c
-                checks = (self.channel_checks or [])[:]
-                if len(checks) < n:
-                    checks.extend([True] * (n - len(checks)))
-                if len(self.channel_colors) != n:
-                    colors = self.color_manager.get_colors(n)
-                else:
-                    colors = self.color_manager.resolve_with_existing(n, self.channel_colors)
+                checks = self.channel_display.checks(n)
+                colors = self.channel_display.colors(n)
                 selected = [i for i, ck in enumerate(checks) if ck]
                 if not selected:
                     return np.zeros((h, w, 3), dtype=np.uint8)
@@ -555,18 +574,7 @@ class ImageViewer(QMainWindow):
         self._cached_display_array = None
         self._cached_display_params = None
 
-        # channel 数に対応する色と表示 ON/OFF を読み込む
         img = self.images[self.current_index]
-        arr = img["array"]
-        if arr.ndim >= 3:
-            n_channels = arr.shape[2]
-
-            self.channel_colors = self.color_manager.get_colors(n_channels)
-            self.channel_checks = self.color_manager.get_checks(n_channels)
-        else:
-            self.channel_checks = []
-            self.channel_colors = []
-
         arr = img["array"]
         # dtype が切り替わった場合のみ、その dtype で保存した brightness を読み込む
         try:
@@ -594,8 +602,8 @@ class ImageViewer(QMainWindow):
                 keep_settings=True,
                 channel_checks=self.channel_checks,
                 channel_colors=self.channel_colors,
-                initial_mode_1ch=self.color_manager.mode_1ch,
-                initial_mode_2ch=self.color_manager.mode_2ch,
+                initial_mode_1ch=self.channel_display.mode_1ch,
+                initial_mode_2ch=self.channel_display.mode_2ch,
             )
 
         try:
@@ -641,9 +649,9 @@ class ImageViewer(QMainWindow):
             self.brightness_gain,
             self.brightness_upper_level,
             tuple(self.channel_checks) if self.channel_checks else None,
-            tuple(id(c) for c in self.channel_colors) if self.channel_colors else None,
-            self.color_manager.mode_1ch,
-            self.color_manager.mode_2ch,
+            tuple(c.name() for c in self.channel_colors) if self.channel_colors else None,
+            self.channel_display.mode_1ch,
+            self.channel_display.mode_2ch,
         )
 
         if self._cached_display_params == cache_key and self._cached_display_array is not None:
@@ -652,7 +660,7 @@ class ImageViewer(QMainWindow):
         # 疑似カラー表示（1ch の JET、2ch の flow-hsv）
         try:
             if arr.ndim == 2 or (arr.ndim == 3 and arr.shape[2] == 1):
-                if self.color_manager.mode_1ch == MODE_1CH_JET:
+                if self.channel_display.mode_1ch == MODE_1CH_JET:
                     adj = self.apply_brightness_adjustment(arr)
                     if adj.ndim == 3 and adj.shape[2] == 1:
                         adj = adj[..., 0]
@@ -660,7 +668,7 @@ class ImageViewer(QMainWindow):
                     self._cached_display_array = result
                     self._cached_display_params = cache_key
                     return result
-            elif arr.ndim == 3 and arr.shape[2] == 2 and self.color_manager.mode_2ch == MODE_2CH_FLOW_HSV:
+            elif arr.ndim == 3 and arr.shape[2] == 2 and self.channel_display.mode_2ch == MODE_2CH_FLOW_HSV:
                 result = flow_to_hsv_rgb(arr)
                 self._cached_display_array = result
                 self._cached_display_params = cache_key
@@ -682,23 +690,17 @@ class ImageViewer(QMainWindow):
             arr = self.apply_brightness_adjustment(arr)
 
         # 表示する channel を選択した色で合成する
-        if arr.ndim >= 3 and self.channel_checks:
-            n_channels = arr.shape[2]
-            if len(self.channel_checks) < n_channels:
-                self.channel_checks.extend([True] * (n_channels - len(self.channel_checks)))
-            if len(self.channel_colors) != n_channels:
-                self.channel_colors = self.color_manager.get_colors(n_channels)
-            else:
-                self.channel_colors = self.color_manager.resolve_with_existing(n_channels, self.channel_colors)
-
-            selected_channels = [i for i, checked in enumerate(self.channel_checks) if checked]
+        channel_checks = self.channel_checks
+        channel_colors = self.channel_colors
+        if arr.ndim >= 3 and channel_checks:
+            selected_channels = [i for i, checked in enumerate(channel_checks) if checked]
             if not selected_channels:
                 return np.zeros((arr.shape[0], arr.shape[1], 3), dtype=np.uint8)
 
             composite = np.zeros((arr.shape[0], arr.shape[1], 3), dtype=np.float32)
             for channel_idx in selected_channels:
-                if channel_idx < len(self.channel_colors):
-                    color = self.channel_colors[channel_idx]
+                if channel_idx < len(channel_colors):
+                    color = channel_colors[channel_idx]
                     r, g, b = color.red() / 255.0, color.green() / 255.0, color.blue() / 255.0
                     channel_data = arr[:, :, channel_idx].astype(np.float32)
                     if arr.dtype == np.uint8:

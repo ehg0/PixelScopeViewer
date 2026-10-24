@@ -1,7 +1,5 @@
 """ImageViewer の brightness・channel 表示設定の管理。"""
 
-import contextlib
-
 import numpy as np
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap
@@ -57,8 +55,8 @@ class BrightnessManager:
                 initial_brightness=(init_offset, init_gain, init_upper_level),
                 initial_channels=self.viewer.channel_checks,
                 initial_colors=self.viewer.channel_colors,
-                initial_mode_1ch=self.viewer.color_manager.mode_1ch,
-                initial_mode_2ch=self.viewer.color_manager.mode_2ch,
+                initial_mode_1ch=self.viewer.channel_display.mode_1ch,
+                initial_mode_2ch=self.viewer.channel_display.mode_2ch,
             )
             self.viewer.brightness_dialog.brightness_changed.connect(
                 self.viewer.brightness_manager.on_brightness_changed
@@ -91,8 +89,8 @@ class BrightnessManager:
                 keep_settings=True,
                 channel_checks=self.viewer.channel_checks,
                 channel_colors=self.viewer.channel_colors,
-                initial_mode_1ch=self.viewer.color_manager.mode_1ch,
-                initial_mode_2ch=self.viewer.color_manager.mode_2ch,
+                initial_mode_1ch=self.viewer.channel_display.mode_1ch,
+                initial_mode_2ch=self.viewer.channel_display.mode_2ch,
             )
 
         # 表示中の dialog に show() を再実行すると位置が変わるため前面に出すだけにする
@@ -186,47 +184,17 @@ class BrightnessManager:
             self.viewer.display_image(self.viewer.images[self.viewer.current_index]["array"])
 
     def on_channels_changed(self, channels):
-        self.viewer.channel_checks = channels
-        # 現在の channel 数の設定として保存する
-        try:
-            img = self.viewer.images[self.viewer.current_index]
-            arr = img.get("base_array", img.get("array"))
-            n = arr.shape[2] if getattr(arr, "ndim", 0) >= 3 else 1
-            self.viewer.color_manager.set_checks(n, channels)
-        except Exception:
-            pass
-
-        self.viewer._cached_display_array = None
-        self.viewer._cached_display_params = None
-
-        if self.viewer.current_index is not None:
-            self.viewer.display_image(self.viewer.images[self.viewer.current_index]["array"])
+        # 再描画は channel_display の checks_changed を受けた viewer が行う
+        self.viewer.channel_display.set_checks(self.viewer._current_n_channels(), channels)
 
     def on_channel_colors_changed(self, colors):
-        self.viewer.channel_colors = colors
-        # 現在の channel 数の設定として保存する
-        try:
-            img = self.viewer.images[self.viewer.current_index]
-            arr = img.get("base_array", img.get("array"))
-            n = arr.shape[2] if getattr(arr, "ndim", 0) >= 3 else 1
-            self.viewer.color_manager.set_colors(n, colors)
-        except Exception:
-            pass
-
-        self.viewer._cached_display_array = None
-        self.viewer._cached_display_params = None
-
-        if self.viewer.current_index is not None:
-            self.viewer.display_image(self.viewer.images[self.viewer.current_index]["array"])
-
-        if self.viewer._analysis_dialog is not None:
-            with contextlib.suppress(Exception):
-                self.viewer._analysis_dialog.update_contents()
+        # 再描画は channel_display の colors_changed を受けた各画面が行う
+        self.viewer.channel_display.set_colors(self.viewer._current_n_channels(), colors)
 
     def on_mode_1ch_changed(self, mode: str):
         if mode not in (MODE_1CH_GRAYSCALE, MODE_1CH_JET):
             return
-        self.viewer.color_manager.set_mode_1ch(mode)
+        self.viewer.channel_display.set_mode_1ch(mode)
 
         self.viewer._cached_display_array = None
         self.viewer._cached_display_params = None
@@ -253,7 +221,7 @@ class BrightnessManager:
 
         if mode not in (MODE_2CH_COMPOSITE, MODE_2CH_FLOW_HSV):
             return
-        self.viewer.color_manager.set_mode_2ch(mode)
+        self.viewer.channel_display.set_mode_2ch(mode)
 
         self.viewer._cached_display_array = None
         self.viewer._cached_display_params = None

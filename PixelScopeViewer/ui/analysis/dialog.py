@@ -42,7 +42,7 @@ from PixelScopeViewer.ui.analysis.tabs.histogram_tab import HistogramTab
 from PixelScopeViewer.ui.analysis.tabs.metadata_tab import MetadataTab
 from PixelScopeViewer.ui.analysis.tabs.profile_tab import ProfileTab
 from PixelScopeViewer.ui.common import defaults, theme
-from PixelScopeViewer.ui.common.channel_display import get_default_channel_colors
+from PixelScopeViewer.ui.common.channel_display import ChannelDisplay, get_default_channel_colors
 
 
 class AnalysisDialog(QDialog):
@@ -68,8 +68,13 @@ class AnalysisDialog(QDialog):
         image_array: np.ndarray | None = None,
         image_rect: QRect | None = None,
         image_path: str | None = None,
+        channel_display: ChannelDisplay | None = None,
     ):
         super().__init__(parent)
+        # None の場合（複数画像比較から開いた場合）は既定の色を使う
+        self.channel_display = channel_display
+        if channel_display is not None:
+            channel_display.colors_changed.connect(self._on_channel_colors_changed)
         self.viewer = parent
         self.update_window_title()
 
@@ -319,39 +324,14 @@ class AnalysisDialog(QDialog):
         hist_stats = histogram_stats(arr.astype(np.float64), self.channel_checks)
         apply_log = self.plot_settings.get("hist", {}).get("log", False)
         is_integer_type = np.issubdtype(arr.dtype, np.integer)
-        # channel の色の優先順位:
-        # 1) self.channel_colors
-        # 2) 親が複数画像比較の場合は既定の色（1ch は黒）
-        # 3) 親の channel_colors
-        channel_colors = getattr(self, "channel_colors", None)
-        if not channel_colors:
-            is_tiling_parent = False
-            try:
-                p = self.parent()
-                if p is not None:
-                    cls = type(p)
-                    mod = getattr(cls, "__module__", "").lower()
-                    name = getattr(cls, "__name__", "").lower()
-                    if "tiling" in mod or "tiling" in name:
-                        is_tiling_parent = True
-            except Exception:
-                is_tiling_parent = False
-
-            if is_tiling_parent:
-                try:
-                    nch_local = int(arr.shape[2]) if arr.ndim == 3 and arr.shape[2] > 1 else 1
-                    colors = get_default_channel_colors(nch_local)
-                    if nch_local == 1:
-                        colors = [QColor(theme.PLOT_INTENSITY_COLOR)]
-                    channel_colors = colors
-                except Exception:
-                    channel_colors = None
-            if not channel_colors:
-                try:
-                    if hasattr(self.parent(), "channel_colors"):
-                        channel_colors = self.parent().channel_colors
-                except Exception:
-                    channel_colors = None
+        # channel_display がなければ（複数画像比較）既定の色（1ch は黒）を使う
+        if self.channel_display is not None:
+            channel_colors = self.channel_display.colors(arr.shape[2]) if arr.ndim >= 3 else []
+        else:
+            nch_local = int(arr.shape[2]) if arr.ndim == 3 and arr.shape[2] > 1 else 1
+            channel_colors = get_default_channel_colors(nch_local)
+            if nch_local == 1:
+                channel_colors = [QColor(theme.PLOT_INTENSITY_COLOR)]
 
         try:
             self.hist_tab.update_channel_checkboxes(nch, self.channel_checks, channel_colors)
@@ -512,6 +492,10 @@ class AnalysisDialog(QDialog):
             self.hist_config_mode = "Histogram"
             self.hist_config_mode_btn.setText("Histogram")
         self.update_contents()
+
+    def _on_channel_colors_changed(self, _n_channels: int):
+        with contextlib.suppress(Exception):
+            self.update_contents()
 
     def hist_config_reset(self):
         self._on_spinbox_changed(defaults.HIST_BIN_STEP)

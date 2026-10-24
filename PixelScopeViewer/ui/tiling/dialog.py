@@ -49,11 +49,6 @@ class TilingDialog(QDialog):
         self.parent_viewer = parent
         self.all_images = image_list
 
-        # AnalysisDialog から参照できるよう親の channel の色を保持する
-        self.channel_colors = None
-        if hasattr(parent, "channel_colors"):
-            self.channel_colors = parent.channel_colors
-
         # window 状態（最小化など）を同期する子 dialog
         self._brightness_dialog = None
         self._help_dialog = None

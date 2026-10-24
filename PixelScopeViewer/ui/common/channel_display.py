@@ -1,9 +1,8 @@
-"""channel の色と表示モードを一元管理する。"""
+"""channel の色・表示 ON/OFF・表示モードの唯一の持ち主。"""
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-
+from PySide6.QtCore import QObject, Signal
 from PySide6.QtGui import QColor
 
 from PixelScopeViewer.ui.common import theme
@@ -43,75 +42,69 @@ MODE_2CH_COMPOSITE = "composite"
 MODE_2CH_FLOW_HSV = "flow-hsv"
 
 
-@dataclass
-class ChannelColorManager:
-    """channel 数ごとの色・表示 ON/OFF と、1ch/2ch 画像の表示モードを保持する。"""
+class ChannelDisplay(QObject):
+    """channel 数ごとの色・表示 ON/OFF と 1ch/2ch 画像の表示モードを保持し、変更を signal で通知する。
 
-    colors_by_n: dict[int, list[QColor]] = field(default_factory=dict)
-    checks_by_n: dict[int, list[bool]] = field(default_factory=dict)
-    mode_1ch: str = MODE_1CH_GRAYSCALE
-    mode_2ch: str = MODE_2CH_FLOW_HSV
+    ImageViewer が 1 つ作り、色を使う画面はこの instance を参照して signal を受け取る。
+    色は hex 文字列で保持し、取得時に QColor を新しく作って返す。
+    """
 
-    def get_colors(self, n_channels: int) -> list[QColor]:
-        """channel 数に対応する色を返す。未設定や不足分は既定色で補い、長さを n_channels に揃える。"""
+    colors_changed = Signal(int)  # 変更された channel 数
+    checks_changed = Signal(int)
+    modes_changed = Signal()
+
+    def __init__(self, parent: QObject | None = None):
+        super().__init__(parent)
+        self._colors_by_n: dict[int, list[str]] = {}
+        self._checks_by_n: dict[int, list[bool]] = {}
+        self.mode_1ch: str = MODE_1CH_GRAYSCALE
+        self.mode_2ch: str = MODE_2CH_FLOW_HSV
+
+    # ---- 色 ----
+    def colors(self, n_channels: int) -> list[QColor]:
+        """channel 数に対応する色を返す。未設定の channel は既定色にする。"""
         if n_channels <= 0:
             return []
-        if n_channels not in self.colors_by_n:
-            self.colors_by_n[n_channels] = get_default_channel_colors(n_channels)
-        else:
-            current = self.colors_by_n[n_channels]
-            if len(current) < n_channels:
-                defaults = get_default_channel_colors(n_channels)
-                current = current + defaults[len(current) :]
-                self.colors_by_n[n_channels] = current
-            elif len(current) > n_channels:
-                self.colors_by_n[n_channels] = current[:n_channels]
-        return self.colors_by_n[n_channels]
+        stored = self._colors_by_n.get(n_channels, [])
+        defaults = get_default_channel_colors(n_channels)
+        return [QColor(stored[i]) if i < len(stored) else defaults[i] for i in range(n_channels)]
 
     def set_colors(self, n_channels: int, colors: list[QColor]) -> None:
         """channel 数に対応する色を設定する。不足分は既定色で補う。"""
         if n_channels <= 0:
             return
         defaults = get_default_channel_colors(n_channels)
-        fixed = [(colors[i] if i < len(colors) else defaults[i]) for i in range(n_channels)]
-        self.colors_by_n[n_channels] = fixed
+        names = [QColor(colors[i] if i < len(colors) else defaults[i]).name() for i in range(n_channels)]
+        if self._colors_by_n.get(n_channels) == names:
+            return
+        self._colors_by_n[n_channels] = names
+        self.colors_changed.emit(n_channels)
 
-    def resolve_with_existing(self, n_channels: int, existing: list[QColor] | None) -> list[QColor]:
-        """既存の色リストの不足分を既定色で補って保存し、返す。"""
-        existing = existing or []
-        defaults = get_default_channel_colors(n_channels)
-        resolved = [existing[i] if i < len(existing) else defaults[i] for i in range(n_channels)]
-        self.colors_by_n[n_channels] = resolved
-        return resolved
-
-    # ---- 表示モード ----
-    def set_mode_1ch(self, mode: str) -> None:
-        if mode in (MODE_1CH_GRAYSCALE, MODE_1CH_JET):
-            self.mode_1ch = mode
-
-    def set_mode_2ch(self, mode: str) -> None:
-        if mode in (MODE_2CH_COMPOSITE, MODE_2CH_FLOW_HSV):
-            self.mode_2ch = mode
-
-    # ---- channel の表示 ON/OFF ----
-    def get_checks(self, n_channels: int) -> list[bool]:
-        """channel 数に対応する表示 ON/OFF を返す。未設定や不足分は True（表示）にする。"""
+    # ---- 表示 ON/OFF ----
+    def checks(self, n_channels: int) -> list[bool]:
+        """channel 数に対応する表示 ON/OFF を返す。未設定の channel は True（表示）にする。"""
         if n_channels <= 0:
             return []
-        if n_channels not in self.checks_by_n:
-            self.checks_by_n[n_channels] = [True] * n_channels
-        else:
-            current = self.checks_by_n[n_channels]
-            if len(current) < n_channels:
-                current = current + [True] * (n_channels - len(current))
-                self.checks_by_n[n_channels] = current
-            elif len(current) > n_channels:
-                self.checks_by_n[n_channels] = current[:n_channels]
-        return self.checks_by_n[n_channels]
+        stored = self._checks_by_n.get(n_channels, [])
+        return [stored[i] if i < len(stored) else True for i in range(n_channels)]
 
     def set_checks(self, n_channels: int, checks: list[bool]) -> None:
         """channel 数に対応する表示 ON/OFF を設定する。"""
         if n_channels <= 0:
             return
-        fixed = [(checks[i] if i < len(checks) else True) for i in range(n_channels)]
-        self.checks_by_n[n_channels] = fixed
+        fixed = [bool(checks[i]) if i < len(checks) else True for i in range(n_channels)]
+        if self._checks_by_n.get(n_channels) == fixed:
+            return
+        self._checks_by_n[n_channels] = fixed
+        self.checks_changed.emit(n_channels)
+
+    # ---- 表示モード ----
+    def set_mode_1ch(self, mode: str) -> None:
+        if mode in (MODE_1CH_GRAYSCALE, MODE_1CH_JET) and mode != self.mode_1ch:
+            self.mode_1ch = mode
+            self.modes_changed.emit()
+
+    def set_mode_2ch(self, mode: str) -> None:
+        if mode in (MODE_2CH_COMPOSITE, MODE_2CH_FLOW_HSV) and mode != self.mode_2ch:
+            self.mode_2ch = mode
+            self.modes_changed.emit()

@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
 )
 
 from PixelScopeViewer.ui.common import theme
-from PixelScopeViewer.ui.common.widgets import StepSlider
+from PixelScopeViewer.ui.common.widgets import StepSlider, set_value_silently
 from PixelScopeViewer.ui.display.tabs.components import PowerOfTwoSpinBox
 
 
@@ -101,9 +101,7 @@ class BrightnessUIBuilder:
         slider.setTickPosition(QSlider.TicksBelow)
         slider.setTickInterval((offset_range[1] - offset_range[0]) // 4)
         slider.setStyleSheet(theme.SLIDER_STYLESHEET)
-        slider.blockSignals(True)
-        slider.setValue(int(initial_value))
-        slider.blockSignals(False)
+        set_value_silently(slider, int(initial_value))
         slider.valueChanged.connect(slider_callback)
 
         spinbox = QDoubleSpinBox()
@@ -117,9 +115,7 @@ class BrightnessUIBuilder:
         spinbox.setKeyboardTracking(True)
         spinbox.setRange(offset_range[0], offset_range[1])
         spinbox.setStyleSheet(self.SPINBOX_STYLESHEET)
-        spinbox.blockSignals(True)
-        spinbox.setValue(initial_value)
-        spinbox.blockSignals(False)
+        set_value_silently(spinbox, initial_value)
         spinbox.valueChanged.connect(spinbox_callback)
 
         control_layout.addWidget(slider, 4)
@@ -173,9 +169,7 @@ class BrightnessUIBuilder:
         spinbox.setRange(spinbox_min, spinbox_max)
         spinbox.setFixedWidth(100)
         spinbox.setStyleSheet(self.SPINBOX_STYLESHEET)
-        spinbox.blockSignals(True)
-        spinbox.setValue(initial_value)
-        spinbox.blockSignals(False)
+        set_value_silently(spinbox, initial_value)
         spinbox.valueChanged.connect(spinbox_callback)
 
         control_layout.addWidget(slider, 4)
@@ -212,9 +206,7 @@ class BrightnessUIBuilder:
 
         slider.setRange(int(upper_level_range[0]), int(upper_level_range[1]))
         slider.setTickInterval(int((upper_level_range[1] - upper_level_range[0]) // 4))
-        slider.blockSignals(True)
-        slider.setValue(int(initial_value))
-        slider.blockSignals(False)
+        set_value_silently(slider, int(initial_value))
 
         slider.valueChanged.connect(slider_callback)
 
@@ -229,9 +221,7 @@ class BrightnessUIBuilder:
         spinbox.setKeyboardTracking(True)
         spinbox.setRange(upper_level_range[0], upper_level_range[1])
         spinbox.setStyleSheet(self.SPINBOX_STYLESHEET)
-        spinbox.blockSignals(True)
-        spinbox.setValue(initial_value)
-        spinbox.blockSignals(False)
+        set_value_silently(spinbox, initial_value)
         spinbox.valueChanged.connect(spinbox_callback)
 
         control_layout.addWidget(slider, 4)

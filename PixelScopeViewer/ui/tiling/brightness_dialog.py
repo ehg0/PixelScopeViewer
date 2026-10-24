@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
 
 from PixelScopeViewer.core.constants import get_dtype_defaults
 from PixelScopeViewer.ui.common import defaults
+from PixelScopeViewer.ui.common.widgets import set_value_silently
 
 
 class TilingBrightnessDialog(QDialog):
@@ -138,9 +139,7 @@ class TilingBrightnessDialog(QDialog):
 
     def _update_values_from_params(self):
         """現在の parameter を widget に反映する。"""
-        self.gain_spinbox.blockSignals(True)
-        self.gain_spinbox.setValue(self.common_gain)
-        self.gain_spinbox.blockSignals(False)
+        set_value_silently(self.gain_spinbox, self.common_gain)
 
         for dtype_group, controls in self.dtype_controls.items():
             params = self.brightness_params_by_dtype[dtype_group]

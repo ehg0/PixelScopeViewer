@@ -15,6 +15,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from PixelScopeViewer.ui.common.widgets import set_value_silently
+
 
 class ROIInfoWidget(QGroupBox):
     """ROI の座標・サイズを表示し、編集内容を即座に ROI へ反映する widget。"""
@@ -108,50 +110,30 @@ class ROIInfoWidget(QGroupBox):
 
         if row == 0:  # X Start
             x = max(0, min(value, img_w - w))
-            self.spin_boxes[0].blockSignals(True)
-            self.spin_boxes[0].setValue(x)
-            self.spin_boxes[0].blockSignals(False)
+            set_value_silently(self.spin_boxes[0], x)
         elif row == 1:  # Y Start
             y = max(0, min(value, img_h - h))
-            self.spin_boxes[1].blockSignals(True)
-            self.spin_boxes[1].setValue(y)
-            self.spin_boxes[1].blockSignals(False)
+            set_value_silently(self.spin_boxes[1], y)
         elif row == 2:  # X End
             x_end = max(x, min(value, img_w - 1))
             w = x_end - x + 1
-            self.spin_boxes[2].blockSignals(True)
-            self.spin_boxes[2].setValue(x_end)
-            self.spin_boxes[2].blockSignals(False)
-            self.spin_boxes[4].blockSignals(True)
-            self.spin_boxes[4].setValue(w)
-            self.spin_boxes[4].blockSignals(False)
+            set_value_silently(self.spin_boxes[2], x_end)
+            set_value_silently(self.spin_boxes[4], w)
         elif row == 3:  # Y End
             y_end = max(y, min(value, img_h - 1))
             h = y_end - y + 1
-            self.spin_boxes[3].blockSignals(True)
-            self.spin_boxes[3].setValue(y_end)
-            self.spin_boxes[3].blockSignals(False)
-            self.spin_boxes[5].blockSignals(True)
-            self.spin_boxes[5].setValue(h)
-            self.spin_boxes[5].blockSignals(False)
+            set_value_silently(self.spin_boxes[3], y_end)
+            set_value_silently(self.spin_boxes[5], h)
         elif row == 4:  # Width
             w = max(1, min(value, img_w - x))
-            self.spin_boxes[4].blockSignals(True)
-            self.spin_boxes[4].setValue(w)
-            self.spin_boxes[4].blockSignals(False)
+            set_value_silently(self.spin_boxes[4], w)
             x_end = x + w - 1
-            self.spin_boxes[2].blockSignals(True)
-            self.spin_boxes[2].setValue(x_end)
-            self.spin_boxes[2].blockSignals(False)
+            set_value_silently(self.spin_boxes[2], x_end)
         elif row == 5:  # Height
             h = max(1, min(value, img_h - y))
-            self.spin_boxes[5].blockSignals(True)
-            self.spin_boxes[5].setValue(h)
-            self.spin_boxes[5].blockSignals(False)
+            set_value_silently(self.spin_boxes[5], h)
             y_end = y + h - 1
-            self.spin_boxes[3].blockSignals(True)
-            self.spin_boxes[3].setValue(y_end)
-            self.spin_boxes[3].blockSignals(False)
+            set_value_silently(self.spin_boxes[3], y_end)
 
         # 倍率による丸め誤差を避けるため画像座標で ROI を設定する
         new_rect_img = QRect(x, y, w, h)
@@ -203,9 +185,7 @@ class ROIInfoWidget(QGroupBox):
 
             values = [x, y, x_end, y_end, w, h]
             for i, value in enumerate(values):
-                self.spin_boxes[i].blockSignals(True)
-                self.spin_boxes[i].setValue(value)
-                self.spin_boxes[i].blockSignals(False)
+                set_value_silently(self.spin_boxes[i], value)
 
             diagonal = (w**2 + h**2) ** 0.5
             diagonal_item = QTableWidgetItem(f"{diagonal:.2f}")

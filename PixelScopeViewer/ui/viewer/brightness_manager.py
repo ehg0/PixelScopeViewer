@@ -10,12 +10,6 @@ from PySide6.QtWidgets import QMessageBox
 from PixelScopeViewer.core.brightness import apply_brightness_adjustment as apply_brightness_core
 from PixelScopeViewer.core.brightness import determine_dtype_defaults, determine_dtype_group
 from PixelScopeViewer.core.constants import GAIN_STEP
-from PixelScopeViewer.ui.common.channel_display import (
-    MODE_1CH_GRAYSCALE,
-    MODE_1CH_JET,
-    MODE_2CH_COMPOSITE,
-    MODE_2CH_FLOW_HSV,
-)
 from PixelScopeViewer.ui.common.qt_image import numpy_to_qimage
 from PixelScopeViewer.ui.display import BrightnessDialog
 
@@ -185,57 +179,25 @@ class BrightnessManager:
         self.viewer.channel_display.set_colors(self.viewer._current_n_channels(), colors)
 
     def on_mode_1ch_changed(self, mode: str):
-        if mode not in (MODE_1CH_GRAYSCALE, MODE_1CH_JET):
-            return
+        # 再描画は channel_display の modes_changed を受けた viewer が行う
         self.viewer.channel_display.set_mode_1ch(mode)
-
-        self.viewer._cached_display_array = None
-        self.viewer._cached_display_params = None
-
-        if self.viewer.state.current_index is not None:
-            # 1ch 画像の thumbnail を新しいモードで作り直す
-            img = self.viewer.images[self.viewer.state.current_index]
-            base_arr = img.get("base_array", img.get("array"))
-            if (base_arr.ndim == 2) or (base_arr.ndim == 3 and base_arr.shape[2] == 1):
-                try:
-                    thumb_arr = self.viewer._prepare_thumbnail_array(base_arr)
-                    thumb_qimg = numpy_to_qimage(thumb_arr)
-                    thumb_pixmap = QPixmap.fromImage(thumb_qimg).scaled(
-                        250, 250, Qt.KeepAspectRatio, Qt.SmoothTransformation
-                    )
-                    img["thumbnail_pixmap"] = thumb_pixmap
-                    self.viewer.navigator_widget.update_thumbnail()
-                except Exception:
-                    pass
-            self.viewer.display_image(img["array"])
+        self._refresh_thumbnail(lambda arr: arr.ndim == 2 or arr.shape[2] == 1)
 
     def on_mode_2ch_changed(self, mode: str):
-
-        if mode not in (MODE_2CH_COMPOSITE, MODE_2CH_FLOW_HSV):
-            return
         self.viewer.channel_display.set_mode_2ch(mode)
+        self._refresh_thumbnail(lambda arr: arr.ndim == 3 and arr.shape[2] == 2)
 
-        self.viewer._cached_display_array = None
-        self.viewer._cached_display_params = None
-
-        if self.viewer.state.current_index is not None:
-            # 2ch 画像の thumbnail を新しいモードで作り直す
-            img = self.viewer.images[self.viewer.state.current_index]
-            base_arr = img.get("base_array", img.get("array"))
-            if base_arr.ndim == 3 and base_arr.shape[2] == 2:
-                try:
-                    thumb_arr = self.viewer._prepare_thumbnail_array(base_arr)
-                    thumb_qimg = numpy_to_qimage(thumb_arr)
-                    thumb_pixmap = QPixmap.fromImage(thumb_qimg).scaled(
-                        250, 250, Qt.KeepAspectRatio, Qt.SmoothTransformation
-                    )
-                    img["thumbnail_pixmap"] = thumb_pixmap
-
-                    self.viewer.navigator_widget.update_thumbnail()
-                except Exception:
-                    pass
-
-            self.viewer.display_image(img["array"])
+    def _refresh_thumbnail(self, applies) -> None:
+        """表示中の画像が applies(arr) を満たす場合、表示モードに合わせて navigator の thumbnail を作り直す。"""
+        if self.viewer.state.current_index is None:
+            return
+        img = self.viewer.images[self.viewer.state.current_index]
+        base_arr = img.get("base_array", img.get("array"))
+        if not applies(base_arr):
+            return
+        thumb = numpy_to_qimage(self.viewer._prepare_thumbnail_array(base_arr))
+        img["thumbnail_pixmap"] = QPixmap.fromImage(thumb).scaled(250, 250, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        self.viewer.navigator_widget.update_thumbnail()
 
     def apply_brightness_adjustment(self, arr: np.ndarray) -> np.ndarray:
         """dtype ごとに保存した brightness を適用し、uint8 の配列を返す。

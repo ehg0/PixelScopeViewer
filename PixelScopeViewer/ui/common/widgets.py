@@ -1,6 +1,13 @@
 """汎用の custom Qt widget。"""
 
+from PySide6.QtCore import QSignalBlocker
 from PySide6.QtWidgets import QSlider
+
+
+def set_value_silently(widget, value) -> None:
+    """valueChanged などの signal を発火させずに widget の値を設定する。"""
+    with QSignalBlocker(widget):
+        widget.setValue(value)
 
 
 class StepSlider(QSlider):

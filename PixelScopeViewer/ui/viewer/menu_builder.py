@@ -99,6 +99,7 @@ def create_menus(viewer):
 
     help_menu = menubar.addMenu("ヘルプ")
     help_menu.addAction(QAction("ヘルプ / ショートカット", viewer, triggered=viewer.help_dialog.show))
+    help_menu.addAction(QAction("現在の状態をコピー", viewer, triggered=viewer.copy_state_to_clipboard))
 
     _create_global_shortcuts(viewer)
 

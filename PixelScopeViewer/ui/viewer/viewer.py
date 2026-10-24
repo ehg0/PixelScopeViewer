@@ -1,6 +1,7 @@
 """メインの画像ビューア window。"""
 
 import contextlib
+import json
 from collections.abc import Iterable
 from dataclasses import replace
 from pathlib import Path
@@ -40,6 +41,7 @@ from PixelScopeViewer.ui.annotations.model import AnnotationStore
 from PixelScopeViewer.ui.common import defaults, theme
 from PixelScopeViewer.ui.common.channel_display import MODE_1CH_JET, MODE_2CH_FLOW_HSV, ChannelDisplay
 from PixelScopeViewer.ui.common.qt_image import numpy_to_qimage
+from PixelScopeViewer.ui.common.state_dump import to_jsonable
 from PixelScopeViewer.ui.diff import DiffDialog
 from PixelScopeViewer.ui.tiling import TilingDialog
 from PixelScopeViewer.ui.viewer.brightness_manager import BrightnessManager
@@ -768,6 +770,25 @@ class ImageViewer(QMainWindow):
         if self._analysis_dialog:
             with contextlib.suppress(Exception):
                 self._analysis_dialog.set_image_and_rect(None, None)
+
+    def collect_state(self) -> dict:
+        """viewer・channel 表示設定と、開いている解析 dialog・複数画像比較の現在値を集める。"""
+        state = {
+            "viewer": self.state,
+            "channel_display": self.channel_display.snapshot(),
+        }
+        if self._analysis_dialog is not None:
+            state["analysis"] = self._analysis_dialog.settings
+        tiling = getattr(self, "_tiling_dialog", None)
+        if tiling is not None and hasattr(tiling, "state"):
+            state["tiling"] = tiling.state
+        return to_jsonable(state)
+
+    def copy_state_to_clipboard(self):
+        """現在値を JSON で clipboard にコピーする。"""
+        text = json.dumps(self.collect_state(), ensure_ascii=False, indent=2)
+        QGuiApplication.clipboard().setText(text)
+        self.statusBar().showMessage("現在の状態を clipboard にコピーしました", 3000)
 
     def reboot(self):
         # app が viewer を import しているため、循環 import を避けて関数内で import する

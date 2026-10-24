@@ -108,3 +108,12 @@ class ChannelDisplay(QObject):
         if mode in (MODE_2CH_COMPOSITE, MODE_2CH_FLOW_HSV) and mode != self.mode_2ch:
             self.mode_2ch = mode
             self.modes_changed.emit()
+
+    def snapshot(self) -> dict:
+        """現在の設定を channel 数ごとの dict で返す（状態の確認用）。"""
+        return {
+            "colors_by_n": {n: list(c) for n, c in self._colors_by_n.items()},
+            "checks_by_n": {n: list(c) for n, c in self._checks_by_n.items()},
+            "mode_1ch": self.mode_1ch,
+            "mode_2ch": self.mode_2ch,
+        }

@@ -361,15 +361,13 @@ class AnnotationsDialog(ToolDialog):
                 break
 
         if match_idx is not None:
-            self.viewer.state.current_index = match_idx
-            self.viewer.show_current_image()
+            self.viewer.image_list.show_image(match_idx)
             return
 
         if not self.chk_load_unloaded.isChecked():
             return
-        # 読み込みの失敗は _add_images が error dialog で知らせる
-        n = self.viewer._add_images([str(p)])
-        self.viewer._finalize_image_addition(n)
+        # 読み込みの失敗は add_and_show が error dialog で知らせる
+        self.viewer.image_list.add_and_show([str(p)])
 
     def _current_table(self) -> QTableView:
         return (self.table_images, self.table_categories, self.table_annotations)[self.tabs.currentIndex()]

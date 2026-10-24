@@ -8,6 +8,7 @@ import pyqtgraph as pg
 from PySide6.QtCore import QEvent, QRect, Qt
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
+    QColorDialog,
     QDialog,
     QDoubleSpinBox,
     QHBoxLayout,
@@ -146,6 +147,8 @@ class AnalysisDialog(QDialog):
         self.prof_copy_btn.clicked.connect(self.copy_profile_to_clipboard)
         self.prof_copy_stats_btn.clicked.connect(self.copy_prof_stats_to_clipboard)
         self.tabs.addTab(self.profile_tab, "Profile")
+        self.profile_tab.channel_list.color_clicked.connect(self._on_plot_color_clicked)
+        self.profile_tab.channel_list.reset_requested.connect(self._on_plot_color_reset)
 
         self.hist_tab = HistogramTab(
             on_save_viewbox_state=lambda vb: self._save_viewbox_state(vb, "hist"),
@@ -170,6 +173,8 @@ class AnalysisDialog(QDialog):
         self.hist_copy_btn.clicked.connect(self.copy_histogram_to_clipboard)
         self.hist_copy_stats_btn.clicked.connect(self.copy_hist_stats_to_clipboard)
         self.tabs.addTab(self.hist_tab, "Histogram")
+        self.hist_tab.channel_list.color_clicked.connect(self._on_plot_color_clicked)
+        self.hist_tab.channel_list.reset_requested.connect(self._on_plot_color_reset)
 
         # status bar
         self.status = QStatusBar()
@@ -317,6 +322,7 @@ class AnalysisDialog(QDialog):
         is_integer_type = np.issubdtype(arr.dtype, np.integer)
         # グラフの色（2 次元画像は 1ch として扱う）
         n_plot = arr.shape[2] if arr.ndim == 3 else 1
+        self._n_plot = n_plot
         channel_colors = self.channel_display.plot_colors(n_plot) if self.channel_display else []
 
         try:
@@ -454,6 +460,22 @@ class AnalysisDialog(QDialog):
             self.settings.hist_mode = "Histogram"
             self.hist_config_mode_btn.setText("Histogram")
         self.update_contents()
+
+    def _on_plot_color_clicked(self, idx: int):
+        """色選択 dialog で選んだ色を、この channel 数のグラフの色として設定する。"""
+        if self.channel_display is None:
+            return
+        n = getattr(self, "_n_plot", 0)
+        colors = self.channel_display.plot_colors(n)
+        if not 0 <= idx < len(colors):
+            return
+        color = QColorDialog.getColor(colors[idx], self, f"チャンネル {idx} の色を選択")
+        if color.isValid():
+            self.channel_display.set_plot_color(n, idx, color)
+
+    def _on_plot_color_reset(self):
+        if self.channel_display is not None:
+            self.channel_display.reset_plot_colors(getattr(self, "_n_plot", 0))
 
     def _on_channel_colors_changed(self, _n_channels: int):
         with contextlib.suppress(Exception):

@@ -20,7 +20,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from PixelScopeViewer.ui.common import defaults, theme
+from PixelScopeViewer.ui.analysis.tabs.channel_list import ChannelListWidget
+from PixelScopeViewer.ui.common import theme
 
 
 class ProfileTab(QWidget):
@@ -46,7 +47,6 @@ class ProfileTab(QWidget):
         super().__init__(parent)
 
         self.on_channel_changed = on_channel_changed
-        self.channel_checkboxes: list[QCheckBox] = []
 
         root = QHBoxLayout(self)
 
@@ -135,12 +135,9 @@ class ProfileTab(QWidget):
         scroll_layout.setContentsMargins(2, 2, 2, 2)
         scroll_layout.setSpacing(3)
 
-        for i in range(defaults.MAX_CHANNEL_CHECKBOXES):
-            cb = QCheckBox(f"C{i}")
-            cb.setVisible(False)
-            cb.stateChanged.connect(self._on_checkbox_changed)
-            scroll_layout.addWidget(cb)
-            self.channel_checkboxes.append(cb)
+        self.channel_list = ChannelListWidget()
+        self.channel_list.checks_changed.connect(self._on_checkbox_changed)
+        scroll_layout.addWidget(self.channel_list)
 
         scroll_layout.addStretch()
         scroll.setWidget(scroll_widget)
@@ -181,43 +178,19 @@ class ProfileTab(QWidget):
         right.addStretch(1)
         root.addLayout(right)
 
-    def _on_checkbox_changed(self):
+    def _on_checkbox_changed(self, checks: list[bool]):
         if self.on_channel_changed:
-            checks = [cb.isChecked() for cb in self.channel_checkboxes if cb.isVisible()]
             self.on_channel_changed(checks)
 
     def update_channel_checkboxes(self, nch: int, checks: list[bool], channel_colors: list | None = None):
-        """channel の checkbox の表示・状態・色を更新する。
+        """channel の行（checkbox・label・色ボタン）を更新する。
 
         Args:
             nch: channel 数。
             checks: checkbox の状態。
             channel_colors: channel ごとの QColor。
         """
-        for i in range(defaults.MAX_CHANNEL_CHECKBOXES):
-            cb = self.channel_checkboxes[i]
-            if i < nch:
-                cb.setVisible(True)
-                # 更新中に signal が再帰的に発火しないようにする
-                cb.blockSignals(True)
-                cb.setChecked(checks[i] if i < len(checks) else True)
-                cb.blockSignals(False)
-                cb.setEnabled(nch > 1)
-
-                # 色見本の icon
-                if channel_colors and i < len(channel_colors):
-                    color = channel_colors[i]
-                    if hasattr(color, "name"):
-                        pix = QPixmap(14, 14)
-                        pix.fill(color)
-                        cb.setIcon(pix)
-                        cb.setIconSize(pix.size())
-                    else:
-                        cb.setIcon(QPixmap())
-                else:
-                    cb.setIcon(QPixmap())
-            else:
-                cb.setVisible(False)
+        self.channel_list.set_channels([f"C{i}" for i in range(nch)], checks, channel_colors or [])
 
     def update_plot(
         self,

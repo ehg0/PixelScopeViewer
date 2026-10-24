@@ -33,3 +33,5 @@ class TilingState:
     brightness_by_dtype: dict[str, dict[str, float]] = field(default_factory=_brightness_by_dtype)
     # 全 tile 共通の ROI（画像座標）
     common_roi: QRect | None = None
+    # 解析 dialog で個別に設定した重ね描きの色（curve label "Tile n Ck" → hex）
+    overlay_color_overrides: dict[str, str] = field(default_factory=dict)

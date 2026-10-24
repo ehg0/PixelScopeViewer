@@ -24,7 +24,53 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from PixelScopeViewer.ui.analysis.tabs.channel_list import ChannelListWidget
 from PixelScopeViewer.ui.common import defaults, theme
+
+
+def _format_stat(value, is_int: bool) -> str:
+    """統計量を表示用の文字列にする。整数 dtype は整数で表示し、NaN（平均 0 の fano など）はそのまま表示する。"""
+    if is_int and np.isfinite(value):
+        return f"{int(value)}"
+    return f"{value:.4f}"
+
+
+def make_hist_bar_item(xs, heights, width: float, brush, name: str, log_x: bool, log_y: bool) -> pg.BarGraphItem:
+    """histogram の BarGraphItem を作る。
+
+    BarGraphItem は setLogMode を持たず PlotItem の log X/Y で変換されないため、座標を自前で log10 変換する。
+    log Y の下端は 0 を 0.1 に置き換える既存の扱いに合わせて -1 にする。
+    """
+    xs = np.asarray(xs, dtype=float)
+    heights = np.asarray(heights, dtype=float)
+    left = xs - width / 2
+    right = xs + width / 2
+    y0 = np.zeros_like(heights)
+    y1 = heights
+    if log_x:
+        # Line と同様に x <= 0 の bin は描かない
+        keep = xs > 0
+        xs, left, right, y0, y1 = xs[keep], left[keep], right[keep], y0[keep], y1[keep]
+        log_xs = np.log10(xs)
+        log_right = np.log10(right)
+        # 0 始まりの bin は左端が log にできないため、中心で右端を鏡映する
+        with np.errstate(divide="ignore", invalid="ignore"):
+            log_left = np.where(left > 0, np.log10(np.where(left > 0, left, 1.0)), 2 * log_xs - log_right)
+        left, right = log_left, log_right
+    if log_y:
+        y0 = np.full_like(y1, -1.0)
+        with np.errstate(divide="ignore"):
+            y1 = np.log10(y1)
+    return pg.BarGraphItem(x0=left, x1=right, y0=y0, y1=y1, brush=brush, pen=None, name=name)
+
+
+def plot_log_mode(plot_widget) -> tuple[bool, bool]:
+    """PlotWidget の menu の log X/Y の状態を返す。"""
+    try:
+        ctrl = plot_widget.getPlotItem().ctrl
+        return bool(ctrl.logXCheck.isChecked()), bool(ctrl.logYCheck.isChecked())
+    except Exception:
+        return False, False
 
 
 class HistogramTab(QWidget):
@@ -56,7 +102,6 @@ class HistogramTab(QWidget):
         self.on_channel_changed = on_channel_changed
         self.on_spinbox_changed = on_spinbox_changed
         self.on_spinbox_bar_alpha_changed = on_spinbox_bar_alpha_changed
-        self.channel_checkboxes: list[QCheckBox] = []
 
         root = QHBoxLayout(self)
 
@@ -143,12 +188,9 @@ class HistogramTab(QWidget):
         scroll_layout.setContentsMargins(2, 2, 2, 2)
         scroll_layout.setSpacing(3)
 
-        for i in range(defaults.MAX_CHANNEL_CHECKBOXES):
-            cb = QCheckBox(f"C{i}")
-            cb.setVisible(False)
-            cb.stateChanged.connect(self._on_checkbox_changed)
-            scroll_layout.addWidget(cb)
-            self.channel_checkboxes.append(cb)
+        self.channel_list = ChannelListWidget()
+        self.channel_list.checks_changed.connect(self._on_checkbox_changed)
+        scroll_layout.addWidget(self.channel_list)
 
         scroll_layout.addStretch()
         scroll.setWidget(scroll_widget)
@@ -209,9 +251,8 @@ class HistogramTab(QWidget):
         right.addStretch(1)
         root.addLayout(right)
 
-    def _on_checkbox_changed(self):
+    def _on_checkbox_changed(self, checks: list[bool]):
         if self.on_channel_changed:
-            checks = [cb.isChecked() for cb in self.channel_checkboxes if cb.isVisible()]
             self.on_channel_changed(checks)
 
     def _on_spinbox_changed(self, value):
@@ -221,37 +262,14 @@ class HistogramTab(QWidget):
         self.on_spinbox_bar_alpha_changed(value)
 
     def update_channel_checkboxes(self, nch: int, checks: list[bool], channel_colors: list | None = None):
-        """channel の checkbox の表示・状態・色を更新する。
+        """channel の行（checkbox・label・色ボタン）を更新する。
 
         Args:
             nch: channel 数。
             checks: checkbox の状態。
             channel_colors: channel ごとの QColor。
         """
-        for i in range(defaults.MAX_CHANNEL_CHECKBOXES):
-            cb = self.channel_checkboxes[i]
-            if i < nch:
-                cb.setVisible(True)
-                # 更新中に signal が再帰的に発火しないようにする
-                cb.blockSignals(True)
-                cb.setChecked(checks[i] if i < len(checks) else True)
-                cb.blockSignals(False)
-                cb.setEnabled(nch > 1)
-
-                # 色見本の icon
-                if channel_colors and i < len(channel_colors):
-                    color = channel_colors[i]
-                    if hasattr(color, "name"):
-                        pix = QPixmap(14, 14)
-                        pix.fill(color)
-                        cb.setIcon(pix)
-                        cb.setIconSize(pix.size())
-                    else:
-                        cb.setIcon(QPixmap())
-                else:
-                    cb.setIcon(QPixmap())
-            else:
-                cb.setVisible(False)
+        self.channel_list.set_channels([f"C{i}" for i in range(nch)], checks, channel_colors or [])
 
     def update_plot(
         self,
@@ -300,9 +318,9 @@ class HistogramTab(QWidget):
             if rgb:
                 return QColor(rgb[0], rgb[1], rgb[2], alpha)
 
-            # 2. Intensity
+            # 2. Intensity（1ch）は channel 0 の色
             if label == "I":
-                qcolor = QColor(theme.PLOT_INTENSITY_COLOR)
+                qcolor = QColor(channel_colors[0]) if channel_colors else QColor(theme.PLOT_INTENSITY_COLOR)
                 qcolor.setAlpha(alpha)
                 return qcolor
 
@@ -328,14 +346,13 @@ class HistogramTab(QWidget):
                     fallback[ch_index] if ch_index is not None and ch_index < len(fallback) else theme.PLOT_MUTED_COLOR
                 )
 
+            # 灰色系を黒にするかは ChannelDisplay.plot_colors で決めているため、そのまま使う
             qcolor = QColor(color_val)
-            # grayscale の色は見やすさのため黒で描画する
-            if qcolor.red() == qcolor.green() == qcolor.blue():
-                qcolor = QColor(theme.PLOT_INTENSITY_COLOR)
             qcolor.setAlpha(alpha)
 
             return qcolor
 
+        log_x, log_y = plot_log_mode(self.hist_widget)
         for _, (label, (xs, ys)) in enumerate(series.items()):
             yplot = np.array(ys, dtype=float)
             if apply_log:
@@ -349,9 +366,7 @@ class HistogramTab(QWidget):
 
             if chart_kind == "Bar":
                 pen = pg.mkPen(color=_color_for_label(label, alpha=bar_alpha), width=2)
-                item = pg.BarGraphItem(
-                    x=xs, height=yplot, width=self.bin_step_spin_box.value(), brush=pen.color(), pen=None, name=label
-                )
+                item = make_hist_bar_item(xs, yplot, self.bin_step_spin_box.value(), pen.color(), label, log_x, log_y)
                 self.hist_widget.addItem(item)
 
         self.hist_widget.setTitle(f"Intensity {self.config_mode_btn.text()}", color=theme.PLOT_TEXT_COLOR, size="12pt")
@@ -444,13 +459,13 @@ class HistogramTab(QWidget):
             mi.setTextAlignment(Qt.AlignCenter)
             si = QTableWidgetItem(f"{r['std']:.4f}")
             si.setTextAlignment(Qt.AlignCenter)
-            mdi = QTableWidgetItem(f"{int(r['median'])}" if r["is_int"] else f"{r['median']:.4f}")
+            mdi = QTableWidgetItem(_format_stat(r["median"], r["is_int"]))
             mdi.setTextAlignment(Qt.AlignCenter)
-            mini = QTableWidgetItem(f"{int(r['min'])}" if r["is_int"] else f"{r['min']:.4f}")
+            mini = QTableWidgetItem(_format_stat(r["min"], r["is_int"]))
             mini.setTextAlignment(Qt.AlignCenter)
-            maxi = QTableWidgetItem(f"{int(r['max'])}" if r["is_int"] else f"{r['max']:.4f}")
+            maxi = QTableWidgetItem(_format_stat(r["max"], r["is_int"]))
             maxi.setTextAlignment(Qt.AlignCenter)
-            fanoi = QTableWidgetItem(f"{int(r['fano'])}" if r["is_int"] else f"{r['fano']:.4f}")
+            fanoi = QTableWidgetItem(_format_stat(r["fano"], r["is_int"]))
             fanoi.setTextAlignment(Qt.AlignCenter)
             self.stats_table.setItem(row_idx, 1, mi)
             self.stats_table.setItem(row_idx, 2, si)

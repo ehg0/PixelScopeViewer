@@ -576,6 +576,7 @@ class TilingDialog(QDialog):
                 image_array=image_array,
                 image_rect=roi_rect,
                 image_path=file_path,
+                channel_display=self.parent_viewer.channel_display,
             )
 
             # メインビューアの解析 dialog と区別できる title にする

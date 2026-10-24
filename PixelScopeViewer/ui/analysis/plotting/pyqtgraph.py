@@ -32,7 +32,7 @@ def apply_plot_settings(widget, which: str, plot_settings: dict[str, dict], save
 def connect_plot_controls(plot_item, which: str, plot_settings: dict[str, dict], on_hist_log_changed=None):
     """PlotItem の grid/log の checkbox の変更を plot_settings に保存するよう接続する。
 
-    which が 'hist' の場合は log Y の変更時に on_hist_log_changed を呼ぶ。
+    which が 'hist' の場合は log X/Y の変更時に on_hist_log_changed を呼ぶ。
     """
     if not hasattr(plot_item, "ctrl"):
         return
@@ -62,6 +62,9 @@ def connect_plot_controls(plot_item, which: str, plot_settings: dict[str, dict],
                 c.logYCheck.toggled.connect(
                     lambda checked: _on_log_toggled(plot_settings, bool(checked), on_hist_log_changed)
                 )
+            # Bar は自前で log 変換するため、log X の変更時も再描画する
+            if hasattr(c, "logXCheck") and on_hist_log_changed is not None:
+                c.logXCheck.toggled.connect(lambda _checked: on_hist_log_changed())
         except Exception:
             pass
 

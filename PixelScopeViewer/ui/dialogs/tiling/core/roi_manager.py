@@ -1,4 +1,4 @@
-"""ROI management for tiling comparison."""
+"""複数画像比較の ROI 管理。"""
 
 import numpy as np
 from PySide6.QtCore import QRect, Signal
@@ -8,36 +8,26 @@ from PixelScopeViewer.core.image_io import numpy_to_qimage
 
 
 class ROIManager:
-    """Manages ROI operations for all tiles."""
+    """全 tile 共通の ROI と、ROI 画像のコピーを管理する。
+
+    Args:
+        tiles: TileWidget のリスト。
+        get_active_tile_index_func: active な tile の index を返す関数。
+        common_roi_changed_signal: ROI の変更時に emit する signal。
+    """
 
     def __init__(self, tiles: list, get_active_tile_index_func, common_roi_changed_signal: Signal):
-        """Initialize ROI manager.
-
-        Args:
-            tiles: List of TileWidget instances
-            get_active_tile_index_func: Function to get the active tile index
-            common_roi_changed_signal: Signal to emit when ROI changes
-        """
         self.tiles = tiles
         self.get_active_tile_index = get_active_tile_index_func
         self.common_roi_changed = common_roi_changed_signal
         self.common_roi_rect: QRect | None = None
 
     def on_tile_roi_changed(self, roi_rect_in_image_coords: QRect):
-        """Handle ROI change from a tile.
-
-        Args:
-            roi_rect_in_image_coords: ROI rectangle in image coordinates
-        """
         self.common_roi_rect = roi_rect_in_image_coords
         self.common_roi_changed.emit(roi_rect_in_image_coords)
 
     def on_tile_roi_changed_list(self, roi_rect):
-        """Handle ROI change signal from tile (list format).
-
-        Args:
-            roi_rect: ROI rectangle as list [x, y, w, h] or None
-        """
+        """[x, y, w, h] 形式（または None）の ROI を共通 ROI にする。"""
         if roi_rect:
             self.common_roi_rect = QRect(roi_rect[0], roi_rect[1], roi_rect[2], roi_rect[3])
         else:
@@ -47,17 +37,12 @@ class ROIManager:
             self.common_roi_changed.emit(self.common_roi_rect)
 
     def sync_roi_to_all_tiles(self, roi_rect: QRect):
-        """Sync ROI to all tiles.
-
-        Args:
-            roi_rect: ROI rectangle to sync
-        """
         for i, tile in enumerate(self.tiles):
             is_active = i == self.get_active_tile_index()
             tile.set_roi_from_image_coords(roi_rect, is_active)
 
     def select_all_roi(self):
-        """Select all (full image) for active tile."""
+        """active な tile の画像全体を ROI にする。"""
         if not self.tiles or self.get_active_tile_index() >= len(self.tiles):
             return
 
@@ -70,12 +55,11 @@ class ROIManager:
         self.common_roi_changed.emit(full_roi)
 
     def clear_roi(self):
-        """Clear ROI from all tiles."""
         self.common_roi_rect = None
         self.common_roi_changed.emit(QRect())
 
     def copy_active_tile_roi(self):
-        """Copy ROI region from active tile to clipboard."""
+        """active な tile の ROI（ROI がなければ全体）の表示画像を clipboard にコピーする。"""
         if not self.tiles or self.get_active_tile_index() >= len(self.tiles):
             return
 
@@ -102,23 +86,21 @@ class ROIManager:
             QGuiApplication.clipboard().setImage(qimg)
 
     def copy_all_tiles_roi_as_grid(self, grid_size: tuple[int, int]):
-        """Copy ROI regions from all tiles arranged in grid layout to clipboard.
+        """全 tile の ROI の表示画像を grid に並べて clipboard にコピーする。
 
         Args:
-            grid_size: Tuple of (rows, cols)
+            grid_size: (行数, 列数)。
         """
         if not self.tiles:
             return
 
         roi_rect = self.common_roi_rect
         if not roi_rect or roi_rect.isEmpty():
-            # No ROI set, do nothing
             return
 
         x, y, w, h = roi_rect.x(), roi_rect.y(), roi_rect.width(), roi_rect.height()
         rows, cols = grid_size
 
-        # Extract ROI regions from all tiles
         roi_images = []
         for tile in self.tiles:
             arr = tile.get_displayed_array()
@@ -132,21 +114,19 @@ class ROIManager:
                 sub_arr = arr[y:y2, x:x2]
                 roi_images.append(sub_arr)
             else:
-                # ROI out of bounds, skip this tile
+                # ROI が範囲外の tile は空ける
                 roi_images.append(None)
 
-        # Create grid image
         if not roi_images or all(img is None for img in roi_images):
             return
 
-        # Determine output dimensions (use first valid ROI size)
+        # 最初の有効な ROI 画像のサイズを 1 マスのサイズにする
         roi_h, roi_w = h, w
         for img in roi_images:
             if img is not None:
                 roi_h, roi_w = img.shape[:2]
                 break
 
-        # Determine if images are color or grayscale
         is_color = False
         num_channels = 1
         for img in roi_images:
@@ -155,7 +135,6 @@ class ROIManager:
                 num_channels = img.shape[2]
                 break
 
-        # Create output array
         output_h = rows * roi_h
         output_w = cols * roi_w
         if is_color:
@@ -167,7 +146,6 @@ class ROIManager:
                 (output_h, output_w), dtype=roi_images[0].dtype if roi_images[0] is not None else np.uint8
             )
 
-        # Place each ROI image in the grid
         for i, img in enumerate(roi_images):
             if img is None:
                 continue
@@ -182,25 +160,18 @@ class ROIManager:
             x_end = min(x_start + img_w, output_w)
 
             if is_color and len(img.shape) == 2:
-                # Convert grayscale to color
                 img = np.stack([img] * num_channels, axis=2)
             elif not is_color and len(img.shape) == 3:
-                # Convert color to grayscale
                 img = img[:, :, 0]
 
             output_array[y_start:y_end, x_start:x_end] = img[: y_end - y_start, : x_end - x_start]
 
-        # Convert to QImage and copy to clipboard
         qimg = numpy_to_qimage(output_array)
         if qimg and not qimg.isNull():
             QGuiApplication.clipboard().setImage(qimg)
 
     def get_roi_status(self) -> str:
-        """Get ROI status text for status bar.
-
-        Returns:
-            ROI status text
-        """
+        """status bar に表示する ROI の文字列を返す。"""
         if self.common_roi_rect and not self.common_roi_rect.isEmpty():
             r = self.common_roi_rect
             x0, y0 = r.x(), r.y()

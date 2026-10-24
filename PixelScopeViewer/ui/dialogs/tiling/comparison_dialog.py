@@ -1,10 +1,4 @@
-"""Tiling comparison analysis dialog for comparing multiple tiles.
-
-This module provides a dialog for comparing all tiles side-by-side with:
-- Overlay histograms (all tiles on one graph)
-- Overlay profiles (all tiles on one graph)
-- Metadata comparison table
-"""
+"""全 tile の histogram・profile を重ねて表示する、複数画像の解析 dialog。"""
 
 import contextlib
 from pathlib import Path
@@ -37,39 +31,20 @@ except ImportError:
 
 
 class TilingComparisonDialog(AnalysisDialog):
-    """Dialog for comparing all tiles with overlay plots.
-
-    Extends AnalysisDialog to handle multiple tiles instead of single image.
-    Data is aggregated from all tiles and displayed with different colors.
+    """全 tile の histogram・profile を色分けして重ね、metadata を比較表示する AnalysisDialog。
 
     Args:
-        parent: Parent TilingComparisonDialog widget
-        tiles_data: List of dicts with keys: 'array', 'rect', 'path', 'index', 'color'
+        parent: 親の TilingComparisonDialog。
+        tiles_data: array, rect（ROI）, path, index, color を持つ tile ごとの dict のリスト。
     """
 
     def __init__(self, parent=None, tiles_data: list[dict] | None = None):
-        """Initialize comparison dialog.
-
-        Args:
-            parent: Parent widget (TilingComparisonDialog)
-            tiles_data: List of tile data dicts with:
-                - 'array': numpy array of tile image
-                - 'rect': QRect of ROI (or None)
-                - 'path': file path
-                - 'index': tile index
-                - 'color': (r, g, b) tuple for plotting
-        """
-        # Store tiles data before calling parent init
         self.tiles_data = tiles_data or []
 
-        # Prepare initial single-image parameters for base dialog.
-        # NOTE: overlay_channel_visibility must exist BEFORE calling super().__init__
-        # because base __init__ invokes update_contents(), which references it.
+        # 基底クラスの __init__ が update_contents() を呼ぶため、使用する属性は super().__init__ の前に用意する
         self.overlay_channel_visibility: dict[int, list[bool]] = {}
 
-        # Initialize with first tile's data (or None if no tiles)
-        # Pass image_rect=None to parent to prevent ROI application during parent's __init__
-        # Our update_contents() will handle ROI application properly
+        # 基底クラスには先頭の tile を渡す。ROI は update_contents() で適用するため image_rect は None にする
         if self.tiles_data:
             first_tile = self.tiles_data[0]
             image_array = first_tile["array"]
@@ -78,7 +53,7 @@ class TilingComparisonDialog(AnalysisDialog):
             image_array = None
             image_path = None
 
-        # ---- Overlay color palette (Tableau 20) & mapping (must exist before super().__init__) ----
+        # 重ね描きの色（Tableau 20）
         self.TABLEAU20: list[tuple[int, int, int]] = [
             (31, 119, 180),
             (174, 199, 232),
@@ -105,21 +80,16 @@ class TilingComparisonDialog(AnalysisDialog):
         self.hist_plot_items: dict[str, object] = {}
         self.profile_plot_items: dict[str, object] = {}
 
-        # Call parent constructor with image_rect=None (will trigger update_contents which needs above attrs)
         super().__init__(parent=parent, image_array=image_array, image_rect=None, image_path=image_path)
 
-        # Set window title
         self.setWindowTitle("複数画像比較 - 解析ビュー(複数画像)")
 
-        # Setup overlay channel checkboxes in tabs
+        # tab の channel の checkbox を tile ごとの checkbox に置き換える
         self._setup_overlay_channel_checkboxes()
 
-        # (Palette & mapping already initialized before super().__init__)
-
-    # ---- Color & highlight helpers ----
+    # ---- 色 ----
     def _assign_overlay_colors(self, labels: list[str]):
-        # Deterministic mapping: parse 'Tile {n} Ck' or 'Tile {n} I'
-        # Use TABLEAU20 palette for consistent coloring
+        """'Tile {n} C{k}' 形式の label に、tile 番号と channel から決まる Tableau 20 の色を割り当てる。"""
         for lbl in labels:
             if lbl in self.overlay_color_map:
                 continue
@@ -127,13 +97,12 @@ class TilingComparisonDialog(AnalysisDialog):
             tile_num = 1
             ch_index = 0
             try:
-                # Expected parts: ['Tile', 'N', 'Ck'/'I']
                 if len(parts) >= 3 and parts[0] == "Tile":
                     tile_num = int(parts[1])
                     ch_code = parts[2]
                     ch_index = int(ch_code[1:]) if ch_code.startswith("C") else 0
                 else:
-                    # Fallback: search for numeric tile
+                    # 形式が異なる場合は数字と C{k} を探す
                     for p in parts:
                         if p.isdigit():
                             tile_num = int(p)
@@ -145,7 +114,6 @@ class TilingComparisonDialog(AnalysisDialog):
             except Exception:
                 tile_num = 1
                 ch_index = 0
-            # Map to TABLEAU20 using tile_num and ch_index
             idx = ((tile_num - 1) * 8 + ch_index) % len(self.TABLEAU20)
             self.overlay_color_map[lbl] = self.TABLEAU20[idx]
         return {lbl: self.overlay_color_map[lbl] for lbl in labels}
@@ -155,22 +123,17 @@ class TilingComparisonDialog(AnalysisDialog):
         return pg.mkPen(color=(r, g, b, alpha), width=width)
 
     def update_tiles_data(self, tiles_data: list[dict]):
-        """Update with new tiles data.
-
-        Args:
-            tiles_data: List of tile data dicts
-        """
+        """tile のデータを更新して表示を作り直す。"""
         self.tiles_data = tiles_data
 
         if self.tiles_data:
-            # Update with first tile's data to trigger refresh
             first_tile = self.tiles_data[0]
             self.set_image_and_rect(first_tile["array"], first_tile.get("rect"), first_tile.get("path"))
         else:
             self.set_image_and_rect(None, None, None)
 
     def _update_metadata(self):
-        """Override to show comparison table of all tiles' metadata."""
+        """全 tile の metadata を比較する table を表示する。"""
         if not hasattr(self, "metadata_table"):
             return
 
@@ -178,7 +141,6 @@ class TilingComparisonDialog(AnalysisDialog):
             self.meta_tab.update([("Info", "No tiles available")])
             return
 
-        # Collect metadata from all tiles
         all_metadata = []
         for tile_data in self.tiles_data:
             path = tile_data.get("path")
@@ -190,7 +152,7 @@ class TilingComparisonDialog(AnalysisDialog):
                 with contextlib.suppress(Exception):
                     metadata = get_image_metadata(path, arr) or {}
 
-            # Add/Override basic information from array (ensure they are always present)
+            # 基本情報は配列から必ず設定する
             if arr is not None:
                 h, w = arr.shape[:2]
                 metadata["Size"] = f"{w} x {h}"
@@ -200,45 +162,34 @@ class TilingComparisonDialog(AnalysisDialog):
                     metadata["Channels"] = 1
                 metadata["DataType"] = str(arr.dtype)
 
-                # Note: FileSize is provided by get_image_metadata for consistency with main viewer
-
             all_metadata.append({"index": tile_data["index"], "path": path, "metadata": metadata})
 
         if not all_metadata:
             self.meta_tab.update([("Info", "No metadata available")])
             return
 
-        # Build comparison table
         self._build_comparison_table(all_metadata)
 
     def _build_comparison_table(self, all_metadata: list[dict]):
-        """Build comparison table from all tiles' metadata.
-
-        Args:
-            all_metadata: List of dicts with 'index', 'path', 'metadata'
-        """
-        # Collect all unique keys
+        """tile ごとの metadata を列に並べ、値が異なる行を強調表示する。"""
         all_keys = set()
         for tile_meta in all_metadata:
             all_keys.update(tile_meta["metadata"].keys())
 
-        # Sort keys to match main side order: Basic info first, then EXIF tags
+        # メインビューアと同じく基本情報、EXIF の順に並べる
         basic_keys = ["Filepath", "Format", "FileSize", "Size", "Channels", "DataType"]
         sorted_keys = [k for k in basic_keys if k in all_keys]
         exif_keys = sorted([k for k in all_keys if k not in basic_keys])
         sorted_keys.extend(exif_keys)
 
-        # Setup table
         num_tiles = len(all_metadata)
         num_rows = len(sorted_keys)
 
-        # Column count: Property + Tile columns
         self.metadata_table.setColumnCount(1 + num_tiles)
 
-        # Set headers
         headers = ["Property"]
         for tile_meta in all_metadata:
-            tile_idx = tile_meta["index"] + 1  # Display as 1-indexed
+            tile_idx = tile_meta["index"] + 1
             path = tile_meta["path"]
             if path:
                 filename = Path(path).name
@@ -250,48 +201,39 @@ class TilingComparisonDialog(AnalysisDialog):
         self.metadata_table.setRowCount(num_rows)
         self.metadata_table.setMouseTracking(True)
 
-        # Highlight color for differences
-        diff_color = QColor(255, 255, 200)  # Light yellow
+        diff_color = QColor(255, 255, 200)
 
-        # Fill table
         for row_idx, key in enumerate(sorted_keys):
-            # Property column
             prop_item = QTableWidgetItem(key)
             self.metadata_table.setItem(row_idx, 0, prop_item)
 
-            # Collect values for this property from all tiles
             values = []
             for tile_meta in all_metadata:
                 value = tile_meta["metadata"].get(key, "")
                 values.append(str(value) if value else "")
 
-            # Check if all values are the same
-            unique_values = {v for v in values if v}  # Exclude empty strings
+            # 空でない値が tile 間で異なる行を強調表示する
+            unique_values = {v for v in values if v}
             has_difference = len(unique_values) > 1
 
-            # Highlight any difference (no exceptions)
             should_highlight = has_difference
 
-            # Fill tile columns
             for col_idx, value in enumerate(values):
                 value_item = QTableWidgetItem(value)
 
-                # Highlight if there's a difference (but not for excluded keys)
                 if should_highlight and value:
                     value_item.setBackground(QBrush(diff_color))
 
                 value_item.setToolTip(str(value))
                 self.metadata_table.setItem(row_idx, col_idx + 1, value_item)
 
-        # Adjust column widths
         header = self.metadata_table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)  # Property column
+        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
         for i in range(1, 1 + num_tiles):
-            header.setSectionResizeMode(i, QHeaderView.Stretch)  # Tile columns
+            header.setSectionResizeMode(i, QHeaderView.Stretch)
 
     def update_contents(self):
-        """Override to aggregate data from all tiles and overlay plots."""
-        # Always update metadata first
+        """全 tile の ROI のデータを集計して重ね描きする。"""
         self._update_metadata()
 
         if not self.tiles_data:
@@ -299,14 +241,13 @@ class TilingComparisonDialog(AnalysisDialog):
         if not PYQTGRAPH_AVAILABLE:
             return
 
-        # Collect valid tile arrays after ROI application
+        # ROI を適用した tile ごとの配列
         valid_tiles = []
         for tile_data in self.tiles_data:
             arr = tile_data["array"]
             if arr is None:
                 continue
 
-            # Apply ROI if present
             roi_rect = tile_data.get("rect")
             if roi_rect is not None:
                 x, y, w, h = (
@@ -319,7 +260,6 @@ class TilingComparisonDialog(AnalysisDialog):
             else:
                 arr = arr[0:1, 0:1]
 
-            # Skip empty arrays
             if arr.size == 0:
                 continue
 
@@ -335,11 +275,10 @@ class TilingComparisonDialog(AnalysisDialog):
         if not valid_tiles:
             return
 
-        # Use first tile's array for parent's image_array (for metadata, etc.)
+        # 基底クラスの処理用に先頭の tile の配列を設定する
         self.image_array = valid_tiles[0]["array"]
-        self.image_rect = None  # Already ROI-applied
+        self.image_rect = None  # ROI は適用済み
 
-        # Ensure channel_checks are initialized
         first_arr = valid_tiles[0]["array"]
         if first_arr.ndim == 3 and first_arr.shape[2] > 1:
             nch = first_arr.shape[2]
@@ -348,24 +287,20 @@ class TilingComparisonDialog(AnalysisDialog):
             elif len(self.channel_checks) < nch:
                 self.channel_checks.extend([True] * (nch - len(self.channel_checks)))
 
-        # Initialize / ensure overlay channel visibilities
         self._ensure_overlay_channel_visibility(valid_tiles)
 
-        # Histogram & Profile overlays
         self._update_histogram_overlay(valid_tiles)
         self._update_profile_overlay(valid_tiles)
 
-        # Rebuild overlay channel checkboxes and fixed buttons after data refresh
         self._setup_overlay_channel_checkboxes()
 
     def _update_histogram_overlay(self, valid_tiles):
-        """Update histogram tab with overlaid data from all tiles."""
+        """全 tile の histogram を共通の x 軸に揃えて重ね描きする。"""
         if not valid_tiles:
             return
 
-        # Collect all histogram data with unified bins
-        all_hist_series = {}  # tile_idx -> {label -> (xs, ys)}
-        all_stats = []  # List of stats dicts with tile info (filtered by visibility)
+        all_hist_series = {}  # tile index -> {label -> (xs, ys)}
+        all_stats = []  # 表示 ON の channel の統計量
 
         for tile in valid_tiles:
             arr = tile["array"]
@@ -381,7 +316,6 @@ class TilingComparisonDialog(AnalysisDialog):
 
             tile_hist_series = {}
             for label, (xs, ys) in hist_series.items():
-                # Keep original label ('I' or 'Ck')
                 channel_code = label
                 ch_visible = True
                 if visibility is not None:
@@ -399,11 +333,10 @@ class TilingComparisonDialog(AnalysisDialog):
                     tile_hist_series[new_label] = (xs, ys)
             all_hist_series[tile_idx] = tile_hist_series
 
-            # Stats filtered by visibility
             for stat in stats:
                 stat_ch_index = 0
                 try:
-                    stat_ch_index = int(stat["ch"])  # grayscale '0' or color index
+                    stat_ch_index = int(stat["ch"])
                 except Exception:
                     stat_ch_index = 0
                 stat_visible = True
@@ -411,20 +344,19 @@ class TilingComparisonDialog(AnalysisDialog):
                     stat_visible = visibility[stat_ch_index]
                 if stat_visible:
                     stat_copy = stat.copy()
-                    # Unified channel label format always C{index}; grayscale->C0
+                    # label は常に C{index}（1ch は C0）
                     stat_label = f"C{stat_ch_index}"
                     curve_label = f"Tile {tile_idx + 1} {stat_label}"
                     stat_copy["ch"] = f"T{tile_idx + 1}_C{stat_ch_index}"
                     stat_copy["curve_label"] = curve_label
                     all_stats.append(stat_copy)
 
-        # Merge all series for plotting
+        # 全 tile の x の和集合（前後 1 step を含む）を共通の x 軸にする
         all_xs = []
         for series in all_hist_series.values():
             for xs, _ in series.values():
                 xs = np.asarray(xs)
                 dx = xs[1] - xs[0] if len(xs) > 1 else 1.0
-                # add ±1 step
                 xs_extended = np.concatenate([xs, xs - dx, xs + dx])
                 all_xs.append(xs_extended)
         x_common = np.array([]) if len(all_xs) == 0 else np.unique(np.concatenate(all_xs))
@@ -434,7 +366,7 @@ class TilingComparisonDialog(AnalysisDialog):
             for label, data in series.items():
                 xs, ys = data
                 if self.hist_config_mode == "ECDF":
-                    # ECDFの場合: np.interp で歯抜け部分を前後の値（累計確率）で埋める
+                    # ECDF は np.interp で欠けている x を前後の累積確率で補間する
                     if len(xs) > 0:
                         ys_new = np.interp(x_common, xs, ys, left=0.0, right=1.0)
                     else:
@@ -446,11 +378,9 @@ class TilingComparisonDialog(AnalysisDialog):
                     ys_new[indices[valid]] = ys[valid]
                 merged_series[label] = (x_common, ys_new)
 
-        # Assign colors from palette (stable)
         ordered_labels = list(merged_series.keys())
         palette_map = self._assign_overlay_colors(ordered_labels)
 
-        # Update histogram tab with custom colors
         apply_log = self.plot_settings.get("hist", {}).get("log", False)
 
         if self.hist_tab.hist_widget:
@@ -460,7 +390,7 @@ class TilingComparisonDialog(AnalysisDialog):
                 for label, (xs, ys) in merged_series.items():
                     yplot = np.array(ys, dtype=float)
                     if apply_log:
-                        # 0のデータを0.1に置換（log10(0.1) = -1 として最下部に張り付く）
+                        # 0 を 0.1 に置き換え、log10(0.1) = -1 として下端に表示する
                         yplot[yplot == 0] = 0.1
                         self.hist_tab.hist_widget.setLimits(yMin=-1)
 
@@ -484,17 +414,15 @@ class TilingComparisonDialog(AnalysisDialog):
                     f"{self.hist_config_mode} Overlay (No channels visible)", color="#7f8c8d", size="11pt"
                 )
 
-        # Update stats table
         self.hist_tab._populate_stats_table(all_stats)
 
-        # Store for copy (only visible series)
+        # コピー用（表示中の系列のみ）
         self.last_hist_data = merged_series
 
     def _update_profile_overlay(self, valid_tiles):
-        """Update profile tab with overlaid data from all tiles."""
-        # Collect all profile data
-        all_prof_series = {}  # tile_idx -> {label -> (xs, ys)}
-        all_profile_stats = []  # stats rows
+        """全 tile の profile を重ね描きする。"""
+        all_prof_series = {}  # tile index -> {label -> (xs, ys)}
+        all_profile_stats = []
 
         for tile in valid_tiles:
             arr = tile["array"]
@@ -525,7 +453,6 @@ class TilingComparisonDialog(AnalysisDialog):
                         ch_visible = visibility[0]
 
                 if ch_visible:
-                    # Keep original label ('I' or 'Ck')
                     channel_code = label
                     new_label = f"Tile {tile_idx + 1} {channel_code}"
                     tile_prof_series[new_label] = (xs, prof)
@@ -546,7 +473,6 @@ class TilingComparisonDialog(AnalysisDialog):
 
             all_prof_series[tile_idx] = tile_prof_series
 
-        # Merge all series for plotting
         merged_series = {}
         for series in all_prof_series.values():
             for label, data in series.items():
@@ -555,7 +481,6 @@ class TilingComparisonDialog(AnalysisDialog):
         ordered_prof_labels = list(merged_series.keys())
         prof_palette_map = self._assign_overlay_colors(ordered_prof_labels)
 
-        # Update profile tab with custom colors
         if hasattr(self, "prof_widget") and self.prof_widget:
             self.prof_widget.clear()
             self.profile_plot_items.clear()
@@ -587,14 +512,12 @@ class TilingComparisonDialog(AnalysisDialog):
                     size="11pt",
                 )
 
-        # Update profile stats table
         if hasattr(self, "profile_tab"):
             self.profile_tab._populate_stats_table(all_profile_stats)
 
-        # Store for copy
         self.last_profile_data = merged_series
 
-    # ---- Overlay Channel Visibility Helpers ----
+    # ---- tile ごとの channel の表示 ON/OFF ----
     def _ensure_overlay_channel_visibility(self, valid_tiles):
         for tile in valid_tiles:
             idx = tile["index"]
@@ -606,12 +529,7 @@ class TilingComparisonDialog(AnalysisDialog):
                     self.overlay_channel_visibility[idx] = [True]
 
     def _setup_overlay_channel_checkboxes(self):
-        """Replace channel checkboxes UI in tabs with overlay tile checkboxes.
-
-        Ensures the fixed button row (Setect All / Deselect All) is placed above the
-        scroll area (non-scrollable), and the tile/channel checkboxes are
-        placed inside the scroll area.
-        """
+        """histogram・profile tab の channel の checkbox を、tile ごとの checkbox に置き換える。"""
         if hasattr(self, "hist_tab"):
             self._replace_tab_channel_ui(self.hist_tab)
 
@@ -619,8 +537,8 @@ class TilingComparisonDialog(AnalysisDialog):
             self._replace_tab_channel_ui(self.profile_tab)
 
     def _replace_tab_channel_ui(self, tab):
-        """Replace channel checkbox UI in a tab with overlay tile checkboxes."""
-        # Find scroll area directly from tab to avoid dangling references
+        """tab の scroll area の中身を tile ごとの checkbox にし、その上に全選択・全解除の button を置く。"""
+        # 削除済みの widget を参照しないよう、毎回 tab から探す
         scroll_area = tab.findChild(QScrollArea)
         if scroll_area is None:
             return
@@ -721,10 +639,9 @@ class TilingComparisonDialog(AnalysisDialog):
         if vis is None or ch_idx < 0 or ch_idx >= len(vis):
             return
         vis[ch_idx] = bool(checked)
-        # Refresh overlays and keep buttons fixed
         self.update_contents()
 
-    # ---- Overlay Channel Visibility Helpers ----
+    # ---- tile ごとの channel の表示 ON/OFF ----
     def _ensure_overlay_channel_visibility(self, valid_tiles):
         for tile in valid_tiles:
             idx = tile["index"]

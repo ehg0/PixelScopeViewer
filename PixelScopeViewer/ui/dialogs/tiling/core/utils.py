@@ -1,17 +1,10 @@
-"""Utility functions for tiling comparison."""
+"""複数画像比較の共通処理。"""
 
 import numpy as np
 
 
 def determine_dtype_group(arr: np.ndarray) -> str:
-    """Determine dtype group for brightness parameter management.
-
-    Args:
-        arr: Image array
-
-    Returns:
-        'uint8', 'uint16', or 'float'
-    """
+    """brightness の設定を共有する dtype の group（'uint8', 'uint16', 'float'）を返す。"""
     dtype = arr.dtype
 
     if np.issubdtype(dtype, np.floating):

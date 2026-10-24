@@ -1,4 +1,4 @@
-"""Core utilities for tiling comparison."""
+"""複数画像比較の tile 管理・同期処理。"""
 
 from .brightness_manager import BrightnessManager
 from .roi_manager import ROIManager

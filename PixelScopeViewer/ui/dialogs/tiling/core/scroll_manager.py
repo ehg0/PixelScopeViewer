@@ -1,36 +1,30 @@
-"""Scroll synchronization for tiling comparison."""
+"""複数画像比較の scroll 同期。"""
 
 from PySide6.QtCore import QCoreApplication
 
 
 class ScrollManager:
-    """Manages scroll synchronization across tiles."""
+    """全 tile の scroll 位置を同期する。"""
 
     def __init__(self, tiles: list):
-        """Initialize scroll manager.
-
-        Args:
-            tiles: List of TileWidget instances
-        """
         self.tiles = tiles
         self._syncing_scroll = False
 
     def sync_scroll(self, source_index: int, direction: str, value: int, scale: float):
-        """Synchronize scrolls based on viewport-centered normalized position.
+        """source の tile の scroll 位置を他の tile に同期する。
 
-        Uses (value + pageStep/2) / (maximum + pageStep) to keep visible region aligned
-        across different content sizes and viewport dimensions.
+        画像や viewport のサイズが異なっても表示範囲が揃うよう、
+        viewport 中心の相対位置 (value + pageStep/2) / (maximum + pageStep) を合わせる。
 
         Args:
-            source_index: Index of the source tile
-            direction: 'h' for horizontal, 'v' for vertical
-            value: Scroll value from the source tile
-            scale: Current zoom scale
+            source_index: scroll した tile の index。
+            direction: 'h'（水平）または 'v'（垂直）。
+            value: source の scroll 値。
+            scale: 現在の zoom 倍率。
         """
         if self._syncing_scroll:
             return
 
-        # Get source scrollbar and compute normalized center ratio
         src_sb = (
             self.tiles[source_index].scroll_area.horizontalScrollBar()
             if direction == "h"
@@ -42,11 +36,9 @@ class ScrollManager:
         src_page = src_sb.pageStep()
         denom = src_max + src_page
         if denom <= 0:
-            # No scrollable range; do not force others
             return
-        # value comes from signal; ensure consistent with src_sb.value()
         src_val = value
-        # Center position ratio in [0,1]
+        # viewport 中心の相対位置 [0, 1]
         center_pos = src_val + (src_page / 2.0)
         ratio = max(0.0, min(1.0, center_pos / float(denom)))
 
@@ -67,36 +59,27 @@ class ScrollManager:
                     continue
                 tgt_center = ratio * float(tgt_denom)
                 tgt_val = int(round(tgt_center - (tgt_page / 2.0)))
-                # Clamp to valid range
                 if tgt_val < tgt_sb.minimum():
                     tgt_val = tgt_sb.minimum()
                 if tgt_val > tgt_sb.maximum():
                     tgt_val = tgt_sb.maximum()
 
-                # Skip if already at target value
                 if tgt_sb.value() == tgt_val:
                     continue
 
-                # Set value directly - _syncing_scroll flag prevents recursion
-                # Do NOT use blockSignals as it prevents viewport updates
+                # 再帰は _syncing_scroll で防ぐ（blockSignals を使うと viewport が更新されない）
                 tgt_sb.setValue(tgt_val)
 
-                # Force the scroll area to process the change immediately
+                # 変更を即座に反映させる
                 tile.scroll_area.update()
                 tile.scroll_area.viewport().update()
-                # Process pending events to ensure scroll takes effect
                 QCoreApplication.processEvents()
 
         finally:
             self._syncing_scroll = False
 
     def apply_scroll_position(self, new_scroll_x: float, new_scroll_y: float):
-        """Apply scroll position to all tiles.
-
-        Args:
-            new_scroll_x: New horizontal scroll position
-            new_scroll_y: New vertical scroll position
-        """
+        """全 tile の scroll 位置を設定する。"""
         self._syncing_scroll = True
         try:
             for tile in self.tiles:
@@ -113,15 +96,15 @@ class ScrollManager:
             self._syncing_scroll = False
 
     def scroll_by_key(self, active_tile_index: int, dx: int, dy: int):
-        """Scroll all tiles synchronously by arrow keys.
+        """矢印キーによる scroll を全 tile に適用する。
 
         Args:
-            active_tile_index: Index of the active tile
-            dx: Horizontal scroll delta (positive = right)
-            dy: Vertical scroll delta (positive = down)
+            active_tile_index: active な tile の index。
+            dx: 水平方向の移動量（正: 右）。
+            dy: 垂直方向の移動量（正: 下）。
 
         Returns:
-            True if scrolling was performed, False otherwise
+            scroll したか。
         """
         if not self.tiles or active_tile_index >= len(self.tiles):
             return False
@@ -129,7 +112,6 @@ class ScrollManager:
         active_tile = self.tiles[active_tile_index]
         scroll_area = active_tile.scroll_area
 
-        # Apply horizontal scroll
         if dx != 0:
             hsb = scroll_area.horizontalScrollBar()
             if hsb:
@@ -138,7 +120,6 @@ class ScrollManager:
                 hsb.setValue(new_val)
                 self.sync_scroll(active_tile_index, "h", new_val, 1.0)
 
-        # Apply vertical scroll
         if dy != 0:
             vsb = scroll_area.verticalScrollBar()
             if vsb:

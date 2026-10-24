@@ -1,4 +1,4 @@
-"""Image selection dialog for tiling comparison."""
+"""複数画像比較の画像と grid サイズの選択 dialog。"""
 
 from pathlib import Path
 
@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
 
 
 class DraggableListWidget(QListWidget):
-    """List widget with drag-and-drop reordering support."""
+    """drag & drop で項目を並べ替えられる QListWidget。"""
 
     def __init__(self):
         super().__init__()
@@ -28,15 +28,9 @@ class DraggableListWidget(QListWidget):
 
 
 class TileSelectionDialog(QDialog):
-    """Dialog for selecting images and grid size for tiling comparison."""
+    """比較する画像（表示順）と grid サイズを選択する dialog。"""
 
     def __init__(self, parent, image_list: list[dict]):
-        """Initialize selection dialog.
-
-        Args:
-            parent: Parent widget
-            image_list: List of image dictionaries from ImageViewer
-        """
         super().__init__(parent)
         self.setWindowTitle("複数画像比較 - 画像選択")
         self.resize(500, 600)
@@ -47,14 +41,12 @@ class TileSelectionDialog(QDialog):
 
         self._build_ui()
 
-        # Auto-select first 4 images by default
+        # grid に収まる枚数だけ先頭から選択しておく
         self._auto_select_default()
 
     def _build_ui(self):
-        """Build the user interface."""
         layout = QVBoxLayout(self)
 
-        # Grid size selection
         grid_layout = QHBoxLayout()
         grid_layout.addWidget(QLabel("グリッドサイズ (h, w):"))
 
@@ -68,25 +60,22 @@ class TileSelectionDialog(QDialog):
         self.grid_combo.addItem("2x4 (8枚)", (2, 4))
         self.grid_combo.addItem("3x2 (6枚)", (3, 2))
         self.grid_combo.addItem("3x3 (9枚)", (3, 3))
-        self.grid_combo.setCurrentIndex(8)  # Default to 3x3
+        self.grid_combo.setCurrentIndex(8)  # 3x3
         self.grid_combo.currentIndexChanged.connect(self._on_grid_changed)
 
         grid_layout.addWidget(self.grid_combo)
         grid_layout.addStretch()
         layout.addLayout(grid_layout)
 
-        # Image list
         label = QLabel("画像を選択 (ドラッグで並び替え):")
         layout.addWidget(label)
 
         self.image_list_widget = DraggableListWidget()
 
-        # Populate list
         for i, img_info in enumerate(self.image_list):
             path = img_info.get("path", f"Image {i + 1}")
             filename = Path(path).name if path else f"Image {i + 1}"
 
-            # Get dtype info
             arr = img_info.get("base_array", img_info.get("array"))
             dtype_str = f"({arr.dtype.name})" if arr is not None else ""
 
@@ -100,14 +89,12 @@ class TileSelectionDialog(QDialog):
 
         layout.addWidget(self.image_list_widget)
 
-        # Status label
         self.status_label = QLabel("最大4枚まで選択可能")
         layout.addWidget(self.status_label)
 
-        # Ensure internal state reflects default selection (after status_label exists)
+        # status_label の作成後に grid サイズを反映する
         self._on_grid_changed()
 
-        # Selection buttons
         btn_layout = QHBoxLayout()
 
         select_all_btn = QPushButton("すべて選択")
@@ -121,7 +108,6 @@ class TileSelectionDialog(QDialog):
         btn_layout.addStretch()
         layout.addLayout(btn_layout)
 
-        # Dialog buttons
         dialog_btn_layout = QHBoxLayout()
         dialog_btn_layout.addStretch()
 
@@ -137,13 +123,12 @@ class TileSelectionDialog(QDialog):
         layout.addLayout(dialog_btn_layout)
 
     def _on_grid_changed(self):
-        """Handle grid size change."""
         self.grid_size = self.grid_combo.currentData()
         max_tiles = self.grid_size[0] * self.grid_size[1]
         self.status_label.setText(f"最大{max_tiles}枚まで選択可能")
 
     def _select_all(self):
-        """Select all images (up to max)."""
+        """grid に収まる枚数まで先頭から選択する。"""
         max_tiles = self.grid_size[0] * self.grid_size[1]
 
         for i in range(self.image_list_widget.count()):
@@ -154,13 +139,12 @@ class TileSelectionDialog(QDialog):
                 item.setCheckState(Qt.Unchecked)
 
     def _deselect_all(self):
-        """Deselect all images."""
         for i in range(self.image_list_widget.count()):
             item = self.image_list_widget.item(i)
             item.setCheckState(Qt.Unchecked)
 
     def _auto_select_default(self):
-        """Auto-select first N images based on grid size."""
+        """grid に収まる枚数だけ先頭から選択する。"""
         max_tiles = self.grid_size[0] * self.grid_size[1]
         count = min(max_tiles, self.image_list_widget.count())
 
@@ -169,8 +153,7 @@ class TileSelectionDialog(QDialog):
             item.setCheckState(Qt.Checked)
 
     def _on_compare(self):
-        """Handle compare button click."""
-        # Collect selected indices in list order
+        """選択を検証し、選択した画像の index を list の表示順で保存して閉じる。"""
         selected = []
         for i in range(self.image_list_widget.count()):
             item = self.image_list_widget.item(i)
@@ -178,7 +161,6 @@ class TileSelectionDialog(QDialog):
                 original_idx = item.data(Qt.UserRole)
                 selected.append(original_idx)
 
-        # Validate selection
         max_tiles = self.grid_size[0] * self.grid_size[1]
 
         if len(selected) < 2:
@@ -197,11 +179,9 @@ class TileSelectionDialog(QDialog):
         self.accept()
 
     def get_selection(self) -> tuple[tuple[int, int], list[int]]:
-        """Get grid size and selected image indices.
+        """選択結果を返す。
 
         Returns:
-            Tuple of (grid_size, selected_indices)
-            grid_size: (rows, cols)
-            selected_indices: List of image indices in display order
+            ((行数, 列数), 表示順の画像 index のリスト)。
         """
         return (self.grid_size, self.selected_indices)

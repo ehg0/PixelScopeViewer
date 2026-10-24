@@ -1,4 +1,4 @@
-"""Image label for tile display with ROI support."""
+"""複数画像比較の tile の画像表示 label。"""
 
 import numpy as np
 from PySide6.QtCore import Qt, Signal
@@ -11,62 +11,45 @@ from PixelScopeViewer.ui.dialogs.display.core.compute import apply_brightness_ad
 
 
 class TileImageLabel(QLabel):
-    """Image label for displaying tiles with ROI support.
+    """brightness を適用した画像と ROI を表示する QLabel。ROI は active な tile でのみ編集できる。"""
 
-    This is a simplified version of ImageLabel for tiling comparison.
-    It displays images with brightness adjustment and ROI visualization,
-    but ROI editing is only enabled when the tile is active.
-    """
-
-    # Signals
-    roi_changed = Signal(object)  # Emits [x, y, w, h] or None
-    clicked = Signal()  # Emits on left click
-    zoom_requested = Signal(float, object)  # Emits (zoom factor, mouse_pos_or_none)
-    hover_info = Signal(int, int, str)  # Emits (ix, iy, valueText)
+    roi_changed = Signal(object)  # [x, y, w, h] または None
+    clicked = Signal()
+    zoom_requested = Signal(float, object)  # (倍率, マウス位置または None)
+    hover_info = Signal(int, int, str)  # (x, y, 値の文字列)
 
     def __init__(self):
-        """Initialize tile image label."""
         super().__init__()
 
         self.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         self.setMinimumSize(100, 100)
         self.setMouseTracking(True)
 
-        # Image data
         self.array = None
         self.qimage = None
-        self.original_qimage = None  # Store full resolution for ROI calculations
+        self.original_qimage = None  # ROI の計算に使う等倍の画像
         self.zoom_factor = 1.0
 
-        # Cache for brightness-adjusted image
+        # brightness 適用後の画像の cache
         self._cached_brightness_qimage = None
         self._cached_brightness_params = None
 
-        # Brightness parameters
         self.gain = 1.0
         self.offset = 0.0
         self.upper_level = 1.0
 
-        # ROI
-        self.roi_rect = None  # [x, y, w, h] in image coordinates
+        self.roi_rect = None  # 画像座標の [x, y, w, h]
         self.roi_editable = False
 
-        # Tracking
+        # drag 操作の状態
         self._drag_start = None
         self._original_roi = None
         self._roi_drag_mode = None  # 'create', 'move', 'resize', or None
         self._resize_edge = None  # 'left', 'right', 'top', 'bottom', 'tl', 'tr', 'bl', 'br'
-        self._edge_grab_distance = 8  # pixels from edge to trigger resize
+        self._edge_grab_distance = 8  # リサイズ判定に使う辺からの距離（pixel）
 
     def set_image(self, array: np.ndarray, gain: float, offset: float, upper_level: float):
-        """Set image data with brightness parameters.
-
-        Args:
-            array: Image array to display
-            gain: Brightness gain
-            offset: Brightness offset
-            upper_level: Upper_level value
-        """
+        """画像と brightness を設定して表示を更新する。"""
         self.array = array
         self.gain = gain
         self.offset = offset
@@ -75,23 +58,19 @@ class TileImageLabel(QLabel):
         self._update_display()
 
     def _update_display(self):
-        """Update displayed image with current brightness parameters."""
+        """brightness と zoom 倍率を適用して表示する。brightness が変わらなければ cache を使う。"""
         if self.array is None:
             self.clear()
             return
 
-        # Check if brightness parameters changed
         current_brightness_params = (self.gain, self.offset, self.upper_level)
         brightness_changed = self._cached_brightness_params != current_brightness_params
 
-        # Only recalculate brightness if parameters changed
         if brightness_changed or self._cached_brightness_qimage is None:
-            # Apply brightness adjustment to full array
             adjusted = apply_brightness_adjustment(
                 self.array, gain=self.gain, offset=self.offset, upper_level=self.upper_level
             )
 
-            # Convert to QImage (full resolution)
             self._cached_brightness_qimage = numpy_to_qimage(adjusted)
             self._cached_brightness_params = current_brightness_params
 
@@ -99,103 +78,78 @@ class TileImageLabel(QLabel):
                 self.clear()
                 return
 
-        # Use cached brightness-adjusted image
         self.original_qimage = self._cached_brightness_qimage
         self.qimage = self.original_qimage
 
-        # Calculate target display size
         target_w = max(1, int(self.original_qimage.width() * self.zoom_factor))
         target_h = max(1, int(self.original_qimage.height() * self.zoom_factor))
 
-        # Create pixmap without interpolation (FastTransformation = nearest neighbor)
-        # This preserves exact pixel values for accurate comparison
+        # 正確に比較できるよう nearest neighbor で拡大縮小し、pixel 値を保つ
         pixmap = QPixmap.fromImage(self.original_qimage)
         if self.zoom_factor != 1.0:
             pixmap = pixmap.scaled(target_w, target_h, Qt.IgnoreAspectRatio, Qt.FastTransformation)
 
         self.setPixmap(pixmap)
-        # Ensure scroll area can scroll
+        # scroll area で scroll できるようサイズを固定する
         self.setFixedSize(pixmap.size())
         self.update()
 
     def set_roi(self, roi_rect: list | None):
-        """Set ROI rectangle.
-
-        Args:
-            roi_rect: ROI rectangle [x, y, w, h] in image coordinates or None
-        """
+        """画像座標の ROI [x, y, w, h]（または None）を設定する。"""
         self.roi_rect = roi_rect
         self.update()
 
     def get_roi(self) -> list | None:
-        """Get current ROI rectangle.
-
-        Returns:
-            ROI rectangle [x, y, w, h] or None
-        """
         return self.roi_rect
 
     def clear_roi(self):
-        """Clear ROI."""
         self.roi_rect = None
         self.update()
 
     def set_roi_editable(self, editable: bool):
-        """Set whether ROI is editable.
-
-        Args:
-            editable: Whether ROI can be edited
-        """
         self.roi_editable = editable
 
     def paintEvent(self, event):
-        """Paint image and ROI overlay."""
         super().paintEvent(event)
 
         if self.roi_rect is None or self.qimage is None:
             return
 
-        # Draw ROI rectangle
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
 
-        # Convert ROI using current zoom (top-left aligned)
-        # Use integer truncation to align with pixel boundaries
+        # pixel の境界に揃うよう、切り捨てで表示座標に変換する
         scale = max(0.0001, float(self.zoom_factor))
         roi_x = int(self.roi_rect[0] * scale)
         roi_y = int(self.roi_rect[1] * scale)
         roi_w = int(self.roi_rect[2] * scale)
         roi_h = int(self.roi_rect[3] * scale)
 
-        # Draw ROI border: active=green (same as main viewer), inactive=gray
+        # active はメインビューアと同じ緑、非 active は灰色
         if self.roi_editable:
-            pen = QPen(QColor(51, 255, 102), 2, Qt.SolidLine)  # Green for active
+            pen = QPen(QColor(51, 255, 102), 2, Qt.SolidLine)
         else:
-            pen = QPen(QColor(170, 170, 170), 2, Qt.SolidLine)  # Gray for inactive
+            pen = QPen(QColor(170, 170, 170), 2, Qt.SolidLine)
 
         painter.setPen(pen)
         painter.drawRect(roi_x, roi_y, roi_w, roi_h)
 
     def mousePressEvent(self, event: QMouseEvent):
-        """Handle mouse press for ROI editing or activation."""
+        # 左: 辺・角ならリサイズ、それ以外は ROI 作成。右: ROI の内側なら移動
         if event.button() == Qt.LeftButton:
             self.clicked.emit()
             if self.roi_editable and self.qimage is not None:
-                # Check if clicking on edge/corner for resize
                 edge = self._get_resize_edge(event.pos())
                 if edge:
-                    # Start resizing
                     self._drag_start = event.pos()
                     self._original_roi = self.roi_rect.copy() if self.roi_rect else None
                     self._roi_drag_mode = "resize"
                     self._resize_edge = edge
                     return
                 else:
-                    # Start creating new ROI
                     self._drag_start = event.pos()
                     self._original_roi = self.roi_rect.copy() if self.roi_rect else None
                     self._roi_drag_mode = "create"
-                    # Start a new ROI at the clicked point
                     ix, iy = self._widget_to_image_coords(event.pos())
                     self.roi_rect = [ix, iy, 0, 0]
                     self.roi_changed.emit(self.roi_rect)
@@ -203,13 +157,11 @@ class TileImageLabel(QLabel):
                     return
         elif event.button() == Qt.RightButton:
             if self.roi_editable and self.roi_rect is not None and self.qimage is not None:
-                # Check if click is inside existing ROI (but not on edge)
                 edge = self._get_resize_edge(event.pos())
                 if not edge:
                     ix, iy = self._widget_to_image_coords(event.pos())
                     rx, ry, rw, rh = self.roi_rect
                     if rx <= ix < rx + rw and ry <= iy < ry + rh:
-                        # Start moving the ROI
                         self._drag_start = event.pos()
                         self._original_roi = self.roi_rect.copy()
                         self._roi_drag_mode = "move"
@@ -217,15 +169,13 @@ class TileImageLabel(QLabel):
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event: QMouseEvent):
-        """Handle mouse move for ROI editing (drag to create/resize or move)."""
-        # Update cursor when hovering over ROI edges (not dragging)
+        # ROI の辺に hover したら cursor を変える
         if self.roi_editable and self._drag_start is None and self.roi_rect is not None and self.qimage is not None:
             edge = self._get_resize_edge(event.pos())
             self._update_cursor_for_edge(edge)
 
         if self.roi_editable and self._drag_start is not None and self.qimage is not None:
             if self._roi_drag_mode == "create":
-                # Creating/resizing ROI
                 x0, y0 = self._widget_to_image_coords(self._drag_start)
                 x1, y1 = self._widget_to_image_coords(event.pos())
                 x = min(x0, x1)
@@ -237,15 +187,13 @@ class TileImageLabel(QLabel):
                 self.update()
                 return
             elif self._roi_drag_mode == "resize" and self._original_roi is not None:
-                # Resizing existing ROI
                 curr_ix, curr_iy = self._widget_to_image_coords(event.pos())
                 orig_x, orig_y, orig_w, orig_h = self._original_roi
                 edge = self._resize_edge
 
-                # Start with original rectangle
                 new_x, new_y, new_w, new_h = orig_x, orig_y, orig_w, orig_h
 
-                # Handle horizontal resize
+                # 水平方向（左右の辺と角）
                 if edge in ("left", "tl", "bl"):
                     new_x = max(0, min(curr_ix, orig_x + orig_w - 1))
                     new_w = orig_x + orig_w - new_x
@@ -253,7 +201,7 @@ class TileImageLabel(QLabel):
                     new_right = max(orig_x, min(curr_ix, self.qimage.width() - 1))
                     new_w = new_right - orig_x + 1
 
-                # Handle vertical resize
+                # 垂直方向（上下の辺と角）
                 if edge in ("top", "tl", "tr"):
                     new_y = max(0, min(curr_iy, orig_y + orig_h - 1))
                     new_h = orig_y + orig_h - new_y
@@ -261,7 +209,6 @@ class TileImageLabel(QLabel):
                     new_bottom = max(orig_y, min(curr_iy, self.qimage.height() - 1))
                     new_h = new_bottom - orig_y + 1
 
-                # Ensure minimum size
                 new_w = max(1, new_w)
                 new_h = max(1, new_h)
 
@@ -270,7 +217,6 @@ class TileImageLabel(QLabel):
                 self.update()
                 return
             elif self._roi_drag_mode == "move" and self._original_roi is not None:
-                # Moving existing ROI
                 start_ix, start_iy = self._widget_to_image_coords(self._drag_start)
                 curr_ix, curr_iy = self._widget_to_image_coords(event.pos())
                 dx = curr_ix - start_ix
@@ -285,7 +231,7 @@ class TileImageLabel(QLabel):
                 self.update()
                 return
 
-        # Hover info emit (always active when not dragging ROI)
+        # ROI の drag 中以外はマウス位置の値を通知する
         if self.qimage is not None and self.array is not None:
             ix, iy = self._widget_to_image_coords(event.pos())
             try:
@@ -296,7 +242,6 @@ class TileImageLabel(QLabel):
                     text = f"[{preview}{', …' if len(flat) > 4 else ''}]"
                 else:
                     text = str(val)
-                # Truncate overly long text
                 if len(text) > 60:
                     text = text[:57] + "…"
             except Exception:
@@ -306,16 +251,14 @@ class TileImageLabel(QLabel):
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event: QMouseEvent):
-        """Handle mouse release to finalize ROI."""
         if self.roi_editable and (event.button() == Qt.LeftButton or event.button() == Qt.RightButton):
-            # If creating ROI and size is 0, make it 1x1 pixel
+            # 作成した ROI のサイズが 0 の場合は 1x1 にする
             if self._roi_drag_mode == "create" and self.roi_rect is not None:
                 x, y, w, h = self.roi_rect
                 if w == 0:
                     w = 1
                 if h == 0:
                     h = 1
-                # Ensure within bounds
                 if self.qimage is not None:
                     w = min(w, self.qimage.width() - x)
                     h = min(h, self.qimage.height() - y)
@@ -331,24 +274,17 @@ class TileImageLabel(QLabel):
         super().mouseReleaseEvent(event)
 
     def set_zoom(self, factor: float):
-        """Set zoom factor.
-
-        Args:
-            factor: Zoom factor (currently not used in fit-to-tile mode)
-        """
         self.zoom_factor = max(MIN_ZOOM_SCALE, min(MAX_ZOOM_SCALE, float(factor)))
-        # Rebuild pixmap at new scale
         if self.qimage is not None:
             self._update_display()
 
     def fit_to_view(self):
-        """Fit image to view (default behavior)."""
-        # For scroll-based view, fit is a no-op here. Managed by parent.
+        # fit は親の dialog で行うため何もしない
         pass
 
-    # --- Utilities ---
+    # --- 座標変換など ---
     def _widget_to_image_coords(self, pos) -> tuple[int, int]:
-        """Convert widget position to image pixel coordinates with zoom clamping."""
+        """widget 座標を画像の範囲内の pixel 座標に変換する。"""
         if self.qimage is None:
             return (0, 0)
         scale = max(0.0001, float(self.zoom_factor))
@@ -359,18 +295,14 @@ class TileImageLabel(QLabel):
         return (ix, iy)
 
     def _get_resize_edge(self, pos) -> str | None:
-        """Determine which edge of the ROI is near the cursor.
-
-        Args:
-            pos: Cursor position in widget coordinates
+        """cursor 付近にある ROI の辺・角を返す。
 
         Returns:
-            Edge identifier: 'tl', 'tr', 'bl', 'br', 'left', 'right', 'top', 'bottom', or None
+            'tl', 'tr', 'bl', 'br', 'left', 'right', 'top', 'bottom' のいずれか。該当しない場合は None。
         """
         if not self.roi_rect or self.qimage is None:
             return None
 
-        # Convert ROI to widget coordinates
         scale = max(0.0001, float(self.zoom_factor))
         roi_x = int(self.roi_rect[0] * scale)
         roi_y = int(self.roi_rect[1] * scale)
@@ -383,22 +315,21 @@ class TileImageLabel(QLabel):
         px = pos.x()
         py = pos.y()
 
-        # For small ROIs, reduce grab distance
+        # 小さな ROI では判定距離を縮める
         min_dimension = min(roi_w, roi_h)
         if min_dimension < dist * 2:
             dist = max(1, min_dimension // 3)
 
-        # Check corners first
+        # 角を優先して判定する
         if abs(px - roi_x) <= dist and abs(py - roi_y) <= dist:
-            return "tl"  # top-left
+            return "tl"
         if abs(px - roi_right) <= dist and abs(py - roi_y) <= dist:
-            return "tr"  # top-right
+            return "tr"
         if abs(px - roi_x) <= dist and abs(py - roi_bottom) <= dist:
-            return "bl"  # bottom-left
+            return "bl"
         if abs(px - roi_right) <= dist and abs(py - roi_bottom) <= dist:
-            return "br"  # bottom-right
+            return "br"
 
-        # Check edges
         if abs(px - roi_x) <= dist and roi_y <= py <= roi_bottom:
             return "left"
         if abs(px - roi_right) <= dist and roi_y <= py <= roi_bottom:
@@ -411,11 +342,6 @@ class TileImageLabel(QLabel):
         return None
 
     def _update_cursor_for_edge(self, edge: str | None):
-        """Update cursor shape based on which edge is being hovered.
-
-        Args:
-            edge: Edge identifier from _get_resize_edge()
-        """
         if edge == "tl" or edge == "br":
             self.setCursor(Qt.SizeFDiagCursor)
         elif edge == "tr" or edge == "bl":
@@ -428,15 +354,14 @@ class TileImageLabel(QLabel):
             self.setCursor(Qt.ArrowCursor)
 
     def keyPressEvent(self, event: QKeyEvent):
-        """Arrow keys are handled by parent dialog for synchronized scrolling."""
-        # Arrow keys handled by parent for scroll sync; no ROI editing in tiling mode
+        # 矢印キーは scroll を同期するため親 dialog で処理する
         if event.key() in (Qt.Key_Left, Qt.Key_Right, Qt.Key_Up, Qt.Key_Down):
-            event.ignore()  # Let parent handle it
+            event.ignore()
             return
         super().keyPressEvent(event)
 
     def wheelEvent(self, event: QWheelEvent):
-        """Handle Ctrl+wheel for zoom; otherwise defer to default (scroll)."""
+        # Ctrl+wheel で zoom、それ以外は親の scroll area で scroll する
         if event.modifiers() & Qt.ControlModifier:
             dy = event.angleDelta().y()
             if dy == 0:
@@ -446,5 +371,4 @@ class TileImageLabel(QLabel):
             self.zoom_requested.emit(factor)
             event.accept()
             return
-        # Let parent scroll area handle scrolling
         event.ignore()

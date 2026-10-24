@@ -1,10 +1,10 @@
-"""Help dialog for tiling comparison shortcuts."""
+"""複数画像比較の keyboard shortcut のヘルプ dialog。"""
 
 from PySide6.QtWidgets import QDialog, QTextEdit, QVBoxLayout
 
 
 class TilingHelpDialog(QDialog):
-    """複数画像比較用ヘルプ / ショートカット一覧."""
+    """複数画像比較の keyboard shortcut の一覧を表示する dialog。"""
 
     def __init__(self, parent=None):
         super().__init__(parent)

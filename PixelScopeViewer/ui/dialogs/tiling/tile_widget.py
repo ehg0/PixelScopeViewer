@@ -1,4 +1,4 @@
-"""Tile widget for displaying individual images in tiling comparison."""
+"""複数画像比較の 1 枚分の tile widget。"""
 
 import contextlib
 from pathlib import Path
@@ -13,21 +13,19 @@ from .tile_image_label import TileImageLabel
 
 
 class TileWidget(QWidget):
-    """Widget for displaying a single tile with image and status."""
+    """ファイル名・pixel 値の表示欄と、scroll 可能な画像を持つ tile。
 
-    # Signals
-    activated = Signal(int)  # Emitted when tile is clicked (passes tile index)
-    roi_changed = Signal(object)  # Emitted when ROI changes (passes roi_rect as list or None)
-    mouse_coords_changed = Signal(object)  # Emitted when mouse coordinates change (passes (ix, iy) or None)
+    Args:
+        image_data: 画像の dict。
+        parent_dialog: 親の TilingComparisonDialog。
+        tile_index: grid 内の tile の index。
+    """
+
+    activated = Signal(int)  # click された tile の index
+    roi_changed = Signal(object)  # [x, y, w, h] または None
+    mouse_coords_changed = Signal(object)  # (x, y) または None
 
     def __init__(self, image_data: dict, parent_dialog, tile_index: int):
-        """Initialize tile widget.
-
-        Args:
-            image_data: Image data dictionary
-            parent_dialog: Parent TilingComparisonDialog
-            tile_index: Index of this tile in the grid
-        """
         super().__init__()
 
         self.image_data = image_data
@@ -38,12 +36,11 @@ class TileWidget(QWidget):
         self._build_ui()
 
     def _build_ui(self):
-        """Build the user interface."""
         layout = QVBoxLayout(self)
         layout.setContentsMargins(2, 2, 2, 2)
         layout.setSpacing(0)
 
-        # Frame for visual feedback
+        # active 状態を示す枠
         self.frame = QFrame()
         self.frame.setFrameShape(QFrame.Box)
         self.frame.setLineWidth(2)
@@ -53,7 +50,7 @@ class TileWidget(QWidget):
         frame_layout.setContentsMargins(0, 0, 0, 0)
         frame_layout.setSpacing(0)
 
-        # Status bar at top with filename (left) and pixel value (right)
+        # 上部の表示欄（左: ファイル名、右: pixel 値）
         status_widget = QWidget()
         status_widget.setMaximumHeight(30)
         status_widget.setStyleSheet(
@@ -67,7 +64,6 @@ class TileWidget(QWidget):
         status_layout.setContentsMargins(4, 4, 4, 4)
         status_layout.setSpacing(8)
 
-        # Filename label (left-aligned)
         self.filename_label = QLabel("")
         self.filename_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self.filename_label.setStyleSheet(
@@ -86,10 +82,9 @@ class TileWidget(QWidget):
         self.filename_label.setMinimumWidth(200)
         status_layout.addWidget(self.filename_label, 1)
 
-        # Pixel value label (right-aligned)
         self.pixel_value_label = QLabel("")
         self.pixel_value_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        self.pixel_value_label.setMinimumWidth(100)  # Reserve space for pixel values
+        self.pixel_value_label.setMinimumWidth(100)
         self.pixel_value_label.setStyleSheet(
             """
             QLabel {
@@ -104,20 +99,16 @@ class TileWidget(QWidget):
 
         frame_layout.addWidget(status_widget)
 
-        # Scroll area + Image label
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(False)
         self.scroll_area.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         self.image_label = TileImageLabel()
         self.image_label.roi_changed.connect(self._on_roi_changed)
-        # Activate on click inside image
         self.image_label.clicked.connect(lambda: self.activated.emit(self.tile_index))
-        # Ctrl+wheel zoom request from label
         self.image_label.zoom_requested.connect(self._on_zoom_requested)
-        # Connect hover info to display pixel value
         self.image_label.hover_info.connect(self._on_hover_info)
         self.scroll_area.setWidget(self.image_label)
-        # Catch wheel events from multiple surfaces to ensure sync
+        # 同期のため、どこで wheel が発生しても捕捉する
         self.image_label.installEventFilter(self)
         self.scroll_area.viewport().installEventFilter(self)
         self.scroll_area.installEventFilter(self)
@@ -125,48 +116,41 @@ class TileWidget(QWidget):
 
         layout.addWidget(self.frame)
 
-        # Make widget clickable
         self.setFocusPolicy(Qt.ClickFocus)
 
     def eventFilter(self, obj, event):
         if event.type() == QEvent.Wheel and (
             obj is self.scroll_area.viewport() or obj is self.scroll_area or obj is self.image_label
         ):
-            # Ctrl+wheel => zoom handled here
+            # Ctrl+wheel は zoom
             if event.modifiers() & Qt.ControlModifier:
                 dy = event.pixelDelta().y() if not event.pixelDelta().isNull() else event.angleDelta().y()
                 if dy != 0:
                     factor = 2.0 if dy > 0 else 0.5
-                    # Get mouse position in viewport coordinates
-                    # Event position is relative to the object that received it, so convert to viewport coords
+                    # event の座標は受け取った object 基準なので viewport 座標に変換する
                     event_pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
                     if obj is self.scroll_area.viewport():
                         mouse_pos = event_pos
                     elif obj is self.image_label:
-                        # Convert from image_label coordinates to viewport coordinates
                         mouse_pos = self.image_label.mapTo(self.scroll_area.viewport(), event_pos)
                     elif obj is self.scroll_area:
-                        # Convert from scroll_area coordinates to viewport coordinates
                         mouse_pos = self.scroll_area.mapTo(self.scroll_area.viewport(), event_pos)
                     else:
                         mouse_pos = event_pos
                     self._on_zoom_requested(factor, mouse_pos)
                     return True
-            # No Ctrl => allow default scrolling, then trigger sync manually
+            # Ctrl なしは通常の scroll を行い、その後で他の tile に同期する
             vsb = self.scroll_area.verticalScrollBar()
             hsb = self.scroll_area.horizontalScrollBar()
 
-            # Store current scroll positions before event
             old_v = vsb.value() if vsb else 0
             old_h = hsb.value() if hsb else 0
 
-            # Let the event propagate to trigger actual scrolling
-            # Don't accept it here, so it reaches the scroll area
-            result = False  # Let event continue to be processed
+            # scroll area に event を届けるため、ここでは処理済みにしない
+            result = False
 
-            # Use a timer to check after the event has been fully processed
+            # event の処理後に、実際に scroll した場合のみ同期する
             def check_and_sync():
-                # After wheel scroll, manually trigger sync ONLY if scrollbar actually moved
                 if vsb and vsb.value() != old_v:
                     with contextlib.suppress(Exception):
                         self.parent_dialog.sync_scroll(self.tile_index, "v", vsb.value())
@@ -179,32 +163,25 @@ class TileWidget(QWidget):
         return super().eventFilter(obj, event)
 
     def _on_zoom_requested(self, factor: float, mouse_pos=None):
-        # Delegate to parent dialog to keep all tiles in sync
+        # 全 tile を同期させるため親 dialog で zoom する
         with contextlib.suppress(Exception):
             self.parent_dialog.adjust_zoom(factor, tile_index=self.tile_index, mouse_pos=mouse_pos)
 
     def mousePressEvent(self, event):
-        """Handle mouse press to activate tile."""
         if event.button() == Qt.LeftButton:
             self.activated.emit(self.tile_index)
         super().mousePressEvent(event)
 
     def set_active(self, active: bool):
-        """Set active state of the tile.
-
-        Args:
-            active: Whether this tile is active
-        """
+        """active 状態を設定する。active な tile のみ ROI を編集できる。"""
         self.is_active = active
         self._update_frame_style()
 
-        # Enable/disable ROI editing
         self.image_label.set_roi_editable(active)
 
     def _update_frame_style(self):
-        """Update frame style based on active state."""
         if self.is_active:
-            # Active tile: blue border
+            # active は青、非 active は灰色の枠
             self.frame.setStyleSheet(
                 """
                 QFrame {
@@ -214,7 +191,6 @@ class TileWidget(QWidget):
             """
             )
         else:
-            # Inactive tile: gray border
             self.frame.setStyleSheet(
                 """
                 QFrame {
@@ -225,76 +201,47 @@ class TileWidget(QWidget):
             )
 
     def _on_roi_changed(self, roi_rect):
-        """Handle ROI change from image label."""
         self.roi_changed.emit(roi_rect)
 
     def _on_hover_info(self, ix: int, iy: int, value_text: str):
-        """Handle hover info from image label and notify parent dialog.
-
-        Args:
-            ix: Image x coordinate
-            iy: Image y coordinate
-            value_text: Formatted pixel value text (not used, parent handles display)
-        """
-        # Only notify parent dialog of coordinates, let parent update all tiles
+        # 座標のみ通知し、全 tile の pixel 値の表示は親 dialog で更新する
         if value_text:
             self.mouse_coords_changed.emit((ix, iy))
         else:
             self.mouse_coords_changed.emit(None)
 
     def set_image(self, array: np.ndarray, gain: float, offset: float, upper_level: float):
-        """Set image data with brightness parameters.
-
-        Args:
-            array: Image array to display
-            gain: Brightness gain
-            offset: Brightness offset
-            upper_level: Upper_level value
-        """
         self.image_label.set_image(array, gain, offset, upper_level)
 
     def set_image_data(self, image_data: dict):
-        """Set new image data for this tile.
-
-        Args:
-            image_data: Image data dictionary
-        """
         self.image_data = image_data
         self.update_display()
 
     def update_display(self):
-        """Update display with current brightness parameters."""
+        """親 dialog の brightness を適用して画像とファイル名を表示する。"""
         arr = self.image_data.get("base_array")
         if arr is None:
             return
 
-        # Get brightness parameters from parent dialog's brightness manager
         if hasattr(self.parent_dialog, "brightness_manager") and self.parent_dialog.brightness_manager:
             brightness_params = self.parent_dialog.brightness_manager.get_brightness_params()
             dtype_group = self.parent_dialog.tile_manager.get_tile_dtype_groups()[self.tile_index]
             params = brightness_params["params_by_dtype"][dtype_group]
             gain = brightness_params["gain"]
         else:
-            # Fallback to default values
             params = {"offset": 0, "upper_level": 255}
             gain = 1.0
 
         self.image_label.set_image(arr, gain, params["offset"], params["upper_level"])
 
-        # Update filename display with tile number
         path = self.image_data.get("path", f"Image {self.tile_index + 1}")
         filename = Path(path).name if path else f"Image {self.tile_index + 1}"
-        # Add tile number to the display (1-indexed)
         display_text = f"Tile {self.tile_index + 1}: {filename}"
         self.filename_label.setText(display_text)
         self.filename_label.setToolTip(display_text)
 
     def get_displayed_array(self) -> np.ndarray:
-        """Get currently displayed array.
-
-        Returns:
-            Image array
-        """
+        """brightness を適用した表示用の配列を返す。"""
         arr = self.image_data.get("base_array")
         if hasattr(self.parent_dialog, "brightness_manager") and self.parent_dialog.brightness_manager:
             brightness_params = self.parent_dialog.brightness_manager.get_brightness_params()
@@ -302,7 +249,6 @@ class TileWidget(QWidget):
             params = brightness_params["params_by_dtype"][dtype_group]
             gain = brightness_params["gain"]
         else:
-            # Fallback to default values
             params = {"offset": 0, "upper_level": 255}
             gain = 1.0
 
@@ -312,70 +258,36 @@ class TileWidget(QWidget):
         return adjusted
 
     def get_base_array(self) -> np.ndarray:
-        """Get currently displayed array.
-
-        Returns:
-            Image array
-        """
+        """brightness 適用前の配列を返す。"""
         return self.image_data.get("base_array")
 
     def update_status(self, text: str):
-        """Update pixel value display.
-
-        Args:
-            text: Pixel value text to display
-        """
+        """pixel 値の表示を更新する。"""
         self.pixel_value_label.setText(text)
 
     def set_roi(self, roi_rect: list | None):
-        """Set ROI rectangle.
-
-        Args:
-            roi_rect: ROI rectangle [x, y, w, h] or None
-        """
         self.image_label.set_roi(roi_rect)
 
     def set_roi_from_image_coords(self, roi_rect, is_active: bool):
-        """Set ROI from QRect in image coordinates.
-
-        Args:
-            roi_rect: QRect in image coordinates or None
-            is_active: Whether this tile is active
-        """
+        """画像座標の QRect（または None）を ROI に設定する。"""
         if roi_rect and not roi_rect.isEmpty():
             self.image_label.set_roi([roi_rect.x(), roi_rect.y(), roi_rect.width(), roi_rect.height()])
         else:
             self.image_label.set_roi(None)
 
     def get_roi(self) -> list | None:
-        """Get current ROI rectangle.
-
-        Returns:
-            ROI rectangle [x, y, w, h] or None
-        """
         return self.image_label.get_roi()
 
     def clear_roi(self):
-        """Clear ROI."""
         self.image_label.clear_roi()
 
     def select_all_roi(self, array_shape: tuple):
-        """Select entire image as ROI.
-
-        Args:
-            array_shape: Shape of the image array (H, W) or (H, W, C)
-        """
+        """画像全体を ROI にする。"""
         h, w = array_shape[:2]
         self.image_label.set_roi([0, 0, w, h])
 
     def set_zoom(self, factor: float):
-        """Set zoom factor.
-
-        Args:
-            factor: Zoom factor
-        """
         self.image_label.set_zoom(factor)
 
     def fit_to_view(self):
-        """Fit image to view."""
         self.image_label.fit_to_view()

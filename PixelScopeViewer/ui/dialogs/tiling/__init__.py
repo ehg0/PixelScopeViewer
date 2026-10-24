@@ -1,8 +1,4 @@
-"""Tiling comparison dialog for multi-image comparison.
-
-This package provides dialogs for displaying multiple images in a grid
-layout for side-by-side comparison.
-"""
+"""複数画像を grid に並べて比較する dialog。"""
 
 from .dialog import TilingComparisonDialog
 from .selection_dialog import TileSelectionDialog

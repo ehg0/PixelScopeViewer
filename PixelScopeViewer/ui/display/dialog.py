@@ -1,21 +1,19 @@
 """表示設定 dialog（brightness と channel の色・表示 ON/OFF）。"""
 
-import contextlib
-
-from PySide6.QtCore import QEvent, Qt, Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QAbstractSpinBox,
-    QDialog,
     QTabWidget,
     QVBoxLayout,
 )
 
 from PixelScopeViewer.ui.common import defaults, theme
 from PixelScopeViewer.ui.common.channel_display import MODE_1CH_GRAYSCALE, MODE_2CH_FLOW_HSV
+from PixelScopeViewer.ui.common.window import ToolDialog
 from PixelScopeViewer.ui.display.tabs import BrightnessTab, ChannelTab
 
 
-class BrightnessDialog(QDialog):
+class BrightnessDialog(ToolDialog):
     """brightness と channel の色・表示 ON/OFF を設定する modeless dialog。
 
     Args:
@@ -29,16 +27,14 @@ class BrightnessDialog(QDialog):
         initial_mode_2ch: 2ch 画像の表示モード。
     """
 
+    window_key = "display"
+    remember_geometry = True
+
     brightness_changed = Signal(float, float, float)  # offset, gain, upper_level
     channels_changed = Signal(list)  # channel ごとの表示 ON/OFF
     channel_colors_changed = Signal(list)  # channel ごとの QColor
     mode_1ch_changed = Signal(str)
     mode_2ch_changed = Signal(str)
-
-    # 開き直したときに位置が変わらないよう geometry を class で保持する
-    _saved_geometry = None
-    # 最小化からの復元時に元の位置へ戻すため保持する
-    _position_before_minimize = None
 
     def __init__(
         self,
@@ -56,11 +52,6 @@ class BrightnessDialog(QDialog):
         self.setWindowTitle("表示設定")
         self.resize(*defaults.DISPLAY_DIALOG_SIZE)
         self.setStyleSheet(f"QDialog {{ background-color: {theme.DIALOG_BACKGROUND}; }}")
-
-        # 最小化を許可し、最前面に固定しない
-        flags = Qt.Window | Qt.WindowMinimizeButtonHint | Qt.WindowCloseButtonHint
-        self.setWindowFlags(flags)
-        self.setAttribute(Qt.WA_DeleteOnClose)
 
         self.image_array = image_array
         self.image_path = image_path
@@ -94,16 +85,11 @@ class BrightnessDialog(QDialog):
         layout.addWidget(self.tabs)
 
         # 前回の geometry を復元する
-        try:
-            if BrightnessDialog._saved_geometry:
-                self.restoreGeometry(BrightnessDialog._saved_geometry)
-        except Exception:
-            pass
+        self.restore_geometry()
 
         if initial_brightness:
             self.set_brightness(*initial_brightness)
-            with contextlib.suppress(Exception):
-                self.channel_tab.on_brightness_for_colorbar(*initial_brightness)
+            self.channel_tab.on_brightness_for_colorbar(*initial_brightness)
         if initial_channels:
             self.set_channels(initial_channels)
         if initial_colors:
@@ -115,19 +101,11 @@ class BrightnessDialog(QDialog):
         self.brightness_tab.upper_level_spinbox.setValue(upper_level)
 
     def set_gain(self, gain_value: float):
-        try:
-            if hasattr(self, "brightness_tab") and hasattr(self.brightness_tab, "set_gain"):
-                self.brightness_tab.set_gain(gain_value)
-        except Exception:
-            pass
+        self.brightness_tab.set_gain(gain_value)
 
     def reset_parameters(self):
         """brightness を初期値に戻し、brightness_changed を emit する。"""
-        try:
-            if hasattr(self, "brightness_tab") and hasattr(self.brightness_tab, "reset_parameters"):
-                self.brightness_tab.reset_parameters()
-        except Exception:
-            pass
+        self.brightness_tab.reset_parameters()
 
     def set_channels(self, channels):
         self.channel_tab.set_channel_states(channels)
@@ -158,25 +136,6 @@ class BrightnessDialog(QDialog):
         if initial_mode_2ch is not None:
             self.channel_tab._mode2 = initial_mode_2ch
         self.channel_tab.update_for_new_image(image_array, channel_checks, channel_colors)
-
-    def changeEvent(self, event):
-        # 最小化前の位置を保存し、復元時に戻す
-        if event.type() == QEvent.WindowStateChange:
-            if self.isMinimized():
-                BrightnessDialog._position_before_minimize = self.pos()
-            elif event.oldState() & Qt.WindowMinimized and BrightnessDialog._position_before_minimize is not None:
-                self.move(BrightnessDialog._position_before_minimize)
-        super().changeEvent(event)
-
-    def moveEvent(self, event):
-        with contextlib.suppress(Exception):
-            BrightnessDialog._saved_geometry = self.saveGeometry()
-        super().moveEvent(event)
-
-    def resizeEvent(self, event):
-        with contextlib.suppress(Exception):
-            BrightnessDialog._saved_geometry = self.saveGeometry()
-        super().resizeEvent(event)
 
     def keyPressEvent(self, event):
         # Esc で dialog を閉じず、spin box の focus を外すだけにする

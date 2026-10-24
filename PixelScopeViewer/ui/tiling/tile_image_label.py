@@ -7,8 +7,20 @@ from PySide6.QtWidgets import QLabel
 
 from PixelScopeViewer.core.brightness import apply_brightness_adjustment
 from PixelScopeViewer.core.constants import MAX_ZOOM_SCALE, MIN_ZOOM_SCALE, ZOOM_STEP
+from PixelScopeViewer.core.roi import hit_test_edge, move_rect, rect_from_points, resize_rect
 from PixelScopeViewer.ui.common import theme
 from PixelScopeViewer.ui.common.qt_image import numpy_to_qimage
+from PixelScopeViewer.ui.common.widgets import edge_cursor
+
+
+def format_pixel_value(val, max_len: int, fmt=str) -> str:
+    """pixel 値を表示用の文字列にする。多 channel は先頭 4 つを [a, b, ...] で示し、max_len を超えたら省略する。"""
+    if np.ndim(val) > 0:
+        flat = np.ravel(val).tolist()
+        text = f"[{', '.join(fmt(x) for x in flat[:4])}{', …' if len(flat) > 4 else ''}]"
+    else:
+        text = fmt(val)
+    return text if len(text) <= max_len else text[: max_len - 3] + "…"
 
 
 class TileImageLabel(QLabel):
@@ -47,7 +59,6 @@ class TileImageLabel(QLabel):
         self._original_roi = None
         self._roi_drag_mode = None  # 'create', 'move', 'resize', or None
         self._resize_edge = None  # 'left', 'right', 'top', 'bottom', 'tl', 'tr', 'bl', 'br'
-        self._edge_grab_distance = 8  # リサイズ判定に使う辺からの距離（pixel）
 
     def set_image(self, array: np.ndarray, gain: float, offset: float, upper_level: float):
         """画像と brightness を設定して表示を更新する。"""
@@ -148,8 +159,8 @@ class TileImageLabel(QLabel):
                     self._drag_start = event.pos()
                     self._original_roi = self.roi_rect.copy() if self.roi_rect else None
                     self._roi_drag_mode = "create"
-                    ix, iy = self._widget_to_image_coords(event.pos())
-                    self.roi_rect = [ix, iy, 0, 0]
+                    p = self._widget_to_image_coords(event.pos())
+                    self.roi_rect = list(rect_from_points(p, p))
                     self.roi_changed.emit(self.roi_rect)
                     self.update()
                     return
@@ -170,61 +181,23 @@ class TileImageLabel(QLabel):
         # ROI の辺に hover したら cursor を変える
         if self.roi_editable and self._drag_start is None and self.roi_rect is not None and self.qimage is not None:
             edge = self._get_resize_edge(event.pos())
-            self._update_cursor_for_edge(edge)
+            self.setCursor(edge_cursor(edge))
 
         if self.roi_editable and self._drag_start is not None and self.qimage is not None:
+            cur = self._widget_to_image_coords(event.pos())
+            img_w, img_h = self.qimage.width(), self.qimage.height()
             if self._roi_drag_mode == "create":
-                x0, y0 = self._widget_to_image_coords(self._drag_start)
-                x1, y1 = self._widget_to_image_coords(event.pos())
-                x = min(x0, x1)
-                y = min(y0, y1)
-                w = abs(x1 - x0)
-                h = abs(y1 - y0)
-                self.roi_rect = [x, y, w, h]
-                self.roi_changed.emit(self.roi_rect)
-                self.update()
-                return
+                new_rect = rect_from_points(self._widget_to_image_coords(self._drag_start), cur)
             elif self._roi_drag_mode == "resize" and self._original_roi is not None:
-                curr_ix, curr_iy = self._widget_to_image_coords(event.pos())
-                orig_x, orig_y, orig_w, orig_h = self._original_roi
-                edge = self._resize_edge
-
-                new_x, new_y, new_w, new_h = orig_x, orig_y, orig_w, orig_h
-
-                # 水平方向（左右の辺と角）
-                if edge in ("left", "tl", "bl"):
-                    new_x = max(0, min(curr_ix, orig_x + orig_w - 1))
-                    new_w = orig_x + orig_w - new_x
-                elif edge in ("right", "tr", "br"):
-                    new_right = max(orig_x, min(curr_ix, self.qimage.width() - 1))
-                    new_w = new_right - orig_x + 1
-
-                # 垂直方向（上下の辺と角）
-                if edge in ("top", "tl", "tr"):
-                    new_y = max(0, min(curr_iy, orig_y + orig_h - 1))
-                    new_h = orig_y + orig_h - new_y
-                elif edge in ("bottom", "bl", "br"):
-                    new_bottom = max(orig_y, min(curr_iy, self.qimage.height() - 1))
-                    new_h = new_bottom - orig_y + 1
-
-                new_w = max(1, new_w)
-                new_h = max(1, new_h)
-
-                self.roi_rect = [new_x, new_y, new_w, new_h]
-                self.roi_changed.emit(self.roi_rect)
-                self.update()
-                return
+                new_rect = resize_rect(tuple(self._original_roi), self._resize_edge, *cur, img_w, img_h)
             elif self._roi_drag_mode == "move" and self._original_roi is not None:
-                start_ix, start_iy = self._widget_to_image_coords(self._drag_start)
-                curr_ix, curr_iy = self._widget_to_image_coords(event.pos())
-                dx = curr_ix - start_ix
-                dy = curr_iy - start_iy
-
-                orig_x, orig_y, orig_w, orig_h = self._original_roi
-                new_x = max(0, min(self.qimage.width() - orig_w, orig_x + dx))
-                new_y = max(0, min(self.qimage.height() - orig_h, orig_y + dy))
-
-                self.roi_rect = [new_x, new_y, orig_w, orig_h]
+                start = self._widget_to_image_coords(self._drag_start)
+                dx, dy = cur[0] - start[0], cur[1] - start[1]
+                new_rect = move_rect(tuple(self._original_roi), dx, dy, img_w, img_h)
+            else:
+                new_rect = None
+            if new_rect is not None:
+                self.roi_rect = list(new_rect)
                 self.roi_changed.emit(self.roi_rect)
                 self.update()
                 return
@@ -232,35 +205,15 @@ class TileImageLabel(QLabel):
         # ROI の drag 中以外はマウス位置の値を通知する
         if self.qimage is not None and self.array is not None:
             ix, iy = self._widget_to_image_coords(event.pos())
-            try:
-                val = self.array[iy, ix]
-                if isinstance(val, np.ndarray) or (hasattr(val, "shape") and len(getattr(val, "shape", ())) > 0):
-                    flat = np.array(val).ravel().tolist()
-                    preview = ", ".join(str(x) for x in flat[:4])
-                    text = f"[{preview}{', …' if len(flat) > 4 else ''}]"
-                else:
-                    text = str(val)
-                if len(text) > 60:
-                    text = text[:57] + "…"
-            except Exception:
-                text = ""
+            h, w = self.array.shape[:2]
+            text = format_pixel_value(self.array[iy, ix], 60) if 0 <= iy < h and 0 <= ix < w else ""
             self.hover_info.emit(int(ix), int(iy), text)
 
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event: QMouseEvent):
         if self.roi_editable and (event.button() == Qt.LeftButton or event.button() == Qt.RightButton):
-            # 作成した ROI のサイズが 0 の場合は 1x1 にする
             if self._roi_drag_mode == "create" and self.roi_rect is not None:
-                x, y, w, h = self.roi_rect
-                if w == 0:
-                    w = 1
-                if h == 0:
-                    h = 1
-                if self.qimage is not None:
-                    w = min(w, self.qimage.width() - x)
-                    h = min(h, self.qimage.height() - y)
-                self.roi_rect = [x, y, w, h]
                 self.roi_changed.emit(self.roi_rect)
 
             self._drag_start = None
@@ -289,63 +242,13 @@ class TileImageLabel(QLabel):
         return (ix, iy)
 
     def _get_resize_edge(self, pos) -> str | None:
-        """cursor 付近にある ROI の辺・角を返す。
-
-        Returns:
-            'tl', 'tr', 'bl', 'br', 'left', 'right', 'top', 'bottom' のいずれか。該当しない場合は None。
-        """
+        """cursor 付近にある ROI の辺・角を返す。"""
         if not self.roi_rect or self.qimage is None:
             return None
-
+        # pixel の境界に揃うよう、切り捨てで表示座標に変換する（paintEvent と同じ）
         scale = max(0.0001, float(self.zoom_factor))
-        roi_x = int(self.roi_rect[0] * scale)
-        roi_y = int(self.roi_rect[1] * scale)
-        roi_w = int(self.roi_rect[2] * scale)
-        roi_h = int(self.roi_rect[3] * scale)
-        roi_right = roi_x + roi_w
-        roi_bottom = roi_y + roi_h
-
-        dist = self._edge_grab_distance
-        px = pos.x()
-        py = pos.y()
-
-        # 小さな ROI では判定距離を縮める
-        min_dimension = min(roi_w, roi_h)
-        if min_dimension < dist * 2:
-            dist = max(1, min_dimension // 3)
-
-        # 角を優先して判定する
-        if abs(px - roi_x) <= dist and abs(py - roi_y) <= dist:
-            return "tl"
-        if abs(px - roi_right) <= dist and abs(py - roi_y) <= dist:
-            return "tr"
-        if abs(px - roi_x) <= dist and abs(py - roi_bottom) <= dist:
-            return "bl"
-        if abs(px - roi_right) <= dist and abs(py - roi_bottom) <= dist:
-            return "br"
-
-        if abs(px - roi_x) <= dist and roi_y <= py <= roi_bottom:
-            return "left"
-        if abs(px - roi_right) <= dist and roi_y <= py <= roi_bottom:
-            return "right"
-        if abs(py - roi_y) <= dist and roi_x <= px <= roi_right:
-            return "top"
-        if abs(py - roi_bottom) <= dist and roi_x <= px <= roi_right:
-            return "bottom"
-
-        return None
-
-    def _update_cursor_for_edge(self, edge: str | None):
-        if edge == "tl" or edge == "br":
-            self.setCursor(Qt.SizeFDiagCursor)
-        elif edge == "tr" or edge == "bl":
-            self.setCursor(Qt.SizeBDiagCursor)
-        elif edge == "left" or edge == "right":
-            self.setCursor(Qt.SizeHorCursor)
-        elif edge == "top" or edge == "bottom":
-            self.setCursor(Qt.SizeVerCursor)
-        else:
-            self.setCursor(Qt.ArrowCursor)
+        rect = tuple(int(v * scale) for v in self.roi_rect)
+        return hit_test_edge(pos.x(), pos.y(), rect, inclusive=False)
 
     def keyPressEvent(self, event: QKeyEvent):
         # 矢印キーは scroll を同期するため親 dialog で処理する

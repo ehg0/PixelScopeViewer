@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import contextlib
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QModelIndex, Qt, QTimer
+from PySide6.QtCore import QModelIndex, Qt, QTimer
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -35,27 +34,23 @@ from PixelScopeViewer.ui.annotations.widgets import (
     PlainTextDelegate,
     SimpleDictTableModel,
 )
+from PixelScopeViewer.ui.annotations.widgets.tables import resolve_path
 from PixelScopeViewer.ui.common import defaults
+from PixelScopeViewer.ui.common.window import ToolDialog
 
 
-class AnnotationsDialog(QDialog):
+class AnnotationsDialog(ToolDialog):
     """特徴量ファイルの images・categories・annotations を表示し、images を編集・保存する dialog。
 
     images の行を double click（または Enter）すると、対応する画像を viewer で表示する。
     """
 
-    # 最小化からの復元時に元の位置へ戻すため保持する
-    _position_before_minimize = None
+    window_key = "annotations"
 
     def __init__(self, viewer, manager: AnnotationStore):
         super().__init__(viewer)
         self.viewer = viewer
         self.manager = manager
-
-        # 最小化を許可し、最前面に固定しない
-        flags = Qt.Window | Qt.WindowMinimizeButtonHint | Qt.WindowCloseButtonHint
-        self.setWindowFlags(flags)
-        self.setAttribute(Qt.WA_DeleteOnClose)
 
         # 最後に読み込んだファイルを title に表示する
         title = "特徴量表示"
@@ -103,8 +98,7 @@ class AnnotationsDialog(QDialog):
         self.proxy_images.setSourceModel(self.model_images)
         self.proxy_images.setFilterCaseSensitivity(Qt.CaseInsensitive)
         # 大きなデータでは重いため、データ変更のたびに sort/filter し直さない
-        with contextlib.suppress(Exception):
-            self.proxy_images.setDynamicSortFilter(False)
+        self.proxy_images.setDynamicSortFilter(False)
         self.table_images = QTableView(self)
         self.table_images.setModel(self.proxy_images)
         self.table_images.setSortingEnabled(True)
@@ -112,12 +106,9 @@ class AnnotationsDialog(QDialog):
         self.table_images.setSelectionBehavior(QTableView.SelectRows)
         self.table_images.setAlternatingRowColors(True)
         # 大きな table の描画を軽くする設定
-        try:
-            self.table_images.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
-            self.table_images.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
-            self.table_images.setWordWrap(False)
-        except Exception:
-            pass
+        self.table_images.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
+        self.table_images.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
+        self.table_images.setWordWrap(False)
         # 数値の列でも spin box を使わない
         self.table_images.setItemDelegate(PlainTextDelegate(self.table_images))
         self.table_images.verticalHeader().setVisible(False)
@@ -202,20 +193,17 @@ class AnnotationsDialog(QDialog):
         if img_cols:
             img_key_col = img_cols.index("id") if "id" in img_cols else 0
             self.table_images.sortByColumn(img_key_col, Qt.AscendingOrder)
-            with contextlib.suppress(Exception):
-                self.table_images.horizontalHeader().setSortIndicator(img_key_col, Qt.AscendingOrder)
+            self.table_images.horizontalHeader().setSortIndicator(img_key_col, Qt.AscendingOrder)
         cat_cols = self.manager.get_categories_columns() or []
         if cat_cols:
             cat_key_col = cat_cols.index("id") if "id" in cat_cols else 0
             self.table_categories.sortByColumn(cat_key_col, Qt.AscendingOrder)
-            with contextlib.suppress(Exception):
-                self.table_categories.horizontalHeader().setSortIndicator(cat_key_col, Qt.AscendingOrder)
+            self.table_categories.horizontalHeader().setSortIndicator(cat_key_col, Qt.AscendingOrder)
         ann_cols = self.model_annotations.get_columns()
         if ann_cols:
             ann_key_col = ann_cols.index("image_id") if "image_id" in ann_cols else 0
             self.table_annotations.sortByColumn(ann_key_col, Qt.AscendingOrder)
-            with contextlib.suppress(Exception):
-                self.table_annotations.horizontalHeader().setSortIndicator(ann_key_col, Qt.AscendingOrder)
+            self.table_annotations.horizontalHeader().setSortIndicator(ann_key_col, Qt.AscendingOrder)
 
     def refresh_filter_columns(self):
         cols = self._current_columns()
@@ -233,8 +221,7 @@ class AnnotationsDialog(QDialog):
             self.model_images.dataChanged.emit(tl, br, [Qt.DisplayRole, Qt.BackgroundRole, Qt.ForegroundRole])
 
     def _on_viewer_images_changed(self):
-        with contextlib.suppress(Exception):
-            self.proxy_images.invalidateFilter()
+        self.proxy_images.invalidateFilter()
         self.refresh_roles()
 
     def _on_loaded_only_toggled(self, checked: bool):
@@ -337,7 +324,7 @@ class AnnotationsDialog(QDialog):
                 path_json = str(Path(path).with_suffix(".json"))
                 self.manager.save_to_json(path_json)
             QMessageBox.information(self, "保存", "保存しました。")
-        except Exception as e:
+        except Exception as e:  # 書き込み先・polars の失敗は様々なため、まとめて知らせる
             QMessageBox.critical(self, "保存エラー", str(e))
 
     def _on_filter_changed(self, text: str):
@@ -378,13 +365,11 @@ class AnnotationsDialog(QDialog):
             QMessageBox.information(self, "画像を開く", "ファイルが存在しません。")
             return
         match_idx = None
-        try:
-            for i, info in enumerate(self.viewer.images):
-                if Path(info.get("path", "")).resolve() == p.resolve():
-                    match_idx = i
-                    break
-        except Exception:
-            match_idx = None
+        target = resolve_path(p)
+        for i, info in enumerate(self.viewer.images):
+            if resolve_path(info.get("path", "")) == target:
+                match_idx = i
+                break
 
         if match_idx is not None:
             self.viewer.state.current_index = match_idx
@@ -393,11 +378,9 @@ class AnnotationsDialog(QDialog):
 
         if not self.chk_load_unloaded.isChecked():
             return
-        try:
-            n = self.viewer._add_images([str(p)])
-            self.viewer._finalize_image_addition(n)
-        except Exception as e:
-            QMessageBox.critical(self, "画像を開く", f"読み込みに失敗しました:\n{e}")
+        # 読み込みの失敗は _add_images が error dialog で知らせる
+        n = self.viewer._add_images([str(p)])
+        self.viewer._finalize_image_addition(n)
 
     def _current_proxy(self):
         i = self.tabs.currentIndex()
@@ -437,12 +420,3 @@ class AnnotationsDialog(QDialog):
             super().keyPressEvent(event)
         else:
             super().keyPressEvent(event)
-
-    def changeEvent(self, event):
-        # 最小化前の位置を保存し、復元時に戻す
-        if event.type() == QEvent.WindowStateChange:
-            if self.isMinimized():
-                AnnotationsDialog._position_before_minimize = self.pos()
-            elif event.oldState() & Qt.WindowMinimized and AnnotationsDialog._position_before_minimize is not None:
-                self.move(AnnotationsDialog._position_before_minimize)
-        super().changeEvent(event)

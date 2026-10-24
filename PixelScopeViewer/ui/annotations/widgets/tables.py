@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import contextlib
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +10,25 @@ from PySide6.QtGui import QBrush, QColor
 
 from PixelScopeViewer.ui.annotations.model import AnnotationStore
 from PixelScopeViewer.ui.common import theme
+
+
+def resolve_path(path) -> str | None:
+    """パスを絶対パスの文字列にする。OS が扱えないパスの場合は None。"""
+    try:
+        return str(Path(str(path)).resolve())
+    except OSError:
+        return None
+
+
+def _summarize_long(value, max_len: int) -> str | None:
+    """長さが max_len を超える配列などを "<型 len=n>" に要約する。要約しない場合は None。"""
+    if isinstance(value, (str, bytes, bytearray, dict)):
+        return None
+    try:
+        length = len(value)
+    except TypeError:  # __len__ を持たない値や 0 次元の numpy 配列
+        return None
+    return f"<{type(value).__name__} len={length}>" if length > max_len else None
 
 
 class ImageAnnotationsTableModel(QAbstractTableModel):
@@ -25,7 +43,7 @@ class ImageAnnotationsTableModel(QAbstractTableModel):
         self._loaded_paths = set()
         self._current_path = None
         # 画像の追加・削除時に cache を再構築する
-        with contextlib.suppress(Exception):
+        if self.viewer is not None:
             self.viewer.image_changed.connect(self._rebuild_loaded_cache)
         self._rebuild_loaded_cache()
 
@@ -62,13 +80,9 @@ class ImageAnnotationsTableModel(QAbstractTableModel):
             # 描画を軽くするため、長い配列は要約して返す
             if value is None:
                 return ""
-            try:
-                if not isinstance(value, (str, bytes, bytearray, dict)) and hasattr(value, "__len__"):
-                    length = len(value)
-                    if length > 20:
-                        return f"<{type(value).__name__} len={length}>"
-            except Exception:
-                pass
+            summary = _summarize_long(value, 20)
+            if summary is not None:
+                return summary
             return value
 
         if role == Qt.TextAlignmentRole:
@@ -80,38 +94,21 @@ class ImageAnnotationsTableModel(QAbstractTableModel):
             # 長い配列は tooltip でも要約する
             if value is None:
                 return None
-            try:
-                if not isinstance(value, (str, bytes, bytearray, dict)) and hasattr(value, "__len__"):
-                    length = len(value)
-                    if length > 100:
-                        return f"<{type(value).__name__} len={length}>"
-            except Exception:
-                pass
+            summary = _summarize_long(value, 100)
+            if summary is not None:
+                return summary
             s = str(value).strip()
             return s if s else None
 
         if role == Qt.ForegroundRole:
             fp = self.manager.get_value(row, "fullfilepath")
-            try:
-                if not fp:
-                    return QBrush(QColor(theme.TEXT_MUTED_COLOR))
-                p = str(Path(str(fp)).resolve())
-                is_loaded = p in self._loaded_paths
-            except Exception:
-                is_loaded = False
+            is_loaded = bool(fp) and resolve_path(fp) in self._loaded_paths
             return QBrush(QColor(theme.TEXT_COLOR if is_loaded else theme.TEXT_MUTED_COLOR))
 
         if role == Qt.BackgroundRole:
-            try:
-                fp = self.manager.get_value(row, "fullfilepath")
-                if fp and self._current_path is not None:
-                    try:
-                        if str(Path(str(fp)).resolve()) == self._current_path:
-                            return QBrush(QColor(theme.HIGHLIGHT_BACKGROUND))
-                    except Exception:
-                        pass
-            except Exception:
-                pass
+            fp = self.manager.get_value(row, "fullfilepath")
+            if fp and self._current_path is not None and resolve_path(fp) == self._current_path:
+                return QBrush(QColor(theme.HIGHLIGHT_BACKGROUND))
             return None
 
         return None
@@ -149,38 +146,15 @@ class ImageAnnotationsTableModel(QAbstractTableModel):
     # ---- cache ----
     def _rebuild_loaded_cache(self):
         """読み込み済みの画像と表示中の画像のパスの cache を作り直す。"""
-        loaded = set()
-        cur_path = None
-        try:
-            imgs = getattr(self.viewer, "images", None) or []
-            for info in imgs:
-                try:
-                    p = Path(info.get("path", "")).resolve()
-                    loaded.add(str(p))
-                except Exception:
-                    continue
-            if getattr(self.viewer, "state", None) is not None and self.viewer.state.current_index is not None:
-                try:
-                    ci = self.viewer.state.current_index
-                    cur = imgs[ci] if 0 <= ci < len(imgs) else None
-                    if cur:
-                        cur_path = str(Path(cur.get("path", "")).resolve())
-                except Exception:
-                    cur_path = None
-        except Exception:
-            pass
-        self._loaded_paths = loaded
-        self._current_path = cur_path
+        imgs = self.viewer.images if self.viewer is not None else []
+        self._loaded_paths = {resolve_path(info.get("path", "")) for info in imgs} - {None}
+        self._current_path = None
+        if self.viewer is not None and self.viewer.state.current_index is not None:
+            self._current_path = resolve_path(imgs[self.viewer.state.current_index].get("path", ""))
         # 文字色と背景色の更新を view に通知する
-        try:
-            r = self.rowCount()
-            c = self.columnCount()
-            if r > 0 and c >= 0:
-                tl = self.index(0, 0)
-                br = self.index(r - 1, c - 1) if r > 0 and c > 0 else tl
-                self.dataChanged.emit(tl, br, [Qt.BackgroundRole, Qt.ForegroundRole])
-        except Exception:
-            pass
+        r, c = self.rowCount(), self.columnCount()
+        if r > 0 and c > 0:
+            self.dataChanged.emit(self.index(0, 0), self.index(r - 1, c - 1), [Qt.BackgroundRole, Qt.ForegroundRole])
 
 
 class SimpleDictTableModel(QAbstractTableModel):

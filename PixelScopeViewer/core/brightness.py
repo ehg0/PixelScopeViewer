@@ -60,18 +60,8 @@ def determine_dtype_defaults(image_array=None, image_path=None):
 
 def determine_dtype_group(arr: np.ndarray) -> str:
     """brightness の設定を共有する dtype の group（'uint8', 'uint16', 'float'）を返す。"""
-    dtype = arr.dtype
-
-    if np.issubdtype(dtype, np.floating):
+    if np.issubdtype(arr.dtype, np.floating):
         return "float"
-    elif np.issubdtype(dtype, np.integer):
-        try:
-            max_val = np.iinfo(dtype).max
-            if max_val <= 255:
-                return "uint8"
-            else:
-                return "uint16"
-        except Exception:
-            return "uint8"
-    else:
-        return "uint8"
+    if np.issubdtype(arr.dtype, np.integer) and np.iinfo(arr.dtype).max > 255:
+        return "uint16"
+    return "uint8"

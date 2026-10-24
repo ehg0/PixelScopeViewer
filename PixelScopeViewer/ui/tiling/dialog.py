@@ -1,7 +1,7 @@
 """複数画像を grid に並べて比較する dialog。"""
 
 import numpy as np
-from PySide6.QtCore import QEvent, QRect, Qt, QTimer, Signal
+from PySide6.QtCore import QRect, Qt, QTimer, Signal
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
 
 from PixelScopeViewer.ui.analysis.dialog import AnalysisDialog
 from PixelScopeViewer.ui.common import defaults
+from PixelScopeViewer.ui.common.window import ChildDialogs, bring_to_front
 from PixelScopeViewer.ui.tiling.brightness_dialog import TilingBrightnessDialog
 from PixelScopeViewer.ui.tiling.comparison_dialog import TilingAnalysisDialog
 from PixelScopeViewer.ui.tiling.help_dialog import TilingHelpDialog
@@ -29,6 +30,7 @@ from PixelScopeViewer.ui.tiling.managers import (
 )
 from PixelScopeViewer.ui.tiling.selection_dialog import TileSelectionDialog
 from PixelScopeViewer.ui.tiling.state import TilingState
+from PixelScopeViewer.ui.tiling.tile_image_label import format_pixel_value
 from PixelScopeViewer.ui.tiling.tile_widget import TileWidget
 
 
@@ -44,18 +46,18 @@ class TilingDialog(QDialog):
 
     def __init__(self, parent, image_list: list[dict]):
         super().__init__(None)
+        # 最小化・復元・前面表示・close を連動させる子 dialog。changeEvent は __init__ 中にも届くため最初に作る
+        self.child_dialogs = ChildDialogs()
         self.setWindowTitle("複数画像比較")
         self.setWindowFlags(Qt.Window | Qt.WindowMinMaxButtonsHint | Qt.WindowCloseButtonHint)
         self.setFocusPolicy(Qt.StrongFocus)
         self.parent_viewer = parent
         self.all_images = image_list
 
-        # window 状態（最小化など）を同期する子 dialog
         self._brightness_dialog = None
         self._help_dialog = None
         self._analysis_dialog = None
         self._comparison_dialog = None
-        self._child_dialogs = []
 
         # 最初に比較する画像を選択させる
         selection_dialog = TileSelectionDialog(self, image_list)
@@ -211,22 +213,7 @@ class TilingDialog(QDialog):
                 tiles[i].update_status("")
                 continue
             h, w = arr.shape[:2]
-            if 0 <= ix < w and 0 <= iy < h:
-                try:
-                    v = arr[iy, ix]
-                    if hasattr(v, "shape") and len(getattr(v, "shape", ())) > 0:
-                        flat = np.array(v).ravel().tolist()
-                        preview = ", ".join(str(x) for x in flat[:4])
-                        txt = f"[{preview}{', …' if len(flat) > 4 else ''}]"
-                    else:
-                        txt = str(v)
-                    if len(txt) > 50:
-                        txt = txt[:47] + "…"
-                except Exception:
-                    txt = "NA"
-            else:
-                txt = ""
-            tiles[i].update_status(txt)
+            tiles[i].update_status(format_pixel_value(arr[iy, ix], 50) if 0 <= ix < w and 0 <= iy < h else "")
 
         self.mouse_coords_label.setText(f"({ix}, {iy})")
 
@@ -317,83 +304,28 @@ class TilingDialog(QDialog):
             params = self.brightness_manager.get_brightness_params()
             self._brightness_dialog = TilingBrightnessDialog(self, params["params_by_dtype"], params["gain"])
             self._brightness_dialog.brightness_changed.connect(self.on_brightness_dialog_changed)
-            self._child_dialogs.append(self._brightness_dialog)
-
-            def on_closed():
-                if self._brightness_dialog in self._child_dialogs:
-                    self._child_dialogs.remove(self._brightness_dialog)
-                self._brightness_dialog = None
-
-            self._brightness_dialog.finished.connect(on_closed)
-
-        if self._brightness_dialog.isMinimized():
-            self._brightness_dialog.showNormal()
-        self._brightness_dialog.show()
-        self._brightness_dialog.raise_()
-        self._brightness_dialog.activateWindow()
+            self.child_dialogs.track(self._brightness_dialog, lambda: setattr(self, "_brightness_dialog", None))
+        bring_to_front(self._brightness_dialog)
 
     def show_help(self):
         if self._help_dialog is None:
             self._help_dialog = TilingHelpDialog(self)
-            self._child_dialogs.append(self._help_dialog)
-
-            def on_closed():
-                if self._help_dialog in self._child_dialogs:
-                    self._child_dialogs.remove(self._help_dialog)
-                self._help_dialog = None
-
-            self._help_dialog.finished.connect(on_closed)
-
-        if self._help_dialog.isMinimized():
-            self._help_dialog.showNormal()
-        self._help_dialog.show()
-        self._help_dialog.raise_()
-        self._help_dialog.activateWindow()
+            self.child_dialogs.track(self._help_dialog, lambda: setattr(self, "_help_dialog", None))
+        bring_to_front(self._help_dialog)
 
     def changeEvent(self, event):
         # 最小化・復元を子 dialog にも反映する
-        if event.type() == QEvent.WindowStateChange:
-            if self.isMinimized():
-                for dlg in self._child_dialogs:
-                    try:
-                        if dlg.isVisible() and not dlg.isMinimized():
-                            dlg.showMinimized()
-                    except RuntimeError:
-                        pass  # dialog は削除済み
-            elif event.oldState() & Qt.WindowMinimized:
-                for dlg in self._child_dialogs:
-                    try:
-                        if dlg.isMinimized():
-                            dlg.showNormal()
-                    except RuntimeError:
-                        pass  # dialog は削除済み
+        self.child_dialogs.sync_window_state(self, event)
         super().changeEvent(event)
 
     def mousePressEvent(self, event):
         # click 時に子 dialog も前面に出す
-        for dlg in self._child_dialogs:
-            try:
-                if dlg.isVisible() and not dlg.isMinimized():
-                    dlg.raise_()
-            except RuntimeError:
-                pass  # dialog は削除済み
+        self.child_dialogs.raise_visible()
         super().mousePressEvent(event)
 
     def closeEvent(self, event):
         # 子 dialog も閉じる
-        if self._brightness_dialog is not None:
-            self._brightness_dialog.close()
-            self._brightness_dialog = None
-        if self._help_dialog is not None:
-            self._help_dialog.close()
-            self._help_dialog = None
-        if self._analysis_dialog is not None:
-            self._analysis_dialog.close()
-            self._analysis_dialog = None
-        if self._comparison_dialog is not None:
-            self._comparison_dialog.close()
-            self._comparison_dialog = None
-
+        self.child_dialogs.close_all()
         super().closeEvent(event)
 
     def on_brightness_dialog_changed(self, full_params: dict):
@@ -428,41 +360,14 @@ class TilingDialog(QDialog):
             ix, iy = coords
             for tile in tiles:
                 arr = tile.get_base_array()
-                if arr is not None:
-                    try:
-                        val = arr[iy, ix]
-
-                        is_float_dtype = np.issubdtype(arr.dtype, np.floating)
-
-                        def _fmt(v, is_float_dtype=is_float_dtype):
-                            try:
-                                if isinstance(v, (np.floating, float)):
-                                    return f"{float(v):.3f}" if is_float_dtype else str(v)
-                                if isinstance(v, (np.integer, int)):
-                                    return str(int(v))
-                                return (
-                                    f"{float(v):.3f}"
-                                    if (is_float_dtype and isinstance(v, (int, float, np.number)))
-                                    else str(v)
-                                )
-                            except Exception:
-                                return str(v)
-
-                        if isinstance(val, np.ndarray) or (
-                            hasattr(val, "shape") and len(getattr(val, "shape", ())) > 0
-                        ):
-                            flat = np.array(val).ravel().tolist()
-                            preview = ", ".join(_fmt(x) for x in flat[:4])
-                            text = f"[{preview}{', …' if len(flat) > 4 else ''}]"
-                        else:
-                            text = _fmt(val)
-                        if len(text) > 60:
-                            text = text[:57] + "…"
-                        tile.update_status(text)
-                    except Exception:
-                        tile.update_status("")
-                else:
+                if arr is None or not (0 <= iy < arr.shape[0] and 0 <= ix < arr.shape[1]):
                     tile.update_status("")
+                    continue
+                # float の画像は小数 3 桁、整数はそのまま表示する
+                is_float = np.issubdtype(arr.dtype, np.floating)
+                tile.update_status(
+                    format_pixel_value(arr[iy, ix], 60, lambda v, f=is_float: f"{float(v):.3f}" if f else str(v))
+                )
         else:
             for tile in tiles:
                 tile.update_status("")
@@ -509,7 +414,7 @@ class TilingDialog(QDialog):
             roi_rect = self.state.common_roi
 
         file_path = None
-        if hasattr(active_tile, "image_data") and active_tile.image_data:
+        if active_tile.image_data:
             file_path = active_tile.image_data.get("path")
 
         return image_array, roi_rect, file_path
@@ -537,7 +442,7 @@ class TilingDialog(QDialog):
                 continue
 
             file_path = None
-            if hasattr(tile, "image_data") and tile.image_data:
+            if tile.image_data:
                 file_path = tile.image_data.get("path")
 
             tiles_data.append({"array": image_array, "rect": roi_rect, "path": file_path, "index": i})
@@ -547,11 +452,7 @@ class TilingDialog(QDialog):
     def _refresh_comparison_dialog_for_roi(self):
         """表示中の複数画像の解析 dialog を現在の ROI で更新する。"""
         if self._comparison_dialog is not None and self._comparison_dialog.isVisible():
-            try:
-                updated = self.get_all_tiles_data()
-                self._comparison_dialog.update_tiles_data(updated)
-            except Exception:
-                pass
+            self._comparison_dialog.update_tiles_data(self.get_all_tiles_data())
 
     def show_analysis_dialog(self, tab=None):
         """active な tile の解析 dialog（単一画像）を表示する。
@@ -582,32 +483,12 @@ class TilingDialog(QDialog):
             # メインビューアの解析 dialog と区別できる title にする
             self._analysis_dialog.setWindowTitle("複数画像比較 - 解析ビュー(単一画像)")
 
-            self._child_dialogs.append(self._analysis_dialog)
-
-            def on_closed():
-                if self._analysis_dialog in self._child_dialogs:
-                    self._child_dialogs.remove(self._analysis_dialog)
-                self._analysis_dialog = None
-
-            self._analysis_dialog.finished.connect(on_closed)
-
-            if tab:
-                self._analysis_dialog.set_current_tab(tab)
-
-            self._analysis_dialog.show()
-            self._analysis_dialog.raise_()
-            self._analysis_dialog.activateWindow()
+            self.child_dialogs.track(self._analysis_dialog, lambda: setattr(self, "_analysis_dialog", None))
         else:
-            if self._analysis_dialog.isMinimized():
-                self._analysis_dialog.showNormal()
-
             self._analysis_dialog.set_image_and_rect(image_array, roi_rect, file_path)
-
-            if tab:
-                self._analysis_dialog.set_current_tab(tab)
-
-            self._analysis_dialog.raise_()
-            self._analysis_dialog.activateWindow()
+        if tab:
+            self._analysis_dialog.set_current_tab(tab)
+        bring_to_front(self._analysis_dialog)
 
     def show_comparison_dialog(self, tab=None):
         """全 tile の解析 dialog（複数画像）を表示する。
@@ -629,32 +510,12 @@ class TilingDialog(QDialog):
         if self._comparison_dialog is None or not self._comparison_dialog.isVisible():
             self._comparison_dialog = TilingAnalysisDialog(parent=self, tiles_data=tiles_data)
 
-            self._child_dialogs.append(self._comparison_dialog)
-
-            def on_closed():
-                if self._comparison_dialog in self._child_dialogs:
-                    self._child_dialogs.remove(self._comparison_dialog)
-                self._comparison_dialog = None
-
-            self._comparison_dialog.finished.connect(on_closed)
-
-            if tab:
-                self._comparison_dialog.set_current_tab(tab)
-
-            self._comparison_dialog.show()
-            self._comparison_dialog.raise_()
-            self._comparison_dialog.activateWindow()
+            self.child_dialogs.track(self._comparison_dialog, lambda: setattr(self, "_comparison_dialog", None))
         else:
-            if self._comparison_dialog.isMinimized():
-                self._comparison_dialog.showNormal()
-
             self._comparison_dialog.update_tiles_data(tiles_data)
-
-            if tab:
-                self._comparison_dialog.set_current_tab(tab)
-
-            self._comparison_dialog.raise_()
-            self._comparison_dialog.activateWindow()
+        if tab:
+            self._comparison_dialog.set_current_tab(tab)
+        bring_to_front(self._comparison_dialog)
 
     def sync_scroll(self, source_index: int, direction: str, value: int):
         """source の tile の scroll 位置を他の tile に同期する。"""

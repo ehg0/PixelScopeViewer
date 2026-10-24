@@ -22,6 +22,10 @@ class DiffDialog(QDialog):
         self.setWindowTitle("差分画像作成")
         self.resize(*defaults.DIFF_DIALOG_SIZE)
         self.image_list = image_list or []
+        # OK で確定した選択（未確定の間は None）
+        self.selected_a: int | None = None
+        self.selected_b: int | None = None
+        self.offset: int | None = None
 
         layout = QVBoxLayout(self)
 
@@ -78,7 +82,7 @@ class DiffDialog(QDialog):
             (画像 A の index, 画像 B の index, offset)。未選択の要素は None。
         """
         return (
-            getattr(self, "selected_a", None),
-            getattr(self, "selected_b", None),
-            getattr(self, "offset", None),
+            self.selected_a,
+            self.selected_b,
+            self.offset,
         )

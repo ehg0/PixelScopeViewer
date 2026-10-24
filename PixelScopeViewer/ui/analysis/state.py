@@ -20,3 +20,7 @@ class AnalysisSettings:
     # 画像を切り替えても保持する plot 設定（grid・log・auto range）
     plot_settings: dict = field(default_factory=lambda: copy.deepcopy(defaults.PLOT_SETTINGS))
     channel_checks: list[bool] = field(default_factory=list)
+
+    def fit_channel_checks(self, n_channels: int) -> None:
+        """channel_checks を n_channels 個まで伸ばす。追加した channel は表示 ON にする。"""
+        self.channel_checks.extend([True] * (n_channels - len(self.channel_checks)))

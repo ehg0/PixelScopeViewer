@@ -47,10 +47,7 @@ def apply_jet_colormap(gray: np.ndarray) -> np.ndarray:
         norm = (a - amin) / (amax - amin) if amax > amin else np.zeros_like(a, dtype=np.float32)
         u8 = np.clip(norm * 255.0, 0, 255).astype(np.uint8)
     elif np.issubdtype(a.dtype, np.integer):
-        try:
-            max_val = np.iinfo(a.dtype).max
-        except Exception:
-            max_val = 255
+        max_val = np.iinfo(a.dtype).max
         if max_val == 0:
             u8 = np.zeros_like(a, dtype=np.uint8)
         else:

@@ -7,16 +7,11 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QMessageBox
 
+from PixelScopeViewer.core.brightness import BrightnessParams, determine_dtype_defaults, determine_dtype_group
 from PixelScopeViewer.core.brightness import apply_brightness_adjustment as apply_brightness_core
-from PixelScopeViewer.core.brightness import determine_dtype_defaults
 from PixelScopeViewer.core.constants import GAIN_STEP
-from PixelScopeViewer.ui.common.channel_display import (
-    MODE_1CH_GRAYSCALE,
-    MODE_1CH_JET,
-    MODE_2CH_COMPOSITE,
-    MODE_2CH_FLOW_HSV,
-)
 from PixelScopeViewer.ui.common.qt_image import numpy_to_qimage
+from PixelScopeViewer.ui.common.window import bring_to_front
 from PixelScopeViewer.ui.display import BrightnessDialog
 
 
@@ -61,19 +56,14 @@ class BrightnessManager:
             self.viewer.brightness_dialog.mode_1ch_changed.connect(self.viewer.brightness_manager.on_mode_1ch_changed)
             self.viewer.brightness_dialog.mode_2ch_changed.connect(self.viewer.brightness_manager.on_mode_2ch_changed)
             # window 状態の同期対象に加える
-            self.viewer._child_dialogs.append(self.viewer.brightness_dialog)
-
-            def on_closed():
-                if self.viewer.brightness_dialog in self.viewer._child_dialogs:
-                    self.viewer._child_dialogs.remove(self.viewer.brightness_dialog)
-                self.viewer.brightness_dialog = None
-
-            self.viewer.brightness_dialog.finished.connect(on_closed)
+            self.viewer.child_dialogs.track(
+                self.viewer.brightness_dialog, lambda: setattr(self.viewer, "brightness_dialog", None)
+            )
             params = self.viewer.brightness_dialog.get_brightness()
             self.viewer.state.brightness.offset = params[0]
             self.viewer.state.brightness.gain = params[1]
             self.viewer.state.brightness.upper_level = params[2]
-            self.viewer.update_brightness_status()
+            self.viewer.status_updater.update_brightness_status()
         else:
             # update_for_new_image が brightness_changed を emit し、status bar も更新される
             self.viewer.brightness_dialog.update_for_new_image(
@@ -86,29 +76,10 @@ class BrightnessManager:
                 initial_mode_2ch=self.viewer.channel_display.mode_2ch,
             )
 
-        # 表示中の dialog に show() を再実行すると位置が変わるため前面に出すだけにする
-        if self.viewer.brightness_dialog.isVisible():
-            try:
-                if self.viewer.brightness_dialog.isMinimized():
-                    self.viewer.brightness_dialog.showNormal()
-                self.viewer.brightness_dialog.raise_()
-                self.viewer.brightness_dialog.activateWindow()
-            except Exception:
-                pass
-            return
-
-        # 非表示の場合は保存済みの geometry を復元して表示する
-        try:
-            if getattr(BrightnessDialog, "_saved_geometry", None):
-                self.viewer.brightness_dialog.restoreGeometry(BrightnessDialog._saved_geometry)
-        except Exception:
-            pass
-        self.viewer.brightness_dialog.show()
-        try:
-            self.viewer.brightness_dialog.raise_()
-            self.viewer.brightness_dialog.activateWindow()
-        except Exception:
-            pass
+        # 非表示の場合は保存済みの geometry を復元してから表示する
+        if not self.viewer.brightness_dialog.isVisible():
+            self.viewer.brightness_dialog.restore_geometry()
+        bring_to_front(self.viewer.brightness_dialog)
 
     def _default_upper_level_for_dtype(self, dtype, current):
         """dtype に合う upper level を返す。
@@ -116,19 +87,13 @@ class BrightnessManager:
         current が未設定か別 dtype の既定値（float なら 255、整数なら 1.0）の場合、
         float は 1.0、8bit は 255、それ以上は min(最大値, 4095) を返す。それ以外は current を返す。
         """
-        try:
-            if np.issubdtype(dtype, np.floating):
-                return 1.0 if (current is None or current == 255) else current
-            else:
-                if current is None or current == 1.0:
-                    try:
-                        max_val = np.iinfo(dtype).max
-                    except Exception:
-                        max_val = 255
-                    return 255 if max_val <= 255 else min(max_val, 4095)
-                return current
-        except Exception:
-            return current if current is not None else 255
+        if np.issubdtype(dtype, np.floating):
+            return 1.0 if current is None or current == 255 else current
+        if current is None or current == 1.0:
+            # bool など整数以外の dtype は 8bit として扱う
+            max_val = np.iinfo(dtype).max if np.issubdtype(dtype, np.integer) else 255
+            return 255 if max_val <= 255 else min(max_val, 4095)
+        return current
 
     def reset_brightness_settings(self):
         """brightness を dtype の既定値に戻す。dialog が開いていれば dialog 側で reset する。"""
@@ -139,20 +104,16 @@ class BrightnessManager:
             self.viewer.brightness_dialog.reset_parameters()
             handled_by_dialog = True
         else:
-            self.viewer.state.brightness.offset = 0
-            self.viewer.state.brightness.gain = 1.0
-            self.viewer.state.brightness.upper_level = 255
+            # 画像がない場合は uint8 の既定値にする
+            base_arr = None
             if self.viewer.state.current_index is not None:
-                try:
-                    img = self.viewer.images[self.viewer.state.current_index]
-                    base_arr = img.get("base_array", img.get("array"))
-                    dtype_defaults = determine_dtype_defaults(base_arr)
-                    self.viewer.state.brightness.offset = dtype_defaults.get("initial_offset", 0)
-                    self.viewer.state.brightness.gain = dtype_defaults.get("initial_gain", 1.0)
-                    self.viewer.state.brightness.upper_level = dtype_defaults.get("initial_upper_level", 255)
-                except Exception:
-                    pass
-            self.viewer.update_brightness_status()
+                img = self.viewer.images[self.viewer.state.current_index]
+                base_arr = img.get("base_array", img["array"])
+            d = determine_dtype_defaults(base_arr)
+            self.viewer.state.brightness = BrightnessParams(
+                d["initial_offset"], d["initial_gain"], d["initial_upper_level"]
+            )
+            self.viewer.status_updater.update_brightness_status()
 
         # 画像を切り替えても reset 後の値が保たれるよう保存する
         self._save_current_dtype_params()
@@ -168,7 +129,7 @@ class BrightnessManager:
 
         self._save_current_dtype_params()
 
-        self.viewer.update_brightness_status()
+        self.viewer.status_updater.update_brightness_status()
 
         self.viewer._cached_display_array = None
         self.viewer._cached_display_params = None
@@ -185,96 +146,42 @@ class BrightnessManager:
         self.viewer.channel_display.set_colors(self.viewer._current_n_channels(), colors)
 
     def on_mode_1ch_changed(self, mode: str):
-        if mode not in (MODE_1CH_GRAYSCALE, MODE_1CH_JET):
-            return
+        # 再描画は channel_display の modes_changed を受けた viewer が行う
         self.viewer.channel_display.set_mode_1ch(mode)
-
-        self.viewer._cached_display_array = None
-        self.viewer._cached_display_params = None
-
-        if self.viewer.state.current_index is not None:
-            # 1ch 画像の thumbnail を新しいモードで作り直す
-            img = self.viewer.images[self.viewer.state.current_index]
-            base_arr = img.get("base_array", img.get("array"))
-            if (base_arr.ndim == 2) or (base_arr.ndim == 3 and base_arr.shape[2] == 1):
-                try:
-                    thumb_arr = self.viewer._prepare_thumbnail_array(base_arr)
-                    thumb_qimg = numpy_to_qimage(thumb_arr)
-                    thumb_pixmap = QPixmap.fromImage(thumb_qimg).scaled(
-                        250, 250, Qt.KeepAspectRatio, Qt.SmoothTransformation
-                    )
-                    img["thumbnail_pixmap"] = thumb_pixmap
-                    if hasattr(self.viewer, "navigator_widget"):
-                        self.viewer.navigator_widget.update_thumbnail()
-                except Exception:
-                    pass
-            self.viewer.display_image(img["array"])
+        self._refresh_thumbnail(lambda arr: arr.ndim == 2 or arr.shape[2] == 1)
 
     def on_mode_2ch_changed(self, mode: str):
-
-        if mode not in (MODE_2CH_COMPOSITE, MODE_2CH_FLOW_HSV):
-            return
         self.viewer.channel_display.set_mode_2ch(mode)
+        self._refresh_thumbnail(lambda arr: arr.ndim == 3 and arr.shape[2] == 2)
 
-        self.viewer._cached_display_array = None
-        self.viewer._cached_display_params = None
-
-        if self.viewer.state.current_index is not None:
-            # 2ch 画像の thumbnail を新しいモードで作り直す
-            img = self.viewer.images[self.viewer.state.current_index]
-            base_arr = img.get("base_array", img.get("array"))
-            if base_arr.ndim == 3 and base_arr.shape[2] == 2:
-                try:
-                    thumb_arr = self.viewer._prepare_thumbnail_array(base_arr)
-                    thumb_qimg = numpy_to_qimage(thumb_arr)
-                    thumb_pixmap = QPixmap.fromImage(thumb_qimg).scaled(
-                        250, 250, Qt.KeepAspectRatio, Qt.SmoothTransformation
-                    )
-                    img["thumbnail_pixmap"] = thumb_pixmap
-
-                    if hasattr(self.viewer, "navigator_widget"):
-                        self.viewer.navigator_widget.update_thumbnail()
-                except Exception:
-                    pass
-
-            self.viewer.display_image(img["array"])
+    def _refresh_thumbnail(self, applies) -> None:
+        """表示中の画像が applies(arr) を満たす場合、表示モードに合わせて navigator の thumbnail を作り直す。"""
+        if self.viewer.state.current_index is None:
+            return
+        img = self.viewer.images[self.viewer.state.current_index]
+        base_arr = img.get("base_array", img.get("array"))
+        if not applies(base_arr):
+            return
+        thumb = numpy_to_qimage(self.viewer._prepare_thumbnail_array(base_arr))
+        img["thumbnail_pixmap"] = QPixmap.fromImage(thumb).scaled(250, 250, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        self.viewer.navigator_widget.update_thumbnail()
 
     def apply_brightness_adjustment(self, arr: np.ndarray) -> np.ndarray:
         """dtype ごとに保存した brightness を適用し、uint8 の配列を返す。
 
         変換式: gain * (x - offset) / (upper_level - offset) * 255
         """
-        dtype_key = self.viewer.brightness_manager._dtype_key(arr.dtype)
+        dtype_key = determine_dtype_group(arr)
         self.viewer.state.brightness = replace(self.viewer.state.brightness_by_dtype[dtype_key])
         b = self.viewer.state.brightness
         return apply_brightness_core(arr, b.offset, b.gain, b.upper_level)
 
-    # ------------------------ dtype ごとの設定の保存 ------------------------
-    def _dtype_key(self, dtype) -> str:
-        """numpy の dtype を保存用の key（float/uint8/uint16）に変換する。"""
-        try:
-            if np.issubdtype(dtype, np.floating):
-                return "float"
-            if np.issubdtype(dtype, np.integer):
-                try:
-                    max_val = np.iinfo(dtype).max
-                except Exception:
-                    max_val = 255
-                return "uint16" if max_val > 255 else "uint8"
-        except Exception:
-            pass
-        return "uint8"
-
     def _save_current_dtype_params(self) -> None:
         if self.viewer.state.current_index is None:
             return
-        try:
-            img = self.viewer.images[self.viewer.state.current_index]
-            arr = img.get("base_array", img.get("array"))
-            key = self._dtype_key(arr.dtype)
-            self.viewer.state.brightness_by_dtype[key] = replace(self.viewer.state.brightness)
-        except Exception:
-            pass
+        img = self.viewer.images[self.viewer.state.current_index]
+        key = determine_dtype_group(img.get("base_array", img["array"]))
+        self.viewer.state.brightness_by_dtype[key] = replace(self.viewer.state.brightness)
 
     def adjust_gain_step(self, amount):
         """gain を 2 倍（amount > 0）または 1/2 倍（amount < 0）にする。"""
@@ -292,7 +199,7 @@ class BrightnessManager:
         if self.viewer.brightness_dialog is not None:
             self.viewer.brightness_dialog.set_gain(new_gain)
 
-        self.viewer.update_brightness_status()
+        self.viewer.status_updater.update_brightness_status()
 
         img = self.viewer.images[self.viewer.state.current_index]
         self.viewer.display_image(img["array"])

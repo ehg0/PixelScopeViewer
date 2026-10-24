@@ -9,8 +9,8 @@ from PySide6.QtWidgets import QVBoxLayout, QWidget
 from PixelScopeViewer.core.brightness import BrightnessParams, determine_dtype_defaults
 from PixelScopeViewer.core.constants import get_dtype_defaults
 from PixelScopeViewer.ui.common.widgets import set_value_silently
+from PixelScopeViewer.ui.display.tabs.logic import brightness_builder as builder
 from PixelScopeViewer.ui.display.tabs.logic import clamp_value, round_to_power_of_2
-from PixelScopeViewer.ui.display.tabs.logic.brightness_builder import BrightnessUIBuilder
 
 
 class BrightnessTab(QWidget):
@@ -58,8 +58,6 @@ class BrightnessTab(QWidget):
         main_layout = QVBoxLayout(self)
         main_layout.setSpacing(20)
         main_layout.setContentsMargins(25, 25, 25, 25)
-
-        builder = BrightnessUIBuilder(self)
 
         self.dtype_combo = builder.build_dtype_selector(main_layout, self.current_dtype, self._on_dtype_changed)
 

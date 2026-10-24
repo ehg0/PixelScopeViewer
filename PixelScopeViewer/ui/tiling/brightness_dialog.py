@@ -3,7 +3,6 @@
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QCheckBox,
-    QDoubleSpinBox,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -13,7 +12,7 @@ from PySide6.QtWidgets import (
 
 from PixelScopeViewer.core.constants import get_dtype_defaults
 from PixelScopeViewer.ui.common import defaults
-from PixelScopeViewer.ui.common.widgets import set_value_silently
+from PixelScopeViewer.ui.common.widgets import make_spinbox, set_value_silently
 from PixelScopeViewer.ui.common.window import ToolDialog
 
 
@@ -51,11 +50,7 @@ class TilingBrightnessDialog(ToolDialog):
         gain_control_layout = QHBoxLayout()
         gain_control_layout.addWidget(QLabel("Gain:"))
 
-        self.gain_spinbox = QDoubleSpinBox()
-        self.gain_spinbox.setRange(0.0078125, 1024.0)  # 2^-7 〜 2^10
-        self.gain_spinbox.setDecimals(6)
-        self.gain_spinbox.setSingleStep(0.01)
-        self.gain_spinbox.setValue(self.common_gain)
+        self.gain_spinbox = make_spinbox((0.0078125, 1024.0), 6, 0.01, self.common_gain)  # 2^-7 〜 2^10
         self.gain_spinbox.valueChanged.connect(self._on_gain_spinbox_changed)
         gain_control_layout.addWidget(self.gain_spinbox)
 
@@ -73,16 +68,12 @@ class TilingBrightnessDialog(ToolDialog):
             offset_range = defaults["offset_range"]
             upper_level_range = defaults["upper_level_range"]
             is_float = defaults["is_float_type"]
-            decimals = 5 if is_float else 0
+            decimals, step = (5, 0.01) if is_float else (0, 1.0)
 
             offset_layout = QHBoxLayout()
             offset_layout.addWidget(QLabel("Offset:"))
 
-            offset_spinbox = QDoubleSpinBox()
-            offset_spinbox.setRange(offset_range[0], offset_range[1])
-            offset_spinbox.setDecimals(decimals)
-            offset_spinbox.setSingleStep(0.01 if is_float else 1.0)
-            offset_spinbox.setValue(0.0)
+            offset_spinbox = make_spinbox(offset_range, decimals, step, 0.0)
             offset_spinbox.valueChanged.connect(lambda v, dg=dtype_group: self._on_offset_spinbox_changed(dg, v))
             offset_layout.addWidget(offset_spinbox)
 
@@ -91,11 +82,7 @@ class TilingBrightnessDialog(ToolDialog):
             upper_level_layout = QHBoxLayout()
             upper_level_layout.addWidget(QLabel("Upper_level:"))
 
-            upper_level_spinbox = QDoubleSpinBox()
-            upper_level_spinbox.setRange(upper_level_range[0], upper_level_range[1])
-            upper_level_spinbox.setDecimals(decimals)
-            upper_level_spinbox.setSingleStep(0.01 if is_float else 1.0)
-            upper_level_spinbox.setValue(defaults["initial_upper_level"])
+            upper_level_spinbox = make_spinbox(upper_level_range, decimals, step, defaults["initial_upper_level"])
             upper_level_spinbox.valueChanged.connect(
                 lambda v, dg=dtype_group: self._on_upper_level_spinbox_changed(dg, v)
             )
@@ -137,18 +124,8 @@ class TilingBrightnessDialog(ToolDialog):
 
         for dtype_group, controls in self.dtype_controls.items():
             params = self.brightness_params_by_dtype[dtype_group]
-
-            offset = params["offset"]
-            upper_level = params["upper_level"]
-
-            controls["offset_spinbox"].blockSignals(True)
-            controls["upper_level_spinbox"].blockSignals(True)
-
-            controls["offset_spinbox"].setValue(offset)
-            controls["upper_level_spinbox"].setValue(upper_level)
-
-            controls["offset_spinbox"].blockSignals(False)
-            controls["upper_level_spinbox"].blockSignals(False)
+            set_value_silently(controls["offset_spinbox"], params["offset"])
+            set_value_silently(controls["upper_level_spinbox"], params["upper_level"])
 
     def _on_gain_spinbox_changed(self, value: float):
         self.common_gain = value

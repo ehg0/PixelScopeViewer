@@ -6,7 +6,6 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
-    QDoubleSpinBox,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -14,240 +13,159 @@ from PySide6.QtWidgets import (
 )
 
 from PixelScopeViewer.ui.common import theme
-from PixelScopeViewer.ui.common.widgets import StepSlider, set_value_silently
+from PixelScopeViewer.ui.common.widgets import StepSlider, make_spinbox, set_value_silently
 from PixelScopeViewer.ui.display.tabs.components import PowerOfTwoSpinBox
 
+SPINBOX_STYLESHEET = "QSpinBox, QDoubleSpinBox { padding: 10px; font-size: 10pt; }"
 
-class BrightnessUIBuilder:
-    """BrightnessTab の UI 部品を生成して layout に追加する。"""
 
-    SPINBOX_STYLESHEET = "QSpinBox, QDoubleSpinBox { padding: 10px; font-size: 10pt; }"
+def build_dtype_selector(layout, current_dtype, on_dtype_changed_callback):
+    """dtype の combo box を作成する。"""
+    dtype_layout = QHBoxLayout()
+    dtype_label = QLabel("データ型 (Data Type)")
+    dtype_label.setStyleSheet("font-weight: bold; font-size: 10pt;")
 
-    def __init__(self, parent_widget):
-        self.parent = parent_widget
-        self.widgets = {}
+    dtype_combo = QComboBox()
+    dtype_combo.addItems(["float", "uint8", "uint16"])
+    dtype_combo.setCurrentText(current_dtype)
+    dtype_combo.currentTextChanged.connect(on_dtype_changed_callback)
 
-    def build_dtype_selector(self, layout, current_dtype, on_dtype_changed_callback):
-        """dtype の combo box を作成する。"""
-        dtype_layout = QHBoxLayout()
-        dtype_label = QLabel("データ型 (Data Type)")
-        dtype_label.setStyleSheet("font-weight: bold; font-size: 10pt;")
+    dtype_layout.addWidget(dtype_label)
+    dtype_layout.addWidget(dtype_combo)
+    dtype_layout.addStretch()
 
-        dtype_combo = QComboBox()
-        dtype_combo.addItems(["float", "uint8", "uint16"])
-        dtype_combo.setCurrentText(current_dtype)
-        dtype_combo.currentTextChanged.connect(on_dtype_changed_callback)
+    layout.addLayout(dtype_layout)
+    layout.addSpacing(10)
+    return dtype_combo
 
-        dtype_layout.addWidget(dtype_label)
-        dtype_layout.addWidget(dtype_combo)
-        dtype_layout.addStretch()
 
-        layout.addLayout(dtype_layout)
-        layout.addSpacing(10)
+def build_autoscale(layout, on_autoscale_cb_callback, set_as_default_callback):
+    """auto scale と ROI 使用の checkbox、既定値に設定する button を作成する。
 
-        self.widgets["dtype_combo"] = dtype_combo
-        return dtype_combo
+    Returns:
+        (auto scale の checkbox, ROI 使用の checkbox, 既定値に設定する button)。
+    """
+    _layout = QHBoxLayout()
 
-    def build_autoscale(self, layout, on_autoscale_cb_callback, set_as_default_callback):
-        """auto scale と ROI 使用の checkbox、既定値に設定する button を作成する。
+    autoscale_cb = QCheckBox("Auto Scale (min-max)")
+    autoscale_cb.toggled.connect(on_autoscale_cb_callback)
 
-        Returns:
-            (auto scale の checkbox, ROI 使用の checkbox, 既定値に設定する button)。
-        """
-        _layout = QHBoxLayout()
+    use_roi_cb = QCheckBox("Use Current ROI")
+    use_roi_cb.toggled.connect(on_autoscale_cb_callback)
 
-        autoscale_cb = QCheckBox("Auto Scale (min-max)")
-        autoscale_cb.toggled.connect(on_autoscale_cb_callback)
+    set_ad_default_bt = QPushButton("Set as Default")
+    set_ad_default_bt.clicked.connect(set_as_default_callback)
 
-        use_roi_cb = QCheckBox("Use Current ROI")
-        use_roi_cb.toggled.connect(on_autoscale_cb_callback)
+    _layout.addWidget(autoscale_cb)
+    _layout.addWidget(use_roi_cb)
+    _layout.addWidget(set_ad_default_bt)
+    _layout.addStretch()
 
-        set_ad_default_bt = QPushButton("Set as Default")
-        set_ad_default_bt.clicked.connect(set_as_default_callback)
+    layout.addLayout(_layout)
+    layout.addSpacing(10)
+    return autoscale_cb, use_roi_cb, set_ad_default_bt
 
-        _layout.addWidget(autoscale_cb)
-        _layout.addWidget(use_roi_cb)
-        _layout.addWidget(set_ad_default_bt)
-        _layout.addStretch()
 
-        layout.addLayout(_layout)
-        layout.addSpacing(10)
+def _add_slider_row(layout, caption: str, slider, spinbox, spacing: int | None = None):
+    """右寄せの caption、slider、spin box を 4:1 の幅で並べた行を追加する。"""
+    row = QHBoxLayout()
+    if spacing is not None:
+        row.setSpacing(spacing)
+    label = QLabel(caption)
+    label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+    row.addWidget(label)
+    row.addWidget(slider, 4)
+    row.addWidget(spinbox, 1)
+    layout.addLayout(row)
 
-        return autoscale_cb, use_roi_cb, set_ad_default_bt
 
-    def build_offset_controls(
-        self,
-        layout,
+def _make_range_slider(value_range, value) -> QSlider:
+    """範囲を 4 等分した目盛りを持つ横向きの slider を作成する。"""
+    slider = QSlider(Qt.Horizontal)
+    slider.setRange(int(value_range[0]), int(value_range[1]))
+    slider.setTickPosition(QSlider.TicksBelow)
+    slider.setTickInterval(int((value_range[1] - value_range[0]) // 4))
+    slider.setStyleSheet(theme.SLIDER_STYLESHEET)
+    set_value_silently(slider, int(value))
+    return slider
+
+
+def build_offset_controls(layout, initial_value, offset_range, is_float, slider_callback, spinbox_callback):
+    """offset の slider と spin box を作成する。
+
+    Returns:
+        (slider, spin box)。
+    """
+    slider = _make_range_slider(offset_range, initial_value)
+    slider.valueChanged.connect(slider_callback)
+    spinbox = make_spinbox(
+        offset_range, 5 if is_float else 0, 0.01 if is_float else 1, initial_value, stylesheet=SPINBOX_STYLESHEET
+    )
+    spinbox.valueChanged.connect(spinbox_callback)
+    _add_slider_row(layout, "Offset", slider, spinbox, spacing=10)
+    return slider, spinbox
+
+
+def build_gain_controls(
+    layout, initial_value, log2_min, log2_max, spinbox_min, spinbox_max, slider_callback, spinbox_callback
+):
+    """gain の slider（log2 scale）と spin box（2 の累乗で増減）を作成する。
+
+    Returns:
+        (slider, spin box)。
+    """
+    slider = StepSlider(Qt.Horizontal)
+    slider.setRange(log2_min, log2_max)
+    slider.setSingleStep(1)
+    slider.setTickPosition(QSlider.TicksBelow)
+    slider.setTickInterval(1)
+    slider.setStyleSheet(theme.SLIDER_STYLESHEET)
+    set_value_silently(slider, max(log2_min, min(log2_max, round(math.log2(initial_value)))))
+    slider.valueChanged.connect(slider_callback)
+
+    spinbox = make_spinbox(
+        (spinbox_min, spinbox_max),
+        7,
+        1,
         initial_value,
-        offset_range,
-        is_float,
-        slider_callback,
-        spinbox_callback,
-    ):
-        """offset の slider と spin box を作成する。
+        spinbox=PowerOfTwoSpinBox(log2_min=log2_min, log2_max=log2_max),
+        stylesheet=SPINBOX_STYLESHEET,
+    )
+    spinbox.setFixedWidth(100)
+    spinbox.valueChanged.connect(spinbox_callback)
+    _add_slider_row(layout, "Gain", slider, spinbox)
+    return slider, spinbox
 
-        Returns:
-            (slider, spin box)。
-        """
-        control_layout = QHBoxLayout()
-        control_layout.setSpacing(10)
 
-        caption = QLabel("Offset")
-        caption.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        control_layout.addWidget(caption)
+def build_upper_level_controls(layout, initial_value, upper_level_range, is_float, slider_callback, spinbox_callback):
+    """upper level の slider と spin box を作成する。
 
-        slider = QSlider(Qt.Horizontal)
-        slider.setRange(int(offset_range[0]), int(offset_range[1]))
-        slider.setTickPosition(QSlider.TicksBelow)
-        slider.setTickInterval((offset_range[1] - offset_range[0]) // 4)
-        slider.setStyleSheet(theme.SLIDER_STYLESHEET)
-        set_value_silently(slider, int(initial_value))
-        slider.valueChanged.connect(slider_callback)
+    Returns:
+        (slider, spin box)。
+    """
+    slider = _make_range_slider(upper_level_range, initial_value)
+    slider.valueChanged.connect(slider_callback)
+    spinbox = make_spinbox(
+        upper_level_range, 3 if is_float else 0, 10 if is_float else 1, initial_value, stylesheet=SPINBOX_STYLESHEET
+    )
+    spinbox.valueChanged.connect(spinbox_callback)
+    _add_slider_row(layout, "Upper_level", slider, spinbox)
+    return slider, spinbox
 
-        spinbox = QDoubleSpinBox()
-        if is_float:
-            spinbox.setDecimals(5)
-            spinbox.setSingleStep(0.01)
-        else:
-            spinbox.setDecimals(0)
-            spinbox.setSingleStep(1)
-        spinbox.setReadOnly(False)
-        spinbox.setKeyboardTracking(True)
-        spinbox.setRange(offset_range[0], offset_range[1])
-        spinbox.setStyleSheet(self.SPINBOX_STYLESHEET)
-        set_value_silently(spinbox, initial_value)
-        spinbox.valueChanged.connect(spinbox_callback)
 
-        control_layout.addWidget(slider, 4)
-        control_layout.addWidget(spinbox, 1)
-        layout.addLayout(control_layout)
+def build_formula_and_reset(layout, reset_callback):
+    """変換式の label と reset button を作成する。
 
-        self.widgets["offset_slider"] = slider
-        self.widgets["offset_spinbox"] = spinbox
+    Returns:
+        reset button。
+    """
+    formula_label = QLabel("-> yout = gain × (yin - offset) / (upper_level - offset) × 255")
+    formula_label.setStyleSheet("font-style: italic; font-size: 10pt")
+    layout.addWidget(formula_label)
 
-        return slider, spinbox
+    reset_button = QPushButton("Reset (Ctrl+R)")
+    reset_button.clicked.connect(reset_callback)
+    layout.addWidget(reset_button)
 
-    def build_gain_controls(
-        self,
-        layout,
-        initial_value,
-        log2_min,
-        log2_max,
-        spinbox_min,
-        spinbox_max,
-        slider_callback,
-        spinbox_callback,
-    ):
-        """gain の slider（log2 scale）と spin box（2 の累乗で増減）を作成する。
-
-        Returns:
-            (slider, spin box)。
-        """
-        control_layout = QHBoxLayout()
-        caption = QLabel("Gain")
-        caption.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        control_layout.addWidget(caption)
-
-        slider = StepSlider(Qt.Horizontal)
-        slider.setRange(log2_min, log2_max)
-        slider.setSingleStep(1)
-        slider.setTickPosition(QSlider.TicksBelow)
-        slider.setTickInterval(1)
-        slider.setStyleSheet(theme.SLIDER_STYLESHEET)
-        slider.blockSignals(True)
-        initial_log2 = round(math.log2(initial_value))
-        initial_log2 = max(log2_min, min(log2_max, initial_log2))
-        slider.setValue(initial_log2)
-        slider.blockSignals(False)
-        slider.valueChanged.connect(slider_callback)
-
-        spinbox = PowerOfTwoSpinBox(log2_min=log2_min, log2_max=log2_max)
-        spinbox.setDecimals(7)
-        spinbox.setSingleStep(1)
-        spinbox.setReadOnly(False)
-        spinbox.setKeyboardTracking(True)
-        spinbox.setRange(spinbox_min, spinbox_max)
-        spinbox.setFixedWidth(100)
-        spinbox.setStyleSheet(self.SPINBOX_STYLESHEET)
-        set_value_silently(spinbox, initial_value)
-        spinbox.valueChanged.connect(spinbox_callback)
-
-        control_layout.addWidget(slider, 4)
-        control_layout.addWidget(spinbox, 1)
-        layout.addLayout(control_layout)
-
-        self.widgets["gain_slider"] = slider
-        self.widgets["gain_spinbox"] = spinbox
-
-        return slider, spinbox
-
-    def build_upper_level_controls(
-        self,
-        layout,
-        initial_value,
-        upper_level_range,
-        is_float,
-        slider_callback,
-        spinbox_callback,
-    ):
-        """upper level の slider と spin box を作成する。
-
-        Returns:
-            (slider, spin box)。
-        """
-        control_layout = QHBoxLayout()
-        caption = QLabel("Upper_level")
-        caption.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        control_layout.addWidget(caption)
-
-        slider = QSlider(Qt.Horizontal)
-        slider.setTickPosition(QSlider.TicksBelow)
-        slider.setStyleSheet(theme.SLIDER_STYLESHEET)
-
-        slider.setRange(int(upper_level_range[0]), int(upper_level_range[1]))
-        slider.setTickInterval(int((upper_level_range[1] - upper_level_range[0]) // 4))
-        set_value_silently(slider, int(initial_value))
-
-        slider.valueChanged.connect(slider_callback)
-
-        spinbox = QDoubleSpinBox()
-        if is_float:
-            spinbox.setDecimals(3)
-            spinbox.setSingleStep(10)
-        else:
-            spinbox.setDecimals(0)
-            spinbox.setSingleStep(1)
-        spinbox.setReadOnly(False)
-        spinbox.setKeyboardTracking(True)
-        spinbox.setRange(upper_level_range[0], upper_level_range[1])
-        spinbox.setStyleSheet(self.SPINBOX_STYLESHEET)
-        set_value_silently(spinbox, initial_value)
-        spinbox.valueChanged.connect(spinbox_callback)
-
-        control_layout.addWidget(slider, 4)
-        control_layout.addWidget(spinbox, 1)
-        layout.addLayout(control_layout)
-
-        self.widgets["upper_level_slider"] = slider
-        self.widgets["upper_level_spinbox"] = spinbox
-
-        return slider, spinbox
-
-    def build_formula_and_reset(self, layout, reset_callback):
-        """変換式の label と reset button を作成する。
-
-        Returns:
-            reset button。
-        """
-        formula_label = QLabel("-> yout = gain × (yin - offset) / (upper_level - offset) × 255")
-        formula_label.setStyleSheet("font-style: italic; font-size: 10pt")
-        layout.addWidget(formula_label)
-
-        reset_button = QPushButton("Reset (Ctrl+R)")
-        reset_button.clicked.connect(reset_callback)
-        layout.addWidget(reset_button)
-
-        layout.addStretch()
-
-        self.widgets["reset_button"] = reset_button
-        return reset_button
+    layout.addStretch()
+    return reset_button

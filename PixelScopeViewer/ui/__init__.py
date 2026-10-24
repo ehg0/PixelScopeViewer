@@ -1,16 +1,5 @@
-"""UI components package."""
+"""UI（機能ごとの package と共有部品）。"""
 
-from .viewer import ImageViewer
-from .widgets import ImageLabel
-from .dialogs import HelpDialog, DiffDialog, AnalysisDialog, BrightnessDialog
-from .utils import get_default_channel_colors
+from PixelScopeViewer.ui.viewer import ImageViewer
 
-__all__ = [
-    "ImageViewer",
-    "ImageLabel",
-    "HelpDialog",
-    "DiffDialog",
-    "AnalysisDialog",
-    "BrightnessDialog",
-    "get_default_channel_colors",
-]
+__all__ = ["ImageViewer"]

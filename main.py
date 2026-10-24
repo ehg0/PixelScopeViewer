@@ -1,4 +1,4 @@
-"""Lightweight runner for the PixelScopeViewer package."""
+"""PixelScopeViewer の起動 script。再起動用の終了コードを受け取った場合は自身を再実行する。"""
 
 import os
 import sys

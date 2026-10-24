@@ -1,7 +1,7 @@
 from collections.abc import Callable
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QPixmap
+from PySide6.QtGui import QColor, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QTableWidget,
+    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -353,10 +354,6 @@ class ProfileTab(QWidget):
 
     def _populate_stats_table(self, rows: list[dict]):
         """Populate stats table from computed statistics."""
-        from PySide6.QtCore import Qt
-        from PySide6.QtGui import QColor, QPixmap
-        from PySide6.QtWidgets import QTableWidgetItem
-
         dlg = self
         color_map = {}
         assign_colors = None

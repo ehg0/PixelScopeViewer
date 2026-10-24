@@ -1,5 +1,7 @@
 """Display info widget showing current viewport information."""
 
+import contextlib
+
 from PySide6.QtCore import QEvent, Qt
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QGroupBox, QMenu, QTableWidget, QTableWidgetItem, QVBoxLayout
@@ -24,10 +26,8 @@ class DisplayInfoWidget(QGroupBox):
         self.table.setRowCount(8)
         # Compact table: smaller font/rows and no vertical scrollbar
         font = self.table.font()
-        try:
+        with contextlib.suppress(Exception):
             font.setPointSize(max(font.pointSize() - 1, 9))
-        except Exception:
-            pass
         self.table.setFont(font)
         self.table.verticalHeader().setDefaultSectionSize(18)  # Smaller row height
         self.table.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)

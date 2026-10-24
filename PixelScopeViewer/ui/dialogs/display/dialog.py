@@ -11,6 +11,8 @@ The dialog adapts to image data type and provides both sliders and spinboxes
 for precise control. Also includes channel visibility selection.
 """
 
+import contextlib
+
 from PySide6.QtCore import QEvent, Qt, Signal
 from PySide6.QtWidgets import (
     QAbstractSpinBox,
@@ -126,10 +128,8 @@ class BrightnessDialog(QDialog):
         if initial_brightness:
             self.set_brightness(*initial_brightness)
             # Seed colorbar captions with initial brightness
-            try:
+            with contextlib.suppress(Exception):
                 self.channel_tab.on_brightness_for_colorbar(*initial_brightness)
-            except Exception:
-                pass
         if initial_channels:
             self.set_channels(initial_channels)
         if initial_colors:
@@ -214,18 +214,14 @@ class BrightnessDialog(QDialog):
 
     def moveEvent(self, event):
         # Save geometry whenever the dialog is moved
-        try:
+        with contextlib.suppress(Exception):
             BrightnessDialog._saved_geometry = self.saveGeometry()
-        except Exception:
-            pass
         super().moveEvent(event)
 
     def resizeEvent(self, event):
         # Save geometry whenever the dialog is resized
-        try:
+        with contextlib.suppress(Exception):
             BrightnessDialog._saved_geometry = self.saveGeometry()
-        except Exception:
-            pass
         super().resizeEvent(event)
 
     def keyPressEvent(self, event):

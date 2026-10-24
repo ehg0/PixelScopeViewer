@@ -14,6 +14,7 @@ Features:
 - Title bar showing current filename and image index
 """
 
+import contextlib
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -28,6 +29,7 @@ from PySide6.QtGui import (
     QPixmap,
 )
 from PySide6.QtWidgets import (
+    QApplication,
     QDialog,
     QDockWidget,
     QFileDialog,
@@ -37,11 +39,13 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QScrollArea,
     QStatusBar,
+    QTabWidget,
     QWidget,
 )
 
-from ...core.image_io import is_image_file, load_image, numpy_to_qimage
+from ...core.image_io import ImageLoaderRegistry, is_image_file, load_image, numpy_to_qimage
 from ..dialogs import AnalysisDialog, DiffDialog, FeaturesDialog, HelpDialog
+from ..dialogs.tiling import TilingComparisonDialog
 from ..utils import MODE_1CH_JET, MODE_2CH_FLOW_HSV, ChannelColorManager, apply_jet_colormap, flow_to_hsv_rgb
 from ..utils.features_manager import FeaturesManager
 from ..widgets import DisplayInfoWidget, ImageLabel, NavigatorWidget, ROIInfoWidget
@@ -149,8 +153,6 @@ class ImageViewer(QMainWindow):
         self.addDockWidget(Qt.LeftDockWidgetArea, self.navigator_dock)
 
         # Info dock with tabs
-        from PySide6.QtWidgets import QTabWidget
-
         self.info_dock = QDockWidget("Info")
         self.info_dock.setFeatures(QDockWidget.DockWidgetFloatable | QDockWidget.DockWidgetMovable)
 
@@ -273,10 +275,8 @@ class ImageViewer(QMainWindow):
             self._analysis_dialog.raise_()
             self._analysis_dialog.activateWindow()
             if tab is not None:
-                try:
+                with contextlib.suppress(Exception):
                     self._analysis_dialog.set_current_tab(tab)
-                except Exception:
-                    pass
             return
 
         img = self.images[self.current_index]
@@ -300,10 +300,8 @@ class ImageViewer(QMainWindow):
         dlg.finished.connect(on_closed)
         # if a tab was requested, set it
         if tab is not None:
-            try:
+            with contextlib.suppress(Exception):
                 dlg.set_current_tab(tab)
-            except Exception:
-                pass
 
     def open_files(self):
         """Open file dialog to load image files."""
@@ -311,8 +309,6 @@ class ImageViewer(QMainWindow):
         standard_exts = "*.png *.jpg *.tif *.bmp *.jpeg *.exr *.npy *.hdr *.tiff *.gif *.webp  *.bin"
 
         # Get custom extensions from registry
-        from ...core.image_io import ImageLoaderRegistry
-
         registry = ImageLoaderRegistry.get_instance()
         custom_exts, has_wildcard = registry.get_supported_extensions()
 
@@ -355,10 +351,8 @@ class ImageViewer(QMainWindow):
                 # Open features dialog (or bring existing dialog to front) and reflect the contents
                 self.show_features_dialog()
                 if self._features_dialog is not None:
-                    try:
+                    with contextlib.suppress(Exception):
                         self._features_dialog.refresh_from_manager()
-                    except Exception:
-                        pass
             except Exception:
                 # Non-fatal
                 pass
@@ -686,10 +680,8 @@ class ImageViewer(QMainWindow):
             arr_for_analysis = img.get("base_array", img.get("array"))
             img_path = img.get("path", None)
             if self._analysis_dialog:
-                try:
+                with contextlib.suppress(Exception):
                     self._analysis_dialog.set_image_and_rect(arr_for_analysis, self.current_roi_rect, img_path)
-                except Exception:
-                    pass
         except Exception:
             pass
 
@@ -710,10 +702,8 @@ class ImageViewer(QMainWindow):
             if img:
                 arr = img.get("base_array", img.get("array"))
                 img_path = img.get("path")
-                try:
+                with contextlib.suppress(Exception):
                     self._analysis_dialog.set_image_and_rect(arr, self.current_roi_rect, img_path)
-                except Exception:
-                    pass
 
     def _get_displayed_array(self) -> np.ndarray | None:
         """Return the processed numpy array that is currently being displayed."""
@@ -878,25 +868,17 @@ class ImageViewer(QMainWindow):
         # Clear the image label to release any held references
         self.image_label.clear()
         # update UI and image menu
-        try:
+        with contextlib.suppress(Exception):
             self.show_current_image()
-        except Exception:
-            pass
         # ensure image menu is cleared
-        try:
+        with contextlib.suppress(Exception):
             self.update_image_list_menu()
-        except Exception:
-            pass
         # notify analysis dialogs that there's no image now
         if self._analysis_dialog:
-            try:
+            with contextlib.suppress(Exception):
                 self._analysis_dialog.set_image_and_rect(None, None)
-            except Exception:
-                pass
 
     def reboot(self):
-        from PySide6.QtWidgets import QApplication
-
         from PixelScopeViewer.app import RESTART_EXIT_CODE
 
         QApplication.exit(RESTART_EXIT_CODE)
@@ -945,8 +927,6 @@ class ImageViewer(QMainWindow):
         if len(self.images) < 2:
             QMessageBox.information(self, "複数画像比較", "比較する画像が2枚以上必要です。")
             return
-        from ..dialogs.tiling import TilingComparisonDialog
-
         # Create modeless dialog (allows main window operation)
         # Keep reference to prevent garbage collection
         if not hasattr(self, "_tiling_dialog") or self._tiling_dialog is None:
@@ -985,11 +965,8 @@ class ImageViewer(QMainWindow):
             if img:
                 arr = img.get("base_array", img.get("array"))
                 img_path = img.get("path")
-                try:
+                with contextlib.suppress(Exception):
                     self._analysis_dialog.set_image_and_rect(arr, self.current_roi_rect, img_path)
-                except Exception:
-                    # ignore dialog-specific errors and continue notifying others
-                    pass
 
         self.roi_changed.emit()
 
@@ -1057,10 +1034,8 @@ class ImageViewer(QMainWindow):
                 if img:
                     arr = img.get("base_array", img.get("array"))
                     img_path = img.get("path")
-                    try:
+                    with contextlib.suppress(Exception):
                         self._analysis_dialog.set_image_and_rect(arr, self.current_roi_rect, img_path)
-                    except Exception:
-                        pass
             # Emit ROI changed for dependent widgets (e.g., ROIInfo)
             self.roi_changed.emit()
         except Exception:

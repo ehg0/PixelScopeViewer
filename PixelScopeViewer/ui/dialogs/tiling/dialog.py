@@ -1,9 +1,10 @@
 """Main tiling comparison dialog."""
 
 import numpy as np
-from PySide6.QtCore import QEvent, QRect, Qt, Signal
+from PySide6.QtCore import QEvent, QRect, Qt, QTimer, Signal
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
+    QApplication,
     QDialog,
     QGridLayout,
     QLabel,
@@ -14,7 +15,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..analysis.dialog import AnalysisDialog
 from .brightness_dialog import TilingBrightnessDialog
+
+# 本モジュールの TilingComparisonDialog と同名のため別名で import する
+from .comparison_dialog import TilingComparisonDialog as OverlayComparisonDialog
 from .core import (
     BrightnessManager,
     ROIManager,
@@ -145,7 +150,7 @@ class TilingComparisonDialog(QDialog):
         self.addAction(brightness_action)
         brightness_action.triggered.connect(self.show_brightness_dialog)
 
-        # Analysis menu (order aligned to main viewer: dialog, metadata, profile, histogram, separators, tiling features)
+        # 解析メニュー（並び順はメインビューアに合わせる）
         analysis_menu = menu_bar.addMenu("解析")
         analysis_dialog_action = analysis_menu.addAction("解析ビュー(単一画像)")
         analysis_dialog_action.setShortcut("A")
@@ -229,8 +234,6 @@ class TilingComparisonDialog(QDialog):
         # This ensures a clean state without carrying over any settings
         if self.parent_viewer:
             # Schedule the new dialog to open after this one closes
-            from PySide6.QtCore import QTimer
-
             QTimer.singleShot(0, self.parent_viewer.show_tiling_comparison_dialog)
 
         # Close this dialog
@@ -341,8 +344,6 @@ class TilingComparisonDialog(QDialog):
         new_scroll_x, new_scroll_y = self.zoom_manager.adjust_zoom(factor, tile_index, mouse_pos)
 
         # Apply scroll position
-        from PySide6.QtWidgets import QApplication
-
         self.scroll_manager.apply_scroll_position(new_scroll_x, new_scroll_y)
         QApplication.processEvents()
 
@@ -737,8 +738,6 @@ class TilingComparisonDialog(QDialog):
             self._comparison_dialog.close()
             self._comparison_dialog = None
 
-        from ..analysis.dialog import AnalysisDialog
-
         # Get active tile data
         image_array, roi_rect, file_path = self.get_active_tile_image_and_rect()
 
@@ -805,8 +804,6 @@ class TilingComparisonDialog(QDialog):
             self._analysis_dialog.close()
             self._analysis_dialog = None
 
-        from .comparison_dialog import TilingComparisonDialog
-
         # Get all tiles data
         tiles_data = self.get_all_tiles_data()
 
@@ -817,7 +814,7 @@ class TilingComparisonDialog(QDialog):
         # Create or show existing comparison dialog
         if self._comparison_dialog is None or not self._comparison_dialog.isVisible():
             # Create with explicit parent for proper window relationship
-            self._comparison_dialog = TilingComparisonDialog(parent=self, tiles_data=tiles_data)
+            self._comparison_dialog = OverlayComparisonDialog(parent=self, tiles_data=tiles_data)
 
             # Track dialog for window state synchronization
             self._child_dialogs.append(self._comparison_dialog)

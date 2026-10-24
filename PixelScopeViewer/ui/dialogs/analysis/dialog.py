@@ -22,6 +22,8 @@ Dependencies:
     - exifread: For comprehensive EXIF metadata reading
 """
 
+import contextlib
+
 import numpy as np
 from PySide6.QtCore import QEvent, QRect, Qt
 from PySide6.QtGui import QColor, QGuiApplication
@@ -288,18 +290,14 @@ class AnalysisDialog(QDialog):
 
     def moveEvent(self, event):
         # Save geometry whenever the dialog is moved
-        try:
+        with contextlib.suppress(Exception):
             AnalysisDialog._saved_geometry = self.saveGeometry()
-        except Exception:
-            pass
         super().moveEvent(event)
 
     def resizeEvent(self, event):
         # Save geometry whenever the dialog is resized
-        try:
+        with contextlib.suppress(Exception):
             AnalysisDialog._saved_geometry = self.saveGeometry()
-        except Exception:
-            pass
         super().resizeEvent(event)
 
     def set_image_and_rect(
@@ -450,10 +448,7 @@ class AnalysisDialog(QDialog):
 
             if is_tiling_parent:
                 try:
-                    if arr.ndim == 3 and arr.shape[2] > 1:
-                        nch_local = int(arr.shape[2])
-                    else:
-                        nch_local = 1
+                    nch_local = int(arr.shape[2]) if arr.ndim == 3 and arr.shape[2] > 1 else 1
                     colors = get_default_channel_colors(nch_local)
                     if nch_local == 1:
                         colors = [QColor(0, 0, 0)]
@@ -478,10 +473,7 @@ class AnalysisDialog(QDialog):
         self.channel_color_map = {}
         if channel_colors:
             # Determine channel count
-            if arr.ndim == 3 and arr.shape[2] > 1:
-                nch_local = arr.shape[2]
-            else:
-                nch_local = 1
+            nch_local = arr.shape[2] if arr.ndim == 3 and arr.shape[2] > 1 else 1
             for cindex in range(nch_local):
                 if cindex < len(channel_colors):
                     color = channel_colors[cindex]
@@ -505,10 +497,7 @@ class AnalysisDialog(QDialog):
                 (0, 102, 255),
                 (127, 127, 127),
             ]
-            if arr.ndim == 3 and arr.shape[2] > 1:
-                nch_local = arr.shape[2]
-            else:
-                nch_local = 1
+            nch_local = arr.shape[2] if arr.ndim == 3 and arr.shape[2] > 1 else 1
             for cindex in range(nch_local):
                 rgb = default_palette[cindex] if cindex < len(default_palette) else (127, 127, 127)
                 self.channel_color_map[f"C{cindex}"] = rgb
@@ -725,10 +714,7 @@ class AnalysisDialog(QDialog):
         x, y, w, h = self.viewer.current_roi_rect.getRect()
         text = "path,ch,x_sta,y_sta,width,hight,mean,std,median,min,max,fano\n"
 
-        if self.hist_get_all_plane_data.isChecked():
-            targets = imgs
-        else:
-            targets = [imgs[current_id]]
+        targets = imgs if self.hist_get_all_plane_data.isChecked() else [imgs[current_id]]
 
         for img in targets:
             path = img.get("path")
@@ -759,10 +745,7 @@ class AnalysisDialog(QDialog):
         method = self.profile_compute_method
         text = "path,ch,x_sta,y_sta,width,hight,orientation,method,mean,std,median,min,max,fano\n"
 
-        if self.prof_get_all_plane_data.isChecked():
-            targets = imgs
-        else:
-            targets = [imgs[current_id]]
+        targets = imgs if self.prof_get_all_plane_data.isChecked() else [imgs[current_id]]
 
         for img in targets:
             path = img.get("path")

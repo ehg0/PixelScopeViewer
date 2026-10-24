@@ -23,7 +23,7 @@ def determine_dtype_group(arr: np.ndarray) -> str:
                 return "uint8"
             else:
                 return "uint16"
-        except:
+        except Exception:
             return "uint8"
     else:
         return "uint8"

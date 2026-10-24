@@ -355,10 +355,7 @@ class HistogramTab(QWidget):
 
             if color_val is None:
                 fallback = ["#ff0000", "#00c800", "#0066ff", "#7f7f7f"]
-                if ch_index is not None and ch_index < len(fallback):
-                    color_val = fallback[ch_index]
-                else:
-                    color_val = "#7f8c8d"
+                color_val = fallback[ch_index] if ch_index is not None and ch_index < len(fallback) else "#7f8c8d"
 
             # QColor に変換して alpha を設定
             qcolor = QColor(color_val)

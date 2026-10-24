@@ -8,6 +8,8 @@ what pyqtgraph provides.
 
 from __future__ import annotations
 
+import contextlib
+
 
 def save_viewbox_state(vb) -> dict | None:
     """Return full ViewBox state if available."""
@@ -44,10 +46,8 @@ def connect_plot_controls(plot_item, which: str, plot_settings: dict[str, dict],
     # initial grid sync
     try:
         gval = False
-        try:
+        with contextlib.suppress(Exception):
             gval = bool(c.xGridCheck.isChecked() or c.yGridCheck.isChecked())
-        except Exception:
-            pass
         plot_settings.setdefault(which, {})["grid"] = gval
     except Exception:
         pass
@@ -65,10 +65,8 @@ def connect_plot_controls(plot_item, which: str, plot_settings: dict[str, dict],
         try:
             if hasattr(c, "logYCheck"):
                 # initial sync
-                try:
+                with contextlib.suppress(Exception):
                     plot_settings.setdefault("hist", {})["log"] = bool(c.logYCheck.isChecked())
-                except Exception:
-                    pass
                 c.logYCheck.toggled.connect(
                     lambda checked: _on_log_toggled(plot_settings, bool(checked), on_hist_log_changed)
                 )
@@ -77,10 +75,8 @@ def connect_plot_controls(plot_item, which: str, plot_settings: dict[str, dict],
 
 
 def _on_grid_toggled(which: str, plot_settings: dict[str, dict], checked: bool):
-    try:
+    with contextlib.suppress(Exception):
         plot_settings.setdefault(which, {})["grid"] = bool(checked)
-    except Exception:
-        pass
 
 
 def _on_log_toggled(plot_settings: dict[str, dict], checked: bool, on_hist_log_changed=None):

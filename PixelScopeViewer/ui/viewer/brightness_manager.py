@@ -3,12 +3,18 @@
 This module handles brightness parameter management and display dialog coordination.
 """
 
+import contextlib
+
 import numpy as np
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QMessageBox
 
 from PixelScopeViewer.core.constants import DTYPE_DEFAULTS, get_dtype_defaults
 
+from ...core.image_io import numpy_to_qimage
 from ..dialogs import BrightnessDialog
+from ..dialogs.display import BrightnessDialog as _BD
 from ..dialogs.display.core import apply_brightness_adjustment as apply_brightness_core
 from ..dialogs.display.tabs.logic.brightness_utils import determine_dtype_defaults
 from ..utils import MODE_1CH_GRAYSCALE, MODE_1CH_JET, MODE_2CH_COMPOSITE, MODE_2CH_FLOW_HSV
@@ -122,8 +128,6 @@ class BrightnessManager:
 
         # Show only if hidden (previously closed, etc.), and restore saved geometry if possible.
         try:
-            from ..dialogs.display import BrightnessDialog as _BD
-
             if getattr(_BD, "_saved_geometry", None):
                 self.viewer.brightness_dialog.restoreGeometry(_BD._saved_geometry)
         except Exception:
@@ -270,10 +274,8 @@ class BrightnessManager:
 
         # Update analysis dialog if it exists and is visible
         if self.viewer._analysis_dialog is not None:
-            try:
+            with contextlib.suppress(Exception):
                 self.viewer._analysis_dialog.update_contents()
-            except Exception:
-                pass
 
     def on_mode_1ch_changed(self, mode: str):
         if mode not in (MODE_1CH_GRAYSCALE, MODE_1CH_JET):
@@ -290,11 +292,6 @@ class BrightnessManager:
             base_arr = img.get("base_array", img.get("array"))
             if (base_arr.ndim == 2) or (base_arr.ndim == 3 and base_arr.shape[2] == 1):
                 try:
-                    from PySide6.QtCore import Qt
-                    from PySide6.QtGui import QPixmap
-
-                    from ...core.image_io import numpy_to_qimage
-
                     thumb_arr = self.viewer._prepare_thumbnail_array(base_arr)
                     thumb_qimg = numpy_to_qimage(thumb_arr)
                     thumb_pixmap = QPixmap.fromImage(thumb_qimg).scaled(
@@ -324,11 +321,6 @@ class BrightnessManager:
             if base_arr.ndim == 3 and base_arr.shape[2] == 2:
                 # Regenerate thumbnail with new mode
                 try:
-                    from PySide6.QtCore import Qt
-                    from PySide6.QtGui import QPixmap
-
-                    from ...core.image_io import numpy_to_qimage
-
                     thumb_arr = self.viewer._prepare_thumbnail_array(base_arr)
                     thumb_qimg = numpy_to_qimage(thumb_arr)
                     thumb_pixmap = QPixmap.fromImage(thumb_qimg).scaled(
@@ -408,10 +400,7 @@ class BrightnessManager:
         # Update gain: amount < 0 -> darker (gain *= 0.5), amount > 0 -> brighter (gain *= 2)
         current_gain = self.viewer.brightness_gain
 
-        if amount < 0:
-            new_gain = current_gain * 0.5
-        else:
-            new_gain = current_gain * 2.0
+        new_gain = current_gain * 0.5 if amount < 0 else current_gain * 2.0
 
         # Update brightness_gain property
         self.viewer.brightness_gain = new_gain

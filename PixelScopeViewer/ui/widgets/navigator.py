@@ -4,6 +4,8 @@ from PySide6.QtCore import QEvent, Qt
 from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QGroupBox, QLabel, QVBoxLayout
 
+from ...core.image_io import numpy_to_qimage
+
 
 class NavigatorWidget(QGroupBox):
     """Navigator widget displaying thumbnail image with viewport rectangle.
@@ -46,9 +48,12 @@ class NavigatorWidget(QGroupBox):
         try:
             if obj is self.viewer.scroll_area.viewport() and event.type() == QEvent.Resize:
                 self.update_thumbnail()
-            elif obj is self.thumbnail_label:
-                if event.type() == QEvent.MouseButtonPress and event.button() == Qt.LeftButton:
-                    self.handle_mouse_press(event)
+            elif (
+                obj is self.thumbnail_label
+                and event.type() == QEvent.MouseButtonPress
+                and event.button() == Qt.LeftButton
+            ):
+                self.handle_mouse_press(event)
         except Exception:
             pass
         return super().eventFilter(obj, event)
@@ -134,8 +139,6 @@ class NavigatorWidget(QGroupBox):
         base_pixmap = img_data.get("thumbnail_pixmap")
         if not base_pixmap:
             # Fallback if thumbnail is not cached for some reason
-            from ...core.image_io import numpy_to_qimage
-
             qimg = numpy_to_qimage(img_data["array"])
             base_pixmap = QPixmap.fromImage(qimg).scaled(
                 self.thumbnail_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation

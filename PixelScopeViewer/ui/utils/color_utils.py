@@ -142,10 +142,7 @@ def apply_jet_colormap(gray: np.ndarray) -> np.ndarray:
     # Normalize to 0..255 uint8
     if np.issubdtype(a.dtype, np.floating):
         amin, amax = np.nanmin(a), np.nanmax(a)
-        if amax > amin:
-            norm = (a - amin) / (amax - amin)
-        else:
-            norm = np.zeros_like(a, dtype=np.float32)
+        norm = (a - amin) / (amax - amin) if amax > amin else np.zeros_like(a, dtype=np.float32)
         u8 = np.clip(norm * 255.0, 0, 255).astype(np.uint8)
     elif np.issubdtype(a.dtype, np.integer):
         try:

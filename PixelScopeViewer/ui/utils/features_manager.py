@@ -17,6 +17,7 @@ Notes:
 from __future__ import annotations
 
 import json
+import re
 from collections import OrderedDict
 from collections.abc import Iterable
 from pathlib import Path
@@ -208,7 +209,7 @@ class FeaturesManager:
         cols["fullfilepath"] = True
         # Then all others
         for r in self._rows_by_key.values():
-            for k in r.keys():
+            for k in r:
                 cols.setdefault(k, True)
         return list(cols.keys())
 
@@ -241,7 +242,7 @@ class FeaturesManager:
     def get_categories_columns(self) -> list[str]:
         cols = OrderedDict()
         for r in self.get_categories_rows():
-            for k in r.keys():
+            for k in r:
                 cols.setdefault(k, True)
         return list(cols.keys())
 
@@ -342,8 +343,6 @@ class FeaturesManager:
             content = json.dumps(out, ensure_ascii=False, indent=2, separators=(",", ": "))
             # Post-process: remove newlines inside small arrays like bbox and category dicts
             # Pattern: keep arrays on single line if they're simple (numbers/nulls only)
-            import re
-
             # Compact bbox arrays: [<num>, <num>, <num>, <num>]
             content = re.sub(
                 r"\[\s+(-?\d+(?:\.\d+)?|null),\s+(-?\d+(?:\.\d+)?|null),\s+(-?\d+(?:\.\d+)?|null),\s+(-?\d+(?:\.\d+)?|null)\s+\]",

@@ -1,7 +1,10 @@
 """Tile widget for displaying individual images in tiling comparison."""
 
+import contextlib
+from pathlib import Path
+
 import numpy as np
-from PySide6.QtCore import QEvent, Qt, Signal
+from PySide6.QtCore import QEvent, Qt, QTimer, Signal
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QScrollArea, QSizePolicy, QVBoxLayout, QWidget
 
 from PixelScopeViewer.ui.dialogs.display.core.compute import apply_brightness_adjustment
@@ -162,20 +165,14 @@ class TileWidget(QWidget):
             result = False  # Let event continue to be processed
 
             # Use a timer to check after the event has been fully processed
-            from PySide6.QtCore import QTimer
-
             def check_and_sync():
                 # After wheel scroll, manually trigger sync ONLY if scrollbar actually moved
                 if vsb and vsb.value() != old_v:
-                    try:
+                    with contextlib.suppress(Exception):
                         self.parent_dialog.sync_scroll(self.tile_index, "v", vsb.value())
-                    except Exception:
-                        pass
                 if hsb and hsb.value() != old_h:
-                    try:
+                    with contextlib.suppress(Exception):
                         self.parent_dialog.sync_scroll(self.tile_index, "h", hsb.value())
-                    except Exception:
-                        pass
 
             QTimer.singleShot(0, check_and_sync)
             return result
@@ -183,10 +180,8 @@ class TileWidget(QWidget):
 
     def _on_zoom_requested(self, factor: float, mouse_pos=None):
         # Delegate to parent dialog to keep all tiles in sync
-        try:
+        with contextlib.suppress(Exception):
             self.parent_dialog.adjust_zoom(factor, tile_index=self.tile_index, mouse_pos=mouse_pos)
-        except Exception:
-            pass
 
     def mousePressEvent(self, event):
         """Handle mouse press to activate tile."""
@@ -288,8 +283,6 @@ class TileWidget(QWidget):
 
         # Update filename display with tile number
         path = self.image_data.get("path", f"Image {self.tile_index + 1}")
-        from pathlib import Path
-
         filename = Path(path).name if path else f"Image {self.tile_index + 1}"
         # Add tile number to the display (1-indexed)
         display_text = f"Tile {self.tile_index + 1}: {filename}"

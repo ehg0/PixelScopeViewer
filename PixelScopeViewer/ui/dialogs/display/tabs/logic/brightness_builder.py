@@ -1,5 +1,7 @@
 """UI builder for BrightnessTab - handles all widget creation and layout."""
 
+import math
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -178,8 +180,6 @@ class BrightnessUIBuilder:
         Returns:
             tuple: (slider, spinbox)
         """
-        import math
-
         control_layout = QHBoxLayout()
         caption = QLabel("Gain")
         caption.setAlignment(Qt.AlignRight | Qt.AlignVCenter)

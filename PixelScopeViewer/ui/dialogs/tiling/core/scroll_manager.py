@@ -99,7 +99,7 @@ class ScrollManager:
         """
         self._syncing_scroll = True
         try:
-            for i, tile in enumerate(self.tiles):
+            for tile in self.tiles:
                 tile_hsb = tile.scroll_area.horizontalScrollBar()
                 tile_vsb = tile.scroll_area.verticalScrollBar()
 

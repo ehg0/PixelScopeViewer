@@ -6,6 +6,7 @@ This module provides a dialog for comparing all tiles side-by-side with:
 - Metadata comparison table
 """
 
+import contextlib
 from pathlib import Path
 
 import numpy as np
@@ -130,10 +131,7 @@ class TilingComparisonDialog(AnalysisDialog):
                 if len(parts) >= 3 and parts[0] == "Tile":
                     tile_num = int(parts[1])
                     ch_code = parts[2]
-                    if ch_code.startswith("C"):
-                        ch_index = int(ch_code[1:])
-                    else:
-                        ch_index = 0
+                    ch_index = int(ch_code[1:]) if ch_code.startswith("C") else 0
                 else:
                     # Fallback: search for numeric tile
                     for p in parts:
@@ -189,10 +187,8 @@ class TilingComparisonDialog(AnalysisDialog):
             metadata = {}
 
             if path:
-                try:
+                with contextlib.suppress(Exception):
                     metadata = get_image_metadata(path, arr) or {}
-                except Exception:
-                    pass
 
             # Add/Override basic information from array (ensure they are always present)
             if arr is not None:
@@ -424,23 +420,17 @@ class TilingComparisonDialog(AnalysisDialog):
 
         # Merge all series for plotting
         all_xs = []
-        for tile_idx, series in all_hist_series.items():
+        for series in all_hist_series.values():
             for xs, _ in series.values():
                 xs = np.asarray(xs)
-                if len(xs) > 1:
-                    dx = xs[1] - xs[0]
-                else:
-                    dx = 1.0
+                dx = xs[1] - xs[0] if len(xs) > 1 else 1.0
                 # add ±1 step
                 xs_extended = np.concatenate([xs, xs - dx, xs + dx])
                 all_xs.append(xs_extended)
-        if len(all_xs) == 0:
-            x_common = np.array([])
-        else:
-            x_common = np.unique(np.concatenate(all_xs))
+        x_common = np.array([]) if len(all_xs) == 0 else np.unique(np.concatenate(all_xs))
 
         merged_series = {}
-        for tile_idx, series in all_hist_series.items():
+        for series in all_hist_series.values():
             for label, data in series.items():
                 xs, ys = data
                 if self.hist_config_mode == "ECDF":
@@ -558,7 +548,7 @@ class TilingComparisonDialog(AnalysisDialog):
 
         # Merge all series for plotting
         merged_series = {}
-        for tile_idx, series in all_prof_series.items():
+        for series in all_prof_series.values():
             for label, data in series.items():
                 merged_series[label] = data
 

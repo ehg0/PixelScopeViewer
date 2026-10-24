@@ -12,5 +12,9 @@ ignore = [
     "D415",
 ]
 
+[tool.ruff.lint.flake8-bugbear]
+# Qt model の rowCount(parent=QModelIndex()) などの慣用句を許容する
+extend-immutable-calls = ["PySide6.QtCore.QModelIndex"]
+
 [tool.ruff.lint.pydocstyle]
 convention = "google"

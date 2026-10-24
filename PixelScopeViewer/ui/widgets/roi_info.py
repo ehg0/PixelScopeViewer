@@ -1,6 +1,8 @@
 """ROI info widget showing and editing ROI information."""
 
-from PySide6.QtCore import Qt
+import contextlib
+
+from PySide6.QtCore import QRect, Qt
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QGroupBox,
@@ -34,10 +36,8 @@ class ROIInfoWidget(QGroupBox):
         self.table.setRowCount(8)
         # Compact table and editors
         font = self.table.font()
-        try:
+        with contextlib.suppress(Exception):
             font.setPointSize(max(font.pointSize() - 1, 9))
-        except Exception:
-            pass
         self.table.setFont(font)
         self.table.verticalHeader().setDefaultSectionSize(18)  # Smaller row height
         self.table.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -166,8 +166,6 @@ class ROIInfoWidget(QGroupBox):
             self.spin_boxes[3].blockSignals(False)
 
         # Update ROI using image coordinates to avoid rounding issues at various scales
-        from PySide6.QtCore import QRect
-
         new_rect_img = QRect(x, y, w, h)
         self.viewer.set_roi_from_image_rect(new_rect_img)
 

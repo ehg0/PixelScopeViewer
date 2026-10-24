@@ -159,14 +159,13 @@ class RoiManagerMixin:
                     sy = self._image_to_widget_y(self._start_img[1])
                     self.roi_rect = QRect(sx, sy, 1, 1)
                 self.dragging = True
-        elif ev.button() == Qt.RightButton:
-            # Start moving only if clicked inside selection (but not on edge)
-            if self.roi_rect and self.roi_rect.contains(self.start_point) and not edge:
-                self._moving = True
-                self._resizing = False
-                self._move_start_img = self._widget_to_image_point(self.start_point)
-                self._move_orig_img_rect = self.get_roi_in_image_coords()
-                self.dragging = True
+        elif ev.button() == Qt.RightButton and self.roi_rect and self.roi_rect.contains(self.start_point) and not edge:
+            # ROI の内側（辺以外）を右クリックしたときのみ移動を開始する
+            self._moving = True
+            self._resizing = False
+            self._move_start_img = self._widget_to_image_point(self.start_point)
+            self._move_orig_img_rect = self.get_roi_in_image_coords()
+            self.dragging = True
 
     def mouseMoveEvent(self, ev):
         """Handle mouse move for selection operations."""

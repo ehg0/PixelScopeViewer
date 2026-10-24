@@ -110,14 +110,9 @@ class ImageLabel(RoiManagerMixin, RoiEditorMixin, BaseImageLabel):
             event.ignore()
             return
 
-        # Use binary steps like keyboard shortcuts (2x zoom in/out)
+        # キーボード操作と同様に 2 倍 / 1/2 倍で zoom する
         current_scale = self.viewer.scale
-        if angle_delta > 0:
-            # Zoom in: multiply by 2
-            new_scale = current_scale * 2
-        else:
-            # Zoom out: divide by 2
-            new_scale = current_scale / 2
+        new_scale = current_scale * 2 if angle_delta > 0 else current_scale / 2
 
         # Set reasonable zoom limits (same as keyboard shortcuts)
         new_scale = max(MIN_ZOOM_SCALE, min(MAX_ZOOM_SCALE, new_scale))

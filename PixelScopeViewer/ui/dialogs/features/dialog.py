@@ -1,15 +1,18 @@
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QModelIndex, Qt
+from PySide6.QtCore import QEvent, QModelIndex, Qt, QTimer
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
     QComboBox,
     QDialog,
+    QDialogButtonBox,
     QFileDialog,
     QHBoxLayout,
+    QInputDialog,
     QLineEdit,
     QMenu,
     QMenuBar,
@@ -96,10 +99,8 @@ class FeaturesDialog(QDialog):
         self.proxy_images.setSourceModel(self.model_images)
         self.proxy_images.setFilterCaseSensitivity(Qt.CaseInsensitive)
         # Avoid dynamic resort/filter on every data change (costly for large datasets)
-        try:
+        with contextlib.suppress(Exception):
             self.proxy_images.setDynamicSortFilter(False)
-        except Exception:
-            pass
         self.table_images = QTableView(self)
         self.table_images.setModel(self.proxy_images)
         self.table_images.setSortingEnabled(True)
@@ -214,33 +215,24 @@ class FeaturesDialog(QDialog):
         # Images
         img_cols = self.manager.get_columns()
         if img_cols:
-            if "id" in img_cols:
-                img_key_col = img_cols.index("id")
-            else:
-                img_key_col = 0
+            img_key_col = img_cols.index("id") if "id" in img_cols else 0
             self.table_images.sortByColumn(img_key_col, Qt.AscendingOrder)
-            try:
+            with contextlib.suppress(Exception):
                 self.table_images.horizontalHeader().setSortIndicator(img_key_col, Qt.AscendingOrder)
-            except Exception:
-                pass
         # Categories
         cat_cols = self.manager.get_categories_columns() or []
         if cat_cols:
             cat_key_col = cat_cols.index("id") if "id" in cat_cols else 0
             self.table_categories.sortByColumn(cat_key_col, Qt.AscendingOrder)
-            try:
+            with contextlib.suppress(Exception):
                 self.table_categories.horizontalHeader().setSortIndicator(cat_key_col, Qt.AscendingOrder)
-            except Exception:
-                pass
         # Annotations
         ann_cols = self.model_annotations.get_columns()
         if ann_cols:
             ann_key_col = ann_cols.index("image_id") if "image_id" in ann_cols else 0
             self.table_annotations.sortByColumn(ann_key_col, Qt.AscendingOrder)
-            try:
+            with contextlib.suppress(Exception):
                 self.table_annotations.horizontalHeader().setSortIndicator(ann_key_col, Qt.AscendingOrder)
-            except Exception:
-                pass
 
     def refresh_filter_columns(self):
         cols = self._current_columns()
@@ -259,10 +251,8 @@ class FeaturesDialog(QDialog):
 
     def _on_viewer_images_changed(self):
         # Recompute proxy filtering when the set of loaded images changes
-        try:
+        with contextlib.suppress(Exception):
             self.proxy_images.invalidateFilter()
-        except Exception:
-            pass
         # Refresh roles (loaded/current highlighting)
         self.refresh_roles()
 
@@ -287,8 +277,6 @@ class FeaturesDialog(QDialog):
         if not available:
             QMessageBox.information(self, "列表示", "表示切替可能な列がありません。")
             return
-        from PySide6.QtWidgets import QCheckBox, QDialog, QDialogButtonBox, QPushButton, QVBoxLayout
-
         dlg = QDialog(self)
         dlg.setWindowTitle("列表示設定")
         dlg.resize(300, 400)
@@ -349,8 +337,6 @@ class FeaturesDialog(QDialog):
         dlg.exec()
 
     def _on_add_column(self):
-        from PySide6.QtWidgets import QInputDialog
-
         name, ok = QInputDialog.getText(self, "列を追加", "列名を入力：")
         if ok and name:
             self.manager.add_column(name)
@@ -404,8 +390,6 @@ class FeaturesDialog(QDialog):
         fp = self.manager.get_value(row, "fullfilepath")
         if not fp:
             return
-        from PySide6.QtCore import QTimer
-
         QTimer.singleShot(0, lambda fp=fp: self._open_image_by_fullpath(fp))
 
     def _open_image_by_fullpath(self, fp: str):

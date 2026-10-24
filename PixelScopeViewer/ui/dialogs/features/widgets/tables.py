@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
 from typing import Any
 
@@ -19,12 +20,9 @@ class FeaturesTableModel(QAbstractTableModel):
         # repeated expensive resolution/loops during painting.
         self._loaded_paths = set()
         self._current_path = None
-        try:
-            # viewer exposes a signal 'image_changed' (used elsewhere); listen
-            # to rebuild our caches when images change.
+        # 画像の追加・削除時に cache を再構築する
+        with contextlib.suppress(Exception):
             self.viewer.image_changed.connect(self._rebuild_loaded_cache)
-        except Exception:
-            pass
         # Build initial cache
         self._rebuild_loaded_cache()
 
@@ -85,9 +83,9 @@ class FeaturesTableModel(QAbstractTableModel):
                 return None
             try:
                 if not isinstance(value, (str, bytes, bytearray, dict)) and hasattr(value, "__len__"):
-                    l = len(value)
-                    if l > 100:
-                        return f"<{type(value).__name__} len={l}>"
+                    length = len(value)
+                    if length > 100:
+                        return f"<{type(value).__name__} len={length}>"
             except Exception:
                 pass
             s = str(value).strip()
@@ -239,9 +237,8 @@ class SimpleDictTableModel(QAbstractTableModel):
             if isinstance(value, (int, float)):
                 return Qt.AlignRight | Qt.AlignVCenter
             return Qt.AlignLeft | Qt.AlignVCenter
-        if role == Qt.ToolTipRole:
-            if value is not None and str(value).strip():
-                return str(value)
+        if role == Qt.ToolTipRole and value is not None and str(value).strip():
+            return str(value)
         return None
 
     def flags(self, index: QModelIndex) -> Qt.ItemFlags:

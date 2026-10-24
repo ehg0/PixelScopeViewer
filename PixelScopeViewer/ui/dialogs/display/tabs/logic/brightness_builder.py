@@ -13,18 +13,14 @@ from PySide6.QtWidgets import (
     QSlider,
 )
 
+from PixelScopeViewer.ui import theme
+
 from .....utils.custom_qtwidgets import StepSlider
 from ..components import PowerOfTwoSpinBox
 
 
 class BrightnessUIBuilder:
     """BrightnessTab の UI 部品を生成して layout に追加する。"""
-
-    SLIDER_STYLESHEET = """
-        QSlider::groove:horizontal { background: #ddd; height: 6px; border-radius: 3px; }
-        QSlider::handle:horizontal { background: #666; width: 16px; margin: -5px 0; border-radius: 8px; }
-        QSlider::handle:horizontal:hover { background: #444; }
-    """
 
     SPINBOX_STYLESHEET = "QSpinBox, QDoubleSpinBox { padding: 10px; font-size: 10pt; }"
 
@@ -105,7 +101,7 @@ class BrightnessUIBuilder:
         slider.setRange(int(offset_range[0]), int(offset_range[1]))
         slider.setTickPosition(QSlider.TicksBelow)
         slider.setTickInterval((offset_range[1] - offset_range[0]) // 4)
-        slider.setStyleSheet(self.SLIDER_STYLESHEET)
+        slider.setStyleSheet(theme.SLIDER_STYLESHEET)
         slider.blockSignals(True)
         slider.setValue(int(initial_value))
         slider.blockSignals(False)
@@ -162,7 +158,7 @@ class BrightnessUIBuilder:
         slider.setSingleStep(1)
         slider.setTickPosition(QSlider.TicksBelow)
         slider.setTickInterval(1)
-        slider.setStyleSheet(self.SLIDER_STYLESHEET)
+        slider.setStyleSheet(theme.SLIDER_STYLESHEET)
         slider.blockSignals(True)
         initial_log2 = round(math.log2(initial_value))
         initial_log2 = max(log2_min, min(log2_max, initial_log2))
@@ -213,7 +209,7 @@ class BrightnessUIBuilder:
 
         slider = QSlider(Qt.Horizontal)
         slider.setTickPosition(QSlider.TicksBelow)
-        slider.setStyleSheet(self.SLIDER_STYLESHEET)
+        slider.setStyleSheet(theme.SLIDER_STYLESHEET)
 
         slider.setRange(int(upper_level_range[0]), int(upper_level_range[1]))
         slider.setTickInterval(int((upper_level_range[1] - upper_level_range[0]) // 4))

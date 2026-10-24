@@ -16,6 +16,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from PixelScopeViewer.ui import defaults
+
 
 class DraggableListWidget(QListWidget):
     """drag & drop で項目を並べ替えられる QListWidget。"""
@@ -33,10 +35,10 @@ class TileSelectionDialog(QDialog):
     def __init__(self, parent, image_list: list[dict]):
         super().__init__(parent)
         self.setWindowTitle("複数画像比較 - 画像選択")
-        self.resize(500, 600)
+        self.resize(*defaults.TILE_SELECTION_DIALOG_SIZE)
 
         self.image_list = image_list
-        self.grid_size = (2, 2)
+        self.grid_size = defaults.TILE_GRID_SIZE
         self.selected_indices = []
 
         self._build_ui()
@@ -51,16 +53,10 @@ class TileSelectionDialog(QDialog):
         grid_layout.addWidget(QLabel("グリッドサイズ (h, w):"))
 
         self.grid_combo = QComboBox()
-        self.grid_combo.addItem("1x2 (2枚)", (1, 2))
-        self.grid_combo.addItem("1x3 (3枚)", (1, 3))
-        self.grid_combo.addItem("1x4 (4枚)", (1, 4))
-        self.grid_combo.addItem("2x1 (2枚)", (2, 1))
-        self.grid_combo.addItem("2x2 (4枚)", (2, 2))
-        self.grid_combo.addItem("2x3 (6枚)", (2, 3))
-        self.grid_combo.addItem("2x4 (8枚)", (2, 4))
-        self.grid_combo.addItem("3x2 (6枚)", (3, 2))
-        self.grid_combo.addItem("3x3 (9枚)", (3, 3))
-        self.grid_combo.setCurrentIndex(8)  # 3x3
+        for rows, cols in defaults.TILE_GRID_SIZES:
+            self.grid_combo.addItem(f"{rows}x{cols} ({rows * cols}枚)", (rows, cols))
+        # findData は tuple を比較できないため index を直接求める
+        self.grid_combo.setCurrentIndex(defaults.TILE_GRID_SIZES.index(defaults.TILE_GRID_SIZE))
         self.grid_combo.currentIndexChanged.connect(self._on_grid_changed)
 
         grid_layout.addWidget(self.grid_combo)
@@ -89,7 +85,7 @@ class TileSelectionDialog(QDialog):
 
         layout.addWidget(self.image_list_widget)
 
-        self.status_label = QLabel("最大4枚まで選択可能")
+        self.status_label = QLabel("")
         layout.addWidget(self.status_label)
 
         # status_label の作成後に grid サイズを反映する

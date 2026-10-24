@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 )
 
 from PixelScopeViewer.core.image_io import get_image_metadata
+from PixelScopeViewer.ui import theme
 
 from ..analysis.core import determine_hist_bins
 from ..analysis.core.compute import ecdf_series, get_profile_offset, histogram_series, histogram_stats, profile_series
@@ -29,7 +30,7 @@ class TilingAnalysisDialog(AnalysisDialog):
 
     Args:
         parent: 親の TilingDialog。
-        tiles_data: array, rect（ROI）, path, index, color を持つ tile ごとの dict のリスト。
+        tiles_data: array, rect（ROI）, path, index を持つ tile ごとの dict のリスト。
     """
 
     def __init__(self, parent=None, tiles_data: list[dict] | None = None):
@@ -47,29 +48,6 @@ class TilingAnalysisDialog(AnalysisDialog):
             image_array = None
             image_path = None
 
-        # 重ね描きの色（Tableau 20）
-        self.TABLEAU20: list[tuple[int, int, int]] = [
-            (31, 119, 180),
-            (174, 199, 232),
-            (255, 127, 14),
-            (255, 187, 120),
-            (44, 160, 44),
-            (152, 223, 138),
-            (214, 39, 40),
-            (255, 152, 150),
-            (148, 103, 189),
-            (197, 176, 213),
-            (140, 86, 75),
-            (196, 156, 148),
-            (227, 119, 194),
-            (247, 182, 210),
-            (127, 127, 127),
-            (199, 199, 199),
-            (188, 189, 34),
-            (219, 219, 141),
-            (23, 190, 207),
-            (158, 218, 229),
-        ]
         self.overlay_color_map: dict[str, tuple[int, int, int]] = {}
         self.hist_plot_items: dict[str, object] = {}
         self.profile_plot_items: dict[str, object] = {}
@@ -83,7 +61,7 @@ class TilingAnalysisDialog(AnalysisDialog):
 
     # ---- 色 ----
     def _assign_overlay_colors(self, labels: list[str]):
-        """'Tile {n} C{k}' 形式の label に、tile 番号と channel から決まる Tableau 20 の色を割り当てる。"""
+        """'Tile {n} C{k}' 形式の label に、tile 番号と channel から決まる theme.OVERLAY_PALETTE の色を割り当てる。"""
         for lbl in labels:
             if lbl in self.overlay_color_map:
                 continue
@@ -108,8 +86,8 @@ class TilingAnalysisDialog(AnalysisDialog):
             except Exception:
                 tile_num = 1
                 ch_index = 0
-            idx = ((tile_num - 1) * 8 + ch_index) % len(self.TABLEAU20)
-            self.overlay_color_map[lbl] = self.TABLEAU20[idx]
+            idx = ((tile_num - 1) * 8 + ch_index) % len(theme.OVERLAY_PALETTE)
+            self.overlay_color_map[lbl] = theme.OVERLAY_PALETTE[idx]
         return {lbl: self.overlay_color_map[lbl] for lbl in labels}
 
     def _make_pen(self, rgb: tuple[int, int, int], *, width: int = 2, alpha: int = 255):
@@ -195,7 +173,7 @@ class TilingAnalysisDialog(AnalysisDialog):
         self.metadata_table.setRowCount(num_rows)
         self.metadata_table.setMouseTracking(True)
 
-        diff_color = QColor(255, 255, 200)
+        diff_color = QColor(theme.HIGHLIGHT_BACKGROUND)
 
         for row_idx, key in enumerate(sorted_keys):
             prop_item = QTableWidgetItem(key)
@@ -259,7 +237,6 @@ class TilingAnalysisDialog(AnalysisDialog):
                 {
                     "array": arr,
                     "index": tile_data["index"],
-                    "color": tile_data["color"],
                     "rect": roi_rect,
                 }
             )
@@ -386,7 +363,7 @@ class TilingAnalysisDialog(AnalysisDialog):
                         yplot[yplot == 0] = 0.1
                         self.hist_tab.hist_widget.setLimits(yMin=-1)
 
-                    rgb = palette_map.get(label, (127, 127, 127))
+                    rgb = palette_map.get(label, theme.PLOT_FALLBACK_RGB)
                     if self.hist_chart_kind == "Line":
                         pen = self._make_pen(rgb, width=2, alpha=255)
                         item = self.hist_tab.hist_widget.plot(xs, yplot, pen=pen, name=label)
@@ -399,11 +376,11 @@ class TilingAnalysisDialog(AnalysisDialog):
                         self.hist_tab.hist_widget.addItem(item)
                     self.hist_plot_items[label] = item
                 self.hist_tab.hist_widget.setTitle(
-                    f"{self.hist_config_mode} Overlay (All Tiles)", color="#2c3e50", size="12pt"
+                    f"{self.hist_config_mode} Overlay (All Tiles)", color=theme.PLOT_TEXT_COLOR, size="12pt"
                 )
             else:
                 self.hist_tab.hist_widget.setTitle(
-                    f"{self.hist_config_mode} Overlay (No channels visible)", color="#7f8c8d", size="11pt"
+                    f"{self.hist_config_mode} Overlay (No channels visible)", color=theme.PLOT_MUTED_COLOR, size="11pt"
                 )
 
         self.hist_tab._populate_stats_table(all_stats)
@@ -488,19 +465,19 @@ class TilingAnalysisDialog(AnalysisDialog):
             }[self.profile_compute_method]
             if merged_series:
                 for label, (xs, ys) in merged_series.items():
-                    rgb = prof_palette_map.get(label, (127, 127, 127))
+                    rgb = prof_palette_map.get(label, theme.PLOT_FALLBACK_RGB)
                     pen = self._make_pen(rgb, width=2, alpha=255)
                     item = self.prof_widget.plot(xs, ys, pen=pen, name=label)
                     self.profile_plot_items[label] = item
                 self.prof_widget.setTitle(
                     f"Profile Overlay (All Tiles) - {orientation_label} / {mode_label} / {method_label}",
-                    color="#2c3e50",
+                    color=theme.PLOT_TEXT_COLOR,
                     size="12pt",
                 )
             else:
                 self.prof_widget.setTitle(
                     f"Profile Overlay (No channels visible)  - {orientation_label} / {mode_label} / {method_label}",
-                    color="#7f8c8d",
+                    color=theme.PLOT_MUTED_COLOR,
                     size="11pt",
                 )
 
@@ -593,7 +570,7 @@ class TilingAnalysisDialog(AnalysisDialog):
                     label_text = "Intensity"
                 curve_label = f"Tile {tile_idx + 1} {channel_code}"
                 self._assign_overlay_colors([curve_label])
-                rgb = self.overlay_color_map.get(curve_label, (127, 127, 127))
+                rgb = self.overlay_color_map.get(curve_label, theme.PLOT_FALLBACK_RGB)
                 cbx = QCheckBox(label_text)
                 pix = QPixmap(14, 14)
                 pix.fill(QColor(*rgb))

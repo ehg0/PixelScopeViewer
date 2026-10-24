@@ -11,6 +11,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from PixelScopeViewer.ui import defaults
+
 
 class DiffDialog(QDialog):
     """差分を取る 2 枚の画像と offset を選択する dialog。"""
@@ -18,7 +20,7 @@ class DiffDialog(QDialog):
     def __init__(self, parent=None, image_list=None, default_offset: int = 256):
         super().__init__(parent)
         self.setWindowTitle("差分画像作成")
-        self.resize(400, 120)
+        self.resize(*defaults.DIFF_DIALOG_SIZE)
         self.image_list = image_list or []
 
         layout = QVBoxLayout(self)

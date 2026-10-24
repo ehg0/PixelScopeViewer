@@ -7,6 +7,7 @@ import numpy as np
 from PySide6.QtCore import QEvent, Qt, QTimer, Signal
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QScrollArea, QSizePolicy, QVBoxLayout, QWidget
 
+from PixelScopeViewer.ui import theme
 from PixelScopeViewer.ui.dialogs.display.core.compute import apply_brightness_adjustment
 
 from .tile_image_label import TileImageLabel
@@ -53,30 +54,14 @@ class TileWidget(QWidget):
         # 上部の表示欄（左: ファイル名、右: pixel 値）
         status_widget = QWidget()
         status_widget.setMaximumHeight(30)
-        status_widget.setStyleSheet(
-            """
-            QWidget {
-                background-color: rgba(50, 50, 50, 200);
-            }
-        """
-        )
+        status_widget.setStyleSheet(theme.TILE_STATUS_STYLESHEET)
         status_layout = QHBoxLayout(status_widget)
         status_layout.setContentsMargins(4, 4, 4, 4)
         status_layout.setSpacing(8)
 
         self.filename_label = QLabel("")
         self.filename_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self.filename_label.setStyleSheet(
-            """
-            QLabel {
-                color: white;
-                font-size: 11pt;
-                font-weight: bold;
-                background-color: transparent;
-                border: none;
-            }
-        """
-        )
+        self.filename_label.setStyleSheet(theme.TILE_FILENAME_STYLESHEET)
         self.filename_label.setWordWrap(False)
         self.filename_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.filename_label.setMinimumWidth(200)
@@ -85,16 +70,7 @@ class TileWidget(QWidget):
         self.pixel_value_label = QLabel("")
         self.pixel_value_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.pixel_value_label.setMinimumWidth(100)
-        self.pixel_value_label.setStyleSheet(
-            """
-            QLabel {
-                color: white;
-                font-size: 11pt;
-                background-color: transparent;
-                border: none;
-            }
-        """
-        )
+        self.pixel_value_label.setStyleSheet(theme.TILE_PIXEL_VALUE_STYLESHEET)
         status_layout.addWidget(self.pixel_value_label, 0)
 
         frame_layout.addWidget(status_widget)
@@ -182,23 +158,9 @@ class TileWidget(QWidget):
     def _update_frame_style(self):
         if self.is_active:
             # active は青、非 active は灰色の枠
-            self.frame.setStyleSheet(
-                """
-                QFrame {
-                    border: 2px solid #0078d4;
-                    background-color: palette(window);
-                }
-            """
-            )
+            self.frame.setStyleSheet(theme.TILE_ACTIVE_FRAME_STYLESHEET)
         else:
-            self.frame.setStyleSheet(
-                """
-                QFrame {
-                    border: 2px solid #cccccc;
-                    background-color: palette(window);
-                }
-            """
-            )
+            self.frame.setStyleSheet(theme.TILE_INACTIVE_FRAME_STYLESHEET)
 
     def _on_roi_changed(self, roi_rect):
         self.roi_changed.emit(roi_rect)

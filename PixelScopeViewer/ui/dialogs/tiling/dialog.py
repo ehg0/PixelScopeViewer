@@ -15,6 +15,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from PixelScopeViewer.ui import defaults
+
 from ..analysis.dialog import AnalysisDialog
 from .brightness_dialog import TilingBrightnessDialog
 from .comparison_dialog import TilingAnalysisDialog
@@ -102,7 +104,7 @@ class TilingDialog(QDialog):
         if self.tile_manager.get_tiles():
             self.tile_manager.set_active_tile(0)
 
-        self.resize(1200, 800)
+        self.resize(*defaults.TILING_DIALOG_SIZE)
 
         self.setFocus()
 
@@ -520,7 +522,7 @@ class TilingDialog(QDialog):
         """全 tile の比較用データを返す。
 
         Returns:
-            array, rect（ROI）, path, index, color（plot 用の RGB）を持つ dict のリスト。
+            array, rect（ROI）, path, index を持つ dict のリスト。
         """
         if not self.tile_manager:
             return []
@@ -532,9 +534,6 @@ class TilingDialog(QDialog):
         if self.roi_manager:
             roi_rect = self.roi_manager.common_roi_rect
 
-        num_tiles = len(tiles)
-        colors = self._generate_tile_colors(num_tiles)
-
         for i, tile in enumerate(tiles):
             image_array = tile.get_base_array()
 
@@ -545,9 +544,7 @@ class TilingDialog(QDialog):
             if hasattr(tile, "image_data") and tile.image_data:
                 file_path = tile.image_data.get("path")
 
-            tiles_data.append(
-                {"array": image_array, "rect": roi_rect, "path": file_path, "index": i, "color": colors[i]}
-            )
+            tiles_data.append({"array": image_array, "rect": roi_rect, "path": file_path, "index": i})
 
         return tiles_data
 
@@ -559,31 +556,6 @@ class TilingDialog(QDialog):
                 self._comparison_dialog.update_tiles_data(updated)
             except Exception:
                 pass
-
-    def _generate_tile_colors(self, num_tiles: int):
-        """hue を等間隔に割り当てた tile ごとの色 (r, g, b) のリストを返す。"""
-        if num_tiles == 0:
-            return []
-
-        colors = []
-        for i in range(num_tiles):
-            hue = i / num_tiles
-            # HSV から RGB への簡易変換
-            if hue < 1 / 6:
-                r, g, b = 255, int(255 * 6 * hue), 0
-            elif hue < 2 / 6:
-                r, g, b = int(255 * (2 - 6 * hue)), 255, 0
-            elif hue < 3 / 6:
-                r, g, b = 0, 255, int(255 * (6 * hue - 2))
-            elif hue < 4 / 6:
-                r, g, b = 0, int(255 * (4 - 6 * hue)), 255
-            elif hue < 5 / 6:
-                r, g, b = int(255 * (6 * hue - 4)), 0, 255
-            else:
-                r, g, b = 255, 0, int(255 * (6 - 6 * hue))
-            colors.append((r, g, b))
-
-        return colors
 
     def show_analysis_dialog(self, tab=None):
         """active な tile の解析 dialog（単一画像）を表示する。

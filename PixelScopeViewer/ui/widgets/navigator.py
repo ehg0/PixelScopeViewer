@@ -4,6 +4,8 @@ from PySide6.QtCore import QEvent, Qt
 from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QGroupBox, QLabel, QVBoxLayout
 
+from PixelScopeViewer.ui import theme
+
 from ...core.image_io import numpy_to_qimage
 
 
@@ -147,7 +149,7 @@ class NavigatorWidget(QGroupBox):
         self.thumb_rect = (thumb_x, thumb_y, thumb_w, thumb_h)
 
         painter = QPainter(scaled_pixmap)
-        pen = QPen(QColor(255, 68, 68, 255), 2)
+        pen = QPen(QColor(theme.NAVIGATOR_VIEW_RECT_COLOR), 2)
         painter.setPen(pen)
         painter.drawRect(thumb_x, thumb_y, thumb_w, thumb_h)
         painter.end()

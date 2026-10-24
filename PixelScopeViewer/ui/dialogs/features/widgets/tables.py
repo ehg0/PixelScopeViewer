@@ -9,6 +9,8 @@ from typing import Any
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, QSortFilterProxyModel, Qt
 from PySide6.QtGui import QBrush, QColor
 
+from PixelScopeViewer.ui import theme
+
 from ....utils.features_manager import FeaturesManager
 
 
@@ -93,12 +95,12 @@ class FeaturesTableModel(QAbstractTableModel):
             fp = self.manager.get_value(row, "fullfilepath")
             try:
                 if not fp:
-                    return QBrush(QColor("gray"))
+                    return QBrush(QColor(theme.TEXT_MUTED_COLOR))
                 p = str(Path(str(fp)).resolve())
                 is_loaded = p in self._loaded_paths
             except Exception:
                 is_loaded = False
-            return QBrush(QColor("black" if is_loaded else "gray"))
+            return QBrush(QColor(theme.TEXT_COLOR if is_loaded else theme.TEXT_MUTED_COLOR))
 
         if role == Qt.BackgroundRole:
             try:
@@ -106,7 +108,7 @@ class FeaturesTableModel(QAbstractTableModel):
                 if fp and self._current_path is not None:
                     try:
                         if str(Path(str(fp)).resolve()) == self._current_path:
-                            return QBrush(QColor(255, 255, 200))
+                            return QBrush(QColor(theme.HIGHLIGHT_BACKGROUND))
                     except Exception:
                         pass
             except Exception:

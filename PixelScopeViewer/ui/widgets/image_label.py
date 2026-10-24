@@ -3,7 +3,7 @@
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QImage, QPainter, QWheelEvent
 
-from ...core.constants import MAX_ZOOM_SCALE, MIN_ZOOM_SCALE
+from ...core.constants import MAX_ZOOM_SCALE, MIN_ZOOM_SCALE, ZOOM_STEP
 from .base_image_label import BaseImageLabel
 from .roi_editor import RoiEditorMixin
 from .roi_manager import RoiManagerMixin
@@ -60,7 +60,7 @@ class ImageLabel(RoiManagerMixin, RoiEditorMixin, BaseImageLabel):
 
         # キーボード操作と同様に 2 倍 / 1/2 倍で zoom する
         current_scale = self.viewer.scale
-        new_scale = current_scale * 2 if angle_delta > 0 else current_scale / 2
+        new_scale = current_scale * ZOOM_STEP if angle_delta > 0 else current_scale / ZOOM_STEP
 
         new_scale = max(MIN_ZOOM_SCALE, min(MAX_ZOOM_SCALE, new_scale))
 

@@ -5,8 +5,9 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QKeyEvent, QMouseEvent, QPainter, QPen, QPixmap, QWheelEvent
 from PySide6.QtWidgets import QLabel
 
-from PixelScopeViewer.core.constants import MAX_ZOOM_SCALE, MIN_ZOOM_SCALE
+from PixelScopeViewer.core.constants import MAX_ZOOM_SCALE, MIN_ZOOM_SCALE, ZOOM_STEP
 from PixelScopeViewer.core.image_io import numpy_to_qimage
+from PixelScopeViewer.ui import theme
 from PixelScopeViewer.ui.dialogs.display.core.compute import apply_brightness_adjustment
 
 
@@ -124,9 +125,9 @@ class TileImageLabel(QLabel):
 
         # active はメインビューアと同じ緑、非 active は灰色
         if self.roi_editable:
-            pen = QPen(QColor(51, 255, 102), 2, Qt.SolidLine)
+            pen = QPen(QColor(theme.ROI_COLOR), 2, Qt.SolidLine)
         else:
-            pen = QPen(QColor(170, 170, 170), 2, Qt.SolidLine)
+            pen = QPen(QColor(theme.ROI_INACTIVE_COLOR), 2, Qt.SolidLine)
 
         painter.setPen(pen)
         painter.drawRect(roi_x, roi_y, roi_w, roi_h)
@@ -360,7 +361,7 @@ class TileImageLabel(QLabel):
             if dy == 0:
                 event.accept()
                 return
-            factor = 2.0 if dy > 0 else 0.5
+            factor = ZOOM_STEP if dy > 0 else 1.0 / ZOOM_STEP
             self.zoom_requested.emit(factor, None)
             event.accept()
             return

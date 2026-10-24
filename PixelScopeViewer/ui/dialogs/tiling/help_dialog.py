@@ -2,6 +2,8 @@
 
 from PySide6.QtWidgets import QDialog, QTextEdit, QVBoxLayout
 
+from PixelScopeViewer.ui import defaults
+
 
 class TilingHelpDialog(QDialog):
     """複数画像比較の keyboard shortcut の一覧を表示する dialog。"""
@@ -9,7 +11,7 @@ class TilingHelpDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("ヘルプ / 複数画像比較")
-        self.resize(760, 640)
+        self.resize(*defaults.TILING_HELP_DIALOG_SIZE)
 
         text = QTextEdit(self)
         text.setReadOnly(True)

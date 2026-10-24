@@ -1,6 +1,7 @@
 """単一画像の解析 dialog（metadata・profile・histogram）。"""
 
 import contextlib
+import copy
 from fractions import Fraction
 
 import numpy as np
@@ -20,6 +21,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+from PixelScopeViewer.ui import defaults, theme
 
 from ....core.image_io import get_image_metadata
 from ...utils.color_utils import get_default_channel_colors
@@ -75,7 +78,7 @@ class AnalysisDialog(QDialog):
         if self.viewer and hasattr(self.viewer, "roi_changed"):
             self.viewer.roi_changed.connect(self.update_window_title)
 
-        self.resize(900, 600)
+        self.resize(*defaults.ANALYSIS_DIALOG_SIZE)
 
         # 最小化を許可し、最前面に固定しない
         flags = Qt.Window | Qt.WindowMinimizeButtonHint | Qt.WindowCloseButtonHint
@@ -86,15 +89,15 @@ class AnalysisDialog(QDialog):
         self.image_rect = image_rect
         self.image_path = image_path
 
-        self.profile_orientation = "h"  # "h", "v"
-        self.x_mode = "relative"  # "relative", "absolute"
-        self.profile_compute_method = "mean"  # "mean", "std", "max", "min", "p2p", "median"
-        self.hist_config_mode = "Histogram"  # "Histogram", "ECDF"
-        self.hist_yscale = "linear"
+        self.profile_orientation = defaults.PROFILE_ORIENTATION
+        self.x_mode = defaults.PROFILE_X_MODE
+        self.profile_compute_method = defaults.PROFILE_METHOD
+        self.hist_config_mode = defaults.HIST_MODE
+        self.hist_yscale = defaults.HIST_YSCALE
         self.channel_checks: list[bool] = []
-        self.spinbox_value: float = 1.0
-        self.hist_chart_kind = "Line"
-        self.spinbox_bar_alpha_value: int = 120
+        self.spinbox_value: float = defaults.HIST_BIN_STEP
+        self.hist_chart_kind = defaults.HIST_CHART_KIND
+        self.spinbox_bar_alpha_value: int = defaults.HIST_BAR_ALPHA
 
         self.last_hist_data = {}
         self.last_profile_data = {}
@@ -103,10 +106,7 @@ class AnalysisDialog(QDialog):
         self.channel_color_map: dict[str, tuple[int, int, int]] = {}
 
         # 画像を切り替えても保持する plot 設定
-        self.plot_settings = {
-            "hist": {"grid": True, "log": False, "auto_range": True},
-            "prof": {"grid": True, "auto_range": True},
-        }
+        self.plot_settings = copy.deepcopy(defaults.PLOT_SETTINGS)
 
         self._build_ui()
 
@@ -343,7 +343,7 @@ class AnalysisDialog(QDialog):
                     nch_local = int(arr.shape[2]) if arr.ndim == 3 and arr.shape[2] > 1 else 1
                     colors = get_default_channel_colors(nch_local)
                     if nch_local == 1:
-                        colors = [QColor(0, 0, 0)]
+                        colors = [QColor(theme.PLOT_INTENSITY_COLOR)]
                     channel_colors = colors
                 except Exception:
                     channel_colors = None
@@ -370,33 +370,30 @@ class AnalysisDialog(QDialog):
                     try:
                         r, g, b, _ = color.getRgb()
                     except Exception:
-                        r, g, b = (127, 127, 127)
+                        r, g, b = theme.PLOT_FALLBACK_RGB
                     # 番号と C{index} の両方を key にする
                     self.channel_color_map[f"C{cindex}"] = (r, g, b)
                     self.channel_color_map[str(cindex)] = (r, g, b)
             # 1ch は常に黒
             if nch_local == 1:
-                self.channel_color_map["I"] = (0, 0, 0)
-                self.channel_color_map["0"] = (0, 0, 0)
-                self.channel_color_map["C0"] = (0, 0, 0)
+                intensity_rgb = QColor(theme.PLOT_INTENSITY_COLOR).getRgb()[:3]
+                self.channel_color_map["I"] = intensity_rgb
+                self.channel_color_map["0"] = intensity_rgb
+                self.channel_color_map["C0"] = intensity_rgb
         else:
             # 既定の色
-            default_palette = [
-                (255, 0, 0),
-                (0, 200, 0),
-                (0, 102, 255),
-                (127, 127, 127),
-            ]
+            default_palette = [QColor(c).getRgb()[:3] for c in theme.PLOT_FALLBACK_CHANNEL_COLORS]
             nch_local = arr.shape[2] if arr.ndim == 3 and arr.shape[2] > 1 else 1
             for cindex in range(nch_local):
-                rgb = default_palette[cindex] if cindex < len(default_palette) else (127, 127, 127)
+                rgb = default_palette[cindex] if cindex < len(default_palette) else theme.PLOT_FALLBACK_RGB
                 self.channel_color_map[f"C{cindex}"] = rgb
                 self.channel_color_map[str(cindex)] = rgb
             if nch_local == 1:
                 # 1ch は常に黒
-                self.channel_color_map["I"] = (0, 0, 0)
-                self.channel_color_map["0"] = (0, 0, 0)
-                self.channel_color_map["C0"] = (0, 0, 0)
+                intensity_rgb = QColor(theme.PLOT_INTENSITY_COLOR).getRgb()[:3]
+                self.channel_color_map["I"] = intensity_rgb
+                self.channel_color_map["0"] = intensity_rgb
+                self.channel_color_map["C0"] = intensity_rgb
         self.hist_tab.update_plot(
             visible_hist_series,
             hist_stats,
@@ -518,8 +515,8 @@ class AnalysisDialog(QDialog):
         self.update_contents()
 
     def hist_config_reset(self):
-        self._on_spinbox_changed(self.hist_tab.bin_step_spin_box_init)
-        self.hist_tab.bin_step_spin_box.setValue(self.hist_tab.bin_step_spin_box_init)
+        self._on_spinbox_changed(defaults.HIST_BIN_STEP)
+        self.hist_tab.bin_step_spin_box.setValue(defaults.HIST_BIN_STEP)
 
     def copy_metadata_to_clipboard(self):
         """metadata をカンマ区切りで clipboard にコピーする。"""

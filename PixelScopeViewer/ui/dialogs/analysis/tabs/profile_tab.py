@@ -20,6 +20,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from PixelScopeViewer.ui import defaults, theme
+
 
 class ProfileTab(QWidget):
     """profile の plot、統計量の table、設定 control を持つ tab。
@@ -45,7 +47,6 @@ class ProfileTab(QWidget):
 
         self.on_channel_changed = on_channel_changed
         self.channel_checkboxes: list[QCheckBox] = []
-        self.MAX_CHANNELS = 8
 
         root = QHBoxLayout(self)
 
@@ -55,13 +56,13 @@ class ProfileTab(QWidget):
         self.prof_widget = PlotWidget()
         self.prof_widget.setLabel("left", "Intensity")
         self.prof_widget.setLabel("bottom", "Position")
-        self.prof_widget.setBackground("white")
+        self.prof_widget.setBackground(theme.PLOT_BACKGROUND)
         self.prof_widget.showGrid(x=True, y=True, alpha=0.4)
         try:
-            self.prof_widget.getAxis("left").setPen(pg.mkPen(color="#7f8c8d", width=1))
-            self.prof_widget.getAxis("bottom").setPen(pg.mkPen(color="#7f8c8d", width=1))
-            self.prof_widget.getAxis("left").setTextPen(pg.mkPen(color="#2c3e50"))
-            self.prof_widget.getAxis("bottom").setTextPen(pg.mkPen(color="#2c3e50"))
+            self.prof_widget.getAxis("left").setPen(pg.mkPen(color=theme.PLOT_AXIS_COLOR, width=1))
+            self.prof_widget.getAxis("bottom").setPen(pg.mkPen(color=theme.PLOT_AXIS_COLOR, width=1))
+            self.prof_widget.getAxis("left").setTextPen(pg.mkPen(color=theme.PLOT_TEXT_COLOR))
+            self.prof_widget.getAxis("bottom").setTextPen(pg.mkPen(color=theme.PLOT_TEXT_COLOR))
         except Exception:
             pass
         self.prof_widget.setMenuEnabled(True)
@@ -119,20 +120,7 @@ class ProfileTab(QWidget):
         right.setSpacing(8)
 
         channels_group = QGroupBox("Channels")
-        channels_group.setStyleSheet("""
-            QGroupBox {
-                font-weight: bold;
-                border: 2px solid #cccccc;
-                border-radius: 5px;
-                margin: 3px 0px;
-                padding-top: 10px;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 5px 0 5px;
-            }
-            """)
+        channels_group.setStyleSheet(theme.GROUP_BOX_STYLESHEET)
         channels_layout = QVBoxLayout(channels_group)
         channels_layout.setContentsMargins(8, 5, 8, 8)
 
@@ -147,7 +135,7 @@ class ProfileTab(QWidget):
         scroll_layout.setContentsMargins(2, 2, 2, 2)
         scroll_layout.setSpacing(3)
 
-        for i in range(self.MAX_CHANNELS):
+        for i in range(defaults.MAX_CHANNEL_CHECKBOXES):
             cb = QCheckBox(f"C{i}")
             cb.setVisible(False)
             cb.stateChanged.connect(self._on_checkbox_changed)
@@ -206,7 +194,7 @@ class ProfileTab(QWidget):
             checks: checkbox の状態。
             channel_colors: channel ごとの QColor。
         """
-        for i in range(self.MAX_CHANNELS):
+        for i in range(defaults.MAX_CHANNEL_CHECKBOXES):
             cb = self.channel_checkboxes[i]
             if i < nch:
                 cb.setVisible(True)
@@ -275,11 +263,11 @@ class ProfileTab(QWidget):
             if rgb:
                 # grayscale の色は見やすさのため黒で描画する
                 if rgb[0] == rgb[1] == rgb[2]:
-                    return "rgb(0, 0, 0)"
+                    return theme.PLOT_INTENSITY_COLOR
                 return f"rgb({rgb[0]},{rgb[1]},{rgb[2]})"
             # Intensity は常に黒
             if label == "I":
-                return "#000000"
+                return theme.PLOT_INTENSITY_COLOR
             ch_index = None
             if label.startswith("C") and label[1:].isdigit():
                 ch_index = int(label[1:])
@@ -293,12 +281,12 @@ class ProfileTab(QWidget):
                 c = channel_colors[ch_index]
                 # grayscale の色は見やすさのため黒で描画する
                 if c.red() == c.green() == c.blue():
-                    return "#000000"
-                return c.name() if hasattr(c, "name") else "#7f8c8d"
-            fallback = ["#ff0000", "#00c800", "#0066ff", "#7f7f7f"]
+                    return theme.PLOT_INTENSITY_COLOR
+                return c.name() if hasattr(c, "name") else theme.PLOT_MUTED_COLOR
+            fallback = theme.PLOT_FALLBACK_CHANNEL_COLORS
             if ch_index is not None and ch_index < len(fallback):
                 return fallback[ch_index]
-            return "#7f8c8d"
+            return theme.PLOT_MUTED_COLOR
 
         for _, (label, (xs, ys)) in enumerate(series.items()):
             pen = pg.mkPen(color=_color_for_label(label), width=2)
@@ -315,7 +303,7 @@ class ProfileTab(QWidget):
             "median": "Median",
         }[method]
         self.prof_widget.setTitle(
-            f"Profile - {orientation_label} / {mode_label} / {method_label}", color="#2c3e50", size="12pt"
+            f"Profile - {orientation_label} / {mode_label} / {method_label}", color=theme.PLOT_TEXT_COLOR, size="12pt"
         )
         self.prof_widget.setLabel("bottom", "Position" if x_mode == "relative" else "Absolute Position")
         self.prof_widget.setLabel("left", "Intensity")

@@ -2,6 +2,8 @@
 
 from PySide6.QtWidgets import QDialog, QTextEdit, QVBoxLayout
 
+from PixelScopeViewer.ui import defaults
+
 
 class HelpDialog(QDialog):
     """keyboard shortcut の一覧を表示する dialog。"""
@@ -9,7 +11,7 @@ class HelpDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("ヘルプ / キーボードショートカット")
-        self.resize(640, 520)
+        self.resize(*defaults.HELP_DIALOG_SIZE)
 
         text = QTextEdit(self)
         text.setReadOnly(True)

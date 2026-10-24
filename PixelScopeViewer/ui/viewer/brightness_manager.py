@@ -7,7 +7,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QMessageBox
 
-from PixelScopeViewer.core.constants import DTYPE_DEFAULTS, get_dtype_defaults
+from PixelScopeViewer.core.constants import DTYPE_DEFAULTS, GAIN_STEP, get_dtype_defaults
 
 from ...core.image_io import numpy_to_qimage
 from ..dialogs import BrightnessDialog
@@ -325,7 +325,7 @@ class BrightnessManager:
 
         current_gain = self.viewer.brightness_gain
 
-        new_gain = current_gain * 0.5 if amount < 0 else current_gain * 2.0
+        new_gain = current_gain / GAIN_STEP if amount < 0 else current_gain * GAIN_STEP
 
         self.viewer.brightness_gain = new_gain
 

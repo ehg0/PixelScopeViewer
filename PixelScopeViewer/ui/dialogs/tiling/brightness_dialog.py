@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
 )
 
 from PixelScopeViewer.core.constants import get_dtype_defaults
+from PixelScopeViewer.ui import defaults
 
 
 class TilingBrightnessDialog(QDialog):
@@ -33,7 +34,7 @@ class TilingBrightnessDialog(QDialog):
     def __init__(self, parent, brightness_params_by_dtype: dict[str, dict[str, float]], common_gain: float):
         super().__init__(parent)
         self.setWindowTitle("複数画像比較 - 輝度調整")
-        self.resize(400, 500)
+        self.resize(*defaults.TILING_BRIGHTNESS_DIALOG_SIZE)
 
         # 最小化を許可し、最前面に固定しない
         flags = Qt.Window | Qt.WindowMinimizeButtonHint | Qt.WindowCloseButtonHint

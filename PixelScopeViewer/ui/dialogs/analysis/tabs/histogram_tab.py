@@ -24,6 +24,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from PixelScopeViewer.ui import defaults, theme
+
 
 class HistogramTab(QWidget):
     """histogram の plot、統計量の table、設定 control を持つ tab。
@@ -55,7 +57,6 @@ class HistogramTab(QWidget):
         self.on_spinbox_changed = on_spinbox_changed
         self.on_spinbox_bar_alpha_changed = on_spinbox_bar_alpha_changed
         self.channel_checkboxes: list[QCheckBox] = []
-        self.MAX_CHANNELS = 8
 
         root = QHBoxLayout(self)
 
@@ -63,13 +64,13 @@ class HistogramTab(QWidget):
         self.hist_widget = PlotWidget()
         self.hist_widget.setLabel("left", "Count")
         self.hist_widget.setLabel("bottom", "Intensity")
-        self.hist_widget.setBackground("white")
+        self.hist_widget.setBackground(theme.PLOT_BACKGROUND)
         self.hist_widget.showGrid(x=True, y=True, alpha=0.4)
         try:
-            self.hist_widget.getAxis("left").setPen(pg.mkPen(color="#7f8c8d", width=1))
-            self.hist_widget.getAxis("bottom").setPen(pg.mkPen(color="#7f8c8d", width=1))
-            self.hist_widget.getAxis("left").setTextPen(pg.mkPen(color="#2c3e50"))
-            self.hist_widget.getAxis("bottom").setTextPen(pg.mkPen(color="#2c3e50"))
+            self.hist_widget.getAxis("left").setPen(pg.mkPen(color=theme.PLOT_AXIS_COLOR, width=1))
+            self.hist_widget.getAxis("bottom").setPen(pg.mkPen(color=theme.PLOT_AXIS_COLOR, width=1))
+            self.hist_widget.getAxis("left").setTextPen(pg.mkPen(color=theme.PLOT_TEXT_COLOR))
+            self.hist_widget.getAxis("bottom").setTextPen(pg.mkPen(color=theme.PLOT_TEXT_COLOR))
         except Exception:
             pass
         self.hist_widget.setMenuEnabled(True)
@@ -127,20 +128,7 @@ class HistogramTab(QWidget):
         right.setSpacing(8)
 
         channels_group = QGroupBox("Channels")
-        channels_group.setStyleSheet("""
-            QGroupBox {
-                font-weight: bold;
-                border: 2px solid #cccccc;
-                border-radius: 5px;
-                margin: 3px 0px;
-                padding-top: 10px;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 5px 0 5px;
-            }
-            """)
+        channels_group.setStyleSheet(theme.GROUP_BOX_STYLESHEET)
         channels_layout = QVBoxLayout(channels_group)
         channels_layout.setContentsMargins(8, 5, 8, 8)
 
@@ -155,7 +143,7 @@ class HistogramTab(QWidget):
         scroll_layout.setContentsMargins(2, 2, 2, 2)
         scroll_layout.setSpacing(3)
 
-        for i in range(self.MAX_CHANNELS):
+        for i in range(defaults.MAX_CHANNEL_CHECKBOXES):
             cb = QCheckBox(f"C{i}")
             cb.setVisible(False)
             cb.stateChanged.connect(self._on_checkbox_changed)
@@ -180,11 +168,10 @@ class HistogramTab(QWidget):
         config_layout.addWidget(self.chart_kind_combo)
         label = QLabel("color alpha:")
         config_layout.addWidget(label)
-        self.bar_alpha_spin_box_init = 120
         self.bar_alpha_spin_box = QSpinBox()
         self.bar_alpha_spin_box.setRange(0, 255)
         self.bar_alpha_spin_box.setSingleStep(10)
-        self.bar_alpha_spin_box.setValue(self.bar_alpha_spin_box_init)
+        self.bar_alpha_spin_box.setValue(defaults.HIST_BAR_ALPHA)
         self.bar_alpha_spin_box.valueChanged.connect(self._on_spinbox_bar_alpha_changed)
         config_layout.addWidget(self.bar_alpha_spin_box)
         bis_step_layout = QHBoxLayout()
@@ -194,12 +181,11 @@ class HistogramTab(QWidget):
         bis_step_layout.addWidget(label)
         bis_step_layout.addWidget(self.config_reset_btn)
         config_layout.addLayout(bis_step_layout)
-        self.bin_step_spin_box_init = 1.0
         self.bin_step_spin_box = QDoubleSpinBox()
         self.bin_step_spin_box.setRange(0.001, 100.0)
         self.bin_step_spin_box.setSingleStep(0.1)
         self.bin_step_spin_box.setDecimals(3)
-        self.bin_step_spin_box.setValue(self.bin_step_spin_box_init)
+        self.bin_step_spin_box.setValue(defaults.HIST_BIN_STEP)
         self.bin_step_spin_box.valueChanged.connect(self._on_spinbox_changed)
         config_layout.addWidget(self.bin_step_spin_box)
         self.setLayout(config_layout)
@@ -242,7 +228,7 @@ class HistogramTab(QWidget):
             checks: checkbox の状態。
             channel_colors: channel ごとの QColor。
         """
-        for i in range(self.MAX_CHANNELS):
+        for i in range(defaults.MAX_CHANNEL_CHECKBOXES):
             cb = self.channel_checkboxes[i]
             if i < nch:
                 cb.setVisible(True)
@@ -316,7 +302,9 @@ class HistogramTab(QWidget):
 
             # 2. Intensity
             if label == "I":
-                return QColor(0, 0, 0, alpha)
+                qcolor = QColor(theme.PLOT_INTENSITY_COLOR)
+                qcolor.setAlpha(alpha)
+                return qcolor
 
             # 3. label から channel index を取り出す
             ch_index = None
@@ -335,13 +323,15 @@ class HistogramTab(QWidget):
                 color_val = channel_colors[ch_index]
 
             if color_val is None:
-                fallback = ["#ff0000", "#00c800", "#0066ff", "#7f7f7f"]
-                color_val = fallback[ch_index] if ch_index is not None and ch_index < len(fallback) else "#7f8c8d"
+                fallback = theme.PLOT_FALLBACK_CHANNEL_COLORS
+                color_val = (
+                    fallback[ch_index] if ch_index is not None and ch_index < len(fallback) else theme.PLOT_MUTED_COLOR
+                )
 
             qcolor = QColor(color_val)
             # grayscale の色は見やすさのため黒で描画する
             if qcolor.red() == qcolor.green() == qcolor.blue():
-                qcolor.setRgb(0, 0, 0)
+                qcolor = QColor(theme.PLOT_INTENSITY_COLOR)
             qcolor.setAlpha(alpha)
 
             return qcolor
@@ -364,7 +354,7 @@ class HistogramTab(QWidget):
                 )
                 self.hist_widget.addItem(item)
 
-        self.hist_widget.setTitle(f"Intensity {self.config_mode_btn.text()}", color="#2c3e50", size="12pt")
+        self.hist_widget.setTitle(f"Intensity {self.config_mode_btn.text()}", color=theme.PLOT_TEXT_COLOR, size="12pt")
 
         if is_integer_type and pg is not None:
             try:

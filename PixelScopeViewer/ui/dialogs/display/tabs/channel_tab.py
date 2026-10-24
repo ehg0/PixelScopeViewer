@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from PixelScopeViewer.core.image_io import numpy_to_qimage
+from PixelScopeViewer.ui import theme
 
 from ....utils import (
     colorbar_flow_hsv,
@@ -72,7 +73,7 @@ class ChannelTab(QWidget):
         pixmap = QPixmap(48, 16)
         pixmap.fill(color)
         button.setIcon(QIcon(pixmap))
-        button.setStyleSheet(f"background-color: {color.name()}; border: 1px solid #999;")
+        button.setStyleSheet(f"background-color: {color.name()}; border: 1px solid {theme.COLOR_BUTTON_BORDER};")
         button.setText("")
 
     def _emit_change(self):
@@ -134,7 +135,7 @@ class ChannelTab(QWidget):
                 channel_layout.addLayout(row)
         else:
             label = QLabel("チャンネル選択なし (グレースケール画像)")
-            label.setStyleSheet("color: #888;")
+            label.setStyleSheet(f"color: {theme.TEXT_HINT_COLOR};")
             channel_layout.addWidget(label)
 
         layout.addWidget(channel_group)
@@ -363,7 +364,7 @@ class ChannelTab(QWidget):
                 layout.addLayout(row)
         else:
             label = QLabel("チャンネル選択なし (グレースケール画像)")
-            label.setStyleSheet("color: #888;")
+            label.setStyleSheet(f"color: {theme.TEXT_HINT_COLOR};")
             layout.addWidget(label)
 
         if self._mode_group_box is not None and self._mode_controls_layout is not None:

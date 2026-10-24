@@ -5,13 +5,15 @@ OIIO_EXTENSIONS: tuple[str, ...] = (".exr", ".hdr")
 OPENCV_EXTENSIONS: tuple[str, ...] = (".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".gif", ".webp")
 STANDARD_IMAGE_EXTENSIONS: tuple[str, ...] = (*OPENCV_EXTENSIONS, *OIIO_EXTENSIONS, ".npy", ".bin")
 
-# zoom 倍率の範囲
+# zoom 倍率の範囲と、1 操作あたりの倍率
 MIN_ZOOM_SCALE: float = 1.0 / 32.0
 MAX_ZOOM_SCALE: float = 32.0
+ZOOM_STEP: float = 2.0
 
-# brightness gain の範囲
+# brightness gain の範囲と、1 操作あたりの倍率
 MIN_BRIGHTNESS_GAIN: float = 1.0 / 128.0
 MAX_BRIGHTNESS_GAIN: float = 128.0
+GAIN_STEP: float = 2.0
 
 
 # dtype ごとの brightness 初期値と入力範囲

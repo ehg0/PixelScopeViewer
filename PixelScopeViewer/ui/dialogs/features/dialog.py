@@ -27,6 +27,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from PixelScopeViewer.ui import defaults
+
 from ...utils.features_manager import FeaturesManager
 from .widgets import (
     AnnotationsTableModel,
@@ -62,7 +64,7 @@ class FeaturesDialog(QDialog):
         if last_path:
             title = f"特徴量表示 - {last_path}"
         self.setWindowTitle(title)
-        self.resize(900, 600)
+        self.resize(*defaults.FEATURES_DIALOG_SIZE)
 
         layout = QVBoxLayout(self)
 
@@ -259,7 +261,7 @@ class FeaturesDialog(QDialog):
             return
         dlg = QDialog(self)
         dlg.setWindowTitle("列表示設定")
-        dlg.resize(300, 400)
+        dlg.resize(*defaults.FEATURES_COLUMN_DIALOG_SIZE)
 
         scroll_area = QScrollArea(dlg)
         scroll_area.setWidgetResizable(True)

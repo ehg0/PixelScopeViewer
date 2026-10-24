@@ -10,6 +10,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from PixelScopeViewer.ui import defaults, theme
+
 from ...utils import MODE_1CH_GRAYSCALE, MODE_2CH_FLOW_HSV
 from .tabs import BrightnessTab, ChannelTab
 
@@ -53,8 +55,8 @@ class BrightnessDialog(QDialog):
         super().__init__(parent)
         self.viewer = parent
         self.setWindowTitle("表示設定")
-        self.resize(500, 450)
-        self.setStyleSheet("QDialog { background-color: #fafafa; }")
+        self.resize(*defaults.DISPLAY_DIALOG_SIZE)
+        self.setStyleSheet(f"QDialog {{ background-color: {theme.DIALOG_BACKGROUND}; }}")
 
         # 最小化を許可し、最前面に固定しない
         flags = Qt.Window | Qt.WindowMinimizeButtonHint | Qt.WindowCloseButtonHint

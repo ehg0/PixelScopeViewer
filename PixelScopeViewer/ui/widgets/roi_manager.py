@@ -3,6 +3,8 @@
 from PySide6.QtCore import QPoint, QRect, Qt
 from PySide6.QtGui import QColor, QPainter, QPen
 
+from PixelScopeViewer.ui import theme
+
 
 class RoiManagerMixin:
     """マウス操作で ROI を扱う mixin。
@@ -193,7 +195,7 @@ class RoiManagerMixin:
     def paint_roi(self, painter: QPainter):
         """ROI の枠を描画する。"""
         if self.roi_rect and not self.roi_rect.isNull():
-            pen = QPen(QColor(51, 255, 102, 255), 1)
+            pen = QPen(QColor(theme.ROI_COLOR), 1)
             painter.setPen(pen)
             painter.drawRect(self.roi_rect)
 

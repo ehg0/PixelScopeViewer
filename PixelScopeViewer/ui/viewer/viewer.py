@@ -9,6 +9,7 @@ from PySide6.QtCore import QEvent, QRect, Qt, Signal
 from PySide6.QtGui import (
     QAction,
     QActionGroup,
+    QColor,
     QGuiApplication,
     QIcon,
     QPainter,
@@ -29,7 +30,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ...core.constants import STANDARD_IMAGE_EXTENSIONS
+from PixelScopeViewer.ui import defaults, theme
+
+from ...core.constants import STANDARD_IMAGE_EXTENSIONS, get_dtype_defaults
 from ...core.image_io import ImageLoaderRegistry, is_image_file, load_image, numpy_to_qimage
 from ..dialogs import AnalysisDialog, DiffDialog, FeaturesDialog, HelpDialog
 from ..dialogs.tiling import TilingDialog
@@ -58,7 +61,7 @@ class ImageViewer(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("PixelScopeViewer")
-        self.resize(1000, 700)
+        self.resize(*defaults.MAIN_WINDOW_SIZE)
         self.setMouseTracking(True)
 
         self.images = []
@@ -76,9 +79,10 @@ class ImageViewer(QMainWindow):
         # zoom の中心に使うマウス位置（画像座標）
         self.current_mouse_image_coords = None
 
-        self.brightness_offset = 0
-        self.brightness_gain = 1.0
-        self.brightness_upper_level = 255
+        initial = get_dtype_defaults("uint8")
+        self.brightness_offset = initial["initial_offset"]
+        self.brightness_gain = initial["initial_gain"]
+        self.brightness_upper_level = initial["initial_upper_level"]
 
         self.channel_checks = []
         self.channel_colors = []
@@ -511,7 +515,7 @@ class ImageViewer(QMainWindow):
                 pix = QPixmap(12, 12)
                 pix.fill(Qt.transparent)
                 p = QPainter(pix)
-                p.setBrush(Qt.black)
+                p.setBrush(QColor(theme.CURRENT_IMAGE_MARKER_COLOR))
                 p.drawEllipse(2, 2, 8, 8)
                 p.end()
                 act.setIcon(QIcon(pix))

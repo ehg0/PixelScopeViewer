@@ -258,21 +258,10 @@ class ChannelTab(QWidget):
             min_label = None
             max_label = None
             if self._last_brightness is not None:
-                try:
-                    off, gain, upper = self._last_brightness
-                    # 出力が 0 と 255 になる入力値
-                    vmin = off
-                    vmax = off + ((upper - off) / gain if gain not in (0, None) else 0)
-
-                    def fmt(v):
-                        if abs(v - round(v)) < 1e-6:
-                            return str(round(v))
-                        return f"{v:.3f}"
-
-                    min_label = fmt(vmin)
-                    max_label = fmt(vmax)
-                except Exception:
-                    pass
+                off, gain, upper = self._last_brightness
+                # 出力が 0 と 255 になる入力値
+                vmax = off + ((upper - off) / gain if gain else 0)
+                min_label, max_label = (str(round(v)) if abs(v - round(v)) < 1e-6 else f"{v:.3f}" for v in (off, vmax))
             bar = colorbar_jet(
                 256, 24, True, min_label=min_label, max_label=max_label, label_rgb=theme.COLORBAR_LABEL_RGB
             )

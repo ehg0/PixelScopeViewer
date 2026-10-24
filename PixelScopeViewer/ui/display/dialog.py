@@ -1,7 +1,5 @@
 """表示設定 dialog（brightness と channel の色・表示 ON/OFF）。"""
 
-import contextlib
-
 from PySide6.QtCore import QEvent, Qt, Signal
 from PySide6.QtWidgets import (
     QAbstractSpinBox,
@@ -94,16 +92,12 @@ class BrightnessDialog(QDialog):
         layout.addWidget(self.tabs)
 
         # 前回の geometry を復元する
-        try:
-            if BrightnessDialog._saved_geometry:
-                self.restoreGeometry(BrightnessDialog._saved_geometry)
-        except Exception:
-            pass
+        if BrightnessDialog._saved_geometry:
+            self.restoreGeometry(BrightnessDialog._saved_geometry)
 
         if initial_brightness:
             self.set_brightness(*initial_brightness)
-            with contextlib.suppress(Exception):
-                self.channel_tab.on_brightness_for_colorbar(*initial_brightness)
+            self.channel_tab.on_brightness_for_colorbar(*initial_brightness)
         if initial_channels:
             self.set_channels(initial_channels)
         if initial_colors:
@@ -161,13 +155,11 @@ class BrightnessDialog(QDialog):
         super().changeEvent(event)
 
     def moveEvent(self, event):
-        with contextlib.suppress(Exception):
-            BrightnessDialog._saved_geometry = self.saveGeometry()
+        BrightnessDialog._saved_geometry = self.saveGeometry()
         super().moveEvent(event)
 
     def resizeEvent(self, event):
-        with contextlib.suppress(Exception):
-            BrightnessDialog._saved_geometry = self.saveGeometry()
+        BrightnessDialog._saved_geometry = self.saveGeometry()
         super().resizeEvent(event)
 
     def keyPressEvent(self, event):

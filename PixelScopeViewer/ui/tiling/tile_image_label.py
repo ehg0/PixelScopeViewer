@@ -11,6 +11,16 @@ from PixelScopeViewer.ui.common import theme
 from PixelScopeViewer.ui.common.qt_image import numpy_to_qimage
 
 
+def format_pixel_value(val, max_len: int, fmt=str) -> str:
+    """pixel 値を表示用の文字列にする。多 channel は先頭 4 つを [a, b, ...] で示し、max_len を超えたら省略する。"""
+    if np.ndim(val) > 0:
+        flat = np.ravel(val).tolist()
+        text = f"[{', '.join(fmt(x) for x in flat[:4])}{', …' if len(flat) > 4 else ''}]"
+    else:
+        text = fmt(val)
+    return text if len(text) <= max_len else text[: max_len - 3] + "…"
+
+
 class TileImageLabel(QLabel):
     """brightness を適用した画像と ROI を表示する QLabel。ROI は active な tile でのみ編集できる。"""
 
@@ -232,18 +242,8 @@ class TileImageLabel(QLabel):
         # ROI の drag 中以外はマウス位置の値を通知する
         if self.qimage is not None and self.array is not None:
             ix, iy = self._widget_to_image_coords(event.pos())
-            try:
-                val = self.array[iy, ix]
-                if np.ndim(val) > 0:
-                    flat = np.array(val).ravel().tolist()
-                    preview = ", ".join(str(x) for x in flat[:4])
-                    text = f"[{preview}{', …' if len(flat) > 4 else ''}]"
-                else:
-                    text = str(val)
-                if len(text) > 60:
-                    text = text[:57] + "…"
-            except Exception:
-                text = ""
+            h, w = self.array.shape[:2]
+            text = format_pixel_value(self.array[iy, ix], 60) if 0 <= iy < h and 0 <= ix < w else ""
             self.hover_info.emit(int(ix), int(iy), text)
 
         super().mouseMoveEvent(event)

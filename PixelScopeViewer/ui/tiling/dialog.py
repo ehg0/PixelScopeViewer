@@ -29,6 +29,7 @@ from PixelScopeViewer.ui.tiling.managers import (
 )
 from PixelScopeViewer.ui.tiling.selection_dialog import TileSelectionDialog
 from PixelScopeViewer.ui.tiling.state import TilingState
+from PixelScopeViewer.ui.tiling.tile_image_label import format_pixel_value
 from PixelScopeViewer.ui.tiling.tile_widget import TileWidget
 
 
@@ -211,22 +212,7 @@ class TilingDialog(QDialog):
                 tiles[i].update_status("")
                 continue
             h, w = arr.shape[:2]
-            if 0 <= ix < w and 0 <= iy < h:
-                try:
-                    v = arr[iy, ix]
-                    if np.ndim(v) > 0:
-                        flat = np.array(v).ravel().tolist()
-                        preview = ", ".join(str(x) for x in flat[:4])
-                        txt = f"[{preview}{', …' if len(flat) > 4 else ''}]"
-                    else:
-                        txt = str(v)
-                    if len(txt) > 50:
-                        txt = txt[:47] + "…"
-                except Exception:
-                    txt = "NA"
-            else:
-                txt = ""
-            tiles[i].update_status(txt)
+            tiles[i].update_status(format_pixel_value(arr[iy, ix], 50) if 0 <= ix < w and 0 <= iy < h else "")
 
         self.mouse_coords_label.setText(f"({ix}, {iy})")
 
@@ -428,39 +414,14 @@ class TilingDialog(QDialog):
             ix, iy = coords
             for tile in tiles:
                 arr = tile.get_base_array()
-                if arr is not None:
-                    try:
-                        val = arr[iy, ix]
-
-                        is_float_dtype = np.issubdtype(arr.dtype, np.floating)
-
-                        def _fmt(v, is_float_dtype=is_float_dtype):
-                            try:
-                                if isinstance(v, (np.floating, float)):
-                                    return f"{float(v):.3f}" if is_float_dtype else str(v)
-                                if isinstance(v, (np.integer, int)):
-                                    return str(int(v))
-                                return (
-                                    f"{float(v):.3f}"
-                                    if (is_float_dtype and isinstance(v, (int, float, np.number)))
-                                    else str(v)
-                                )
-                            except Exception:
-                                return str(v)
-
-                        if isinstance(val, np.ndarray) or (np.ndim(val) > 0):
-                            flat = np.array(val).ravel().tolist()
-                            preview = ", ".join(_fmt(x) for x in flat[:4])
-                            text = f"[{preview}{', …' if len(flat) > 4 else ''}]"
-                        else:
-                            text = _fmt(val)
-                        if len(text) > 60:
-                            text = text[:57] + "…"
-                        tile.update_status(text)
-                    except Exception:
-                        tile.update_status("")
-                else:
+                if arr is None or not (0 <= iy < arr.shape[0] and 0 <= ix < arr.shape[1]):
                     tile.update_status("")
+                    continue
+                # float の画像は小数 3 桁、整数はそのまま表示する
+                is_float = np.issubdtype(arr.dtype, np.floating)
+                tile.update_status(
+                    format_pixel_value(arr[iy, ix], 60, lambda v, f=is_float: f"{float(v):.3f}" if f else str(v))
+                )
         else:
             for tile in tiles:
                 tile.update_status("")
@@ -545,11 +506,7 @@ class TilingDialog(QDialog):
     def _refresh_comparison_dialog_for_roi(self):
         """表示中の複数画像の解析 dialog を現在の ROI で更新する。"""
         if self._comparison_dialog is not None and self._comparison_dialog.isVisible():
-            try:
-                updated = self.get_all_tiles_data()
-                self._comparison_dialog.update_tiles_data(updated)
-            except Exception:
-                pass
+            self._comparison_dialog.update_tiles_data(self.get_all_tiles_data())
 
     def show_analysis_dialog(self, tab=None):
         """active な tile の解析 dialog（単一画像）を表示する。

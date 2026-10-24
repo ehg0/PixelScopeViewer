@@ -1,6 +1,5 @@
 """全 tile の histogram・profile を重ねて表示する、複数画像の解析 dialog。"""
 
-import contextlib
 from pathlib import Path
 
 import numpy as np
@@ -85,30 +84,21 @@ class TilingAnalysisDialog(AnalysisDialog):
             if lbl in self._overlay_overrides:
                 self.overlay_color_map[lbl] = QColor(self._overlay_overrides[lbl]).getRgb()[:3]
                 continue
-            parts = lbl.split()
-            tile_num = 1
-            ch_index = 0
-            try:
-                if len(parts) >= 3 and parts[0] == "Tile":
-                    tile_num = int(parts[1])
-                    ch_code = parts[2]
-                    ch_index = int(ch_code[1:]) if ch_code.startswith("C") else 0
-                else:
-                    # 形式が異なる場合は数字と C{k} を探す
-                    for p in parts:
-                        if p.isdigit():
-                            tile_num = int(p)
-                            break
-                    for p in parts:
-                        if p.startswith("C") and p[1:].isdigit():
-                            ch_index = int(p[1:])
-                            break
-            except Exception:
-                tile_num = 1
-                ch_index = 0
+            # label は _overlay_curve_labels などで作る "Tile {n} C{k}" / "Tile {n} I" の形式
+            _, tile_num, ch_code = lbl.split()
+            ch_index = int(ch_code[1:]) if ch_code.startswith("C") else 0
+            tile_num = int(tile_num)
             idx = ((tile_num - 1) * 8 + ch_index) % len(theme.OVERLAY_PALETTE)
             self.overlay_color_map[lbl] = to_plot_color(QColor(theme.OVERLAY_PALETTE[idx])).getRgb()[:3]
         return {lbl: self.overlay_color_map[lbl] for lbl in labels}
+
+    @staticmethod
+    def _channel_visible(label: str, visibility: list[bool] | None) -> bool:
+        """label（C{k} / I）の channel が表示 ON か。設定がない channel は表示する。"""
+        if visibility is None:
+            return True
+        idx = 0 if label == "I" else int(label[1:])
+        return visibility[idx] if idx < len(visibility) else True
 
     def _make_pen(self, rgb: tuple[int, int, int], *, width: int = 2, alpha: int = 255):
         r, g, b = rgb
@@ -138,8 +128,7 @@ class TilingAnalysisDialog(AnalysisDialog):
             metadata = {}
 
             if path:
-                with contextlib.suppress(Exception):
-                    metadata = get_image_metadata(path, arr) or {}
+                metadata = get_image_metadata(path, arr) or {}
 
             # 基本情報は配列から必ず設定する
             if arr is not None:
@@ -303,28 +292,14 @@ class TilingAnalysisDialog(AnalysisDialog):
             tile_hist_series = {}
             for label, (xs, ys) in hist_series.items():
                 channel_code = label
-                ch_visible = True
-                if visibility is not None:
-                    if label.startswith("C"):
-                        try:
-                            cindex = int(label[1:])
-                            if cindex < len(visibility):
-                                ch_visible = visibility[cindex]
-                        except Exception:
-                            ch_visible = True
-                    elif label == "I" and len(visibility) > 0:
-                        ch_visible = visibility[0]
+                ch_visible = self._channel_visible(label, visibility)
                 if ch_visible:
                     new_label = f"Tile {tile_idx + 1} {channel_code}"
                     tile_hist_series[new_label] = (xs, ys)
             all_hist_series[tile_idx] = tile_hist_series
 
             for stat in stats:
-                stat_ch_index = 0
-                try:
-                    stat_ch_index = int(stat["ch"])
-                except Exception:
-                    stat_ch_index = 0
+                stat_ch_index = int(stat["ch"])
                 stat_visible = True
                 if visibility is not None and stat_ch_index < len(visibility):
                     stat_visible = visibility[stat_ch_index]
@@ -432,17 +407,7 @@ class TilingAnalysisDialog(AnalysisDialog):
                 else:
                     xs = np.arange(prof.size)
 
-                ch_visible = True
-                if visibility is not None:
-                    if label.startswith("C"):
-                        try:
-                            cindex = int(label[1:])
-                            if cindex < len(visibility):
-                                ch_visible = visibility[cindex]
-                        except Exception:
-                            ch_visible = True
-                    elif label == "I" and len(visibility) > 0:
-                        ch_visible = visibility[0]
+                ch_visible = self._channel_visible(label, visibility)
 
                 if ch_visible:
                     channel_code = label

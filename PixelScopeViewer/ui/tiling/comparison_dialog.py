@@ -29,6 +29,7 @@ from PixelScopeViewer.core.statistics import (
 )
 from PixelScopeViewer.ui.analysis.dialog import AnalysisDialog
 from PixelScopeViewer.ui.analysis.tabs.channel_list import ChannelListWidget
+from PixelScopeViewer.ui.analysis.tabs.histogram_tab import make_hist_bar_item, plot_log_mode
 from PixelScopeViewer.ui.common import theme
 from PixelScopeViewer.ui.common.channel_display import to_plot_color
 
@@ -375,6 +376,7 @@ class TilingAnalysisDialog(AnalysisDialog):
             self.hist_tab.hist_widget.clear()
             self.hist_plot_items.clear()
             if merged_series:
+                log_x, log_y = plot_log_mode(self.hist_tab.hist_widget)
                 for label, (xs, ys) in merged_series.items():
                     yplot = np.array(ys, dtype=float)
                     if apply_log:
@@ -389,13 +391,8 @@ class TilingAnalysisDialog(AnalysisDialog):
 
                     if self.settings.hist_chart_kind == "Bar":
                         pen = self._make_pen(rgb, width=2, alpha=self.settings.hist_bar_alpha)
-                        item = pg.BarGraphItem(
-                            x=xs,
-                            height=yplot,
-                            width=self.settings.hist_bin_step,
-                            brush=pen.color(),
-                            pen=None,
-                            name=label,
+                        item = make_hist_bar_item(
+                            xs, yplot, self.settings.hist_bin_step, pen.color(), label, log_x, log_y
                         )
                         self.hist_tab.hist_widget.addItem(item)
                     self.hist_plot_items[label] = item

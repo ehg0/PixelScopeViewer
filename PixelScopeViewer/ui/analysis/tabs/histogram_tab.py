@@ -35,6 +35,44 @@ def _format_stat(value, is_int: bool) -> str:
     return f"{value:.4f}"
 
 
+def make_hist_bar_item(xs, heights, width: float, brush, name: str, log_x: bool, log_y: bool) -> pg.BarGraphItem:
+    """histogram の BarGraphItem を作る。
+
+    BarGraphItem は setLogMode を持たず PlotItem の log X/Y で変換されないため、座標を自前で log10 変換する。
+    log Y の下端は 0 を 0.1 に置き換える既存の扱いに合わせて -1 にする。
+    """
+    xs = np.asarray(xs, dtype=float)
+    heights = np.asarray(heights, dtype=float)
+    left = xs - width / 2
+    right = xs + width / 2
+    y0 = np.zeros_like(heights)
+    y1 = heights
+    if log_x:
+        # Line と同様に x <= 0 の bin は描かない
+        keep = xs > 0
+        xs, left, right, y0, y1 = xs[keep], left[keep], right[keep], y0[keep], y1[keep]
+        log_xs = np.log10(xs)
+        log_right = np.log10(right)
+        # 0 始まりの bin は左端が log にできないため、中心で右端を鏡映する
+        with np.errstate(divide="ignore", invalid="ignore"):
+            log_left = np.where(left > 0, np.log10(np.where(left > 0, left, 1.0)), 2 * log_xs - log_right)
+        left, right = log_left, log_right
+    if log_y:
+        y0 = np.full_like(y1, -1.0)
+        with np.errstate(divide="ignore"):
+            y1 = np.log10(y1)
+    return pg.BarGraphItem(x0=left, x1=right, y0=y0, y1=y1, brush=brush, pen=None, name=name)
+
+
+def plot_log_mode(plot_widget) -> tuple[bool, bool]:
+    """PlotWidget の menu の log X/Y の状態を返す。"""
+    try:
+        ctrl = plot_widget.getPlotItem().ctrl
+        return bool(ctrl.logXCheck.isChecked()), bool(ctrl.logYCheck.isChecked())
+    except Exception:
+        return False, False
+
+
 class HistogramTab(QWidget):
     """histogram の plot、統計量の table、設定 control を持つ tab。
 
@@ -314,6 +352,7 @@ class HistogramTab(QWidget):
 
             return qcolor
 
+        log_x, log_y = plot_log_mode(self.hist_widget)
         for _, (label, (xs, ys)) in enumerate(series.items()):
             yplot = np.array(ys, dtype=float)
             if apply_log:
@@ -327,9 +366,7 @@ class HistogramTab(QWidget):
 
             if chart_kind == "Bar":
                 pen = pg.mkPen(color=_color_for_label(label, alpha=bar_alpha), width=2)
-                item = pg.BarGraphItem(
-                    x=xs, height=yplot, width=self.bin_step_spin_box.value(), brush=pen.color(), pen=None, name=label
-                )
+                item = make_hist_bar_item(xs, yplot, self.bin_step_spin_box.value(), pen.color(), label, log_x, log_y)
                 self.hist_widget.addItem(item)
 
         self.hist_widget.setTitle(f"Intensity {self.config_mode_btn.text()}", color=theme.PLOT_TEXT_COLOR, size="12pt")

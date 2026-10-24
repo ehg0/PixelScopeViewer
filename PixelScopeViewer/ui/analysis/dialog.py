@@ -26,6 +26,7 @@ from PixelScopeViewer.core.image_io import get_image_metadata
 from PixelScopeViewer.core.statistics import (
     calc_stats,
     compute_profile_1d,
+    crop_roi,
     determine_hist_bins,
     ecdf_series,
     get_profile_offset,
@@ -257,28 +258,14 @@ class AnalysisDialog(QDialog):
         if arr is None:
             self._update_metadata()
             return
-        if self.image_rect is not None:
-            x, y, w, h = (
-                int(self.image_rect.x()),
-                int(self.image_rect.y()),
-                int(self.image_rect.width()),
-                int(self.image_rect.height()),
-            )
-            arr = arr[y : y + h, x : x + w]
-        else:
-            arr = arr[0:1, 0:1]
+        arr = crop_roi(arr, self.image_rect.getRect() if self.image_rect is not None else None)
 
         self._update_metadata()
 
         # channel_checks の長さを channel 数に合わせる
-        if arr.ndim == 3 and arr.shape[2] > 1:
-            nch = arr.shape[2]
-            if not self.settings.channel_checks:
-                self.settings.channel_checks = [True] * nch
-            elif len(self.settings.channel_checks) < nch:
-                self.settings.channel_checks.extend([True] * (nch - len(self.settings.channel_checks)))
-        else:
-            nch = 1
+        nch = arr.shape[2] if arr.ndim == 3 and arr.shape[2] > 1 else 1
+        if nch > 1:
+            self.settings.fit_channel_checks(nch)
 
         # histogram
         if self.settings.hist_mode == "Histogram":

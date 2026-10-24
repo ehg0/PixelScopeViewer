@@ -36,6 +36,44 @@ def determine_hist_bins_auto(arr: np.ndarray) -> np.ndarray | int:
     return max(1, int(data_max - data_min) + 1)
 
 
+def crop_roi(arr: np.ndarray, rect: tuple[int, int, int, int] | None) -> np.ndarray:
+    """ROI (x, y, w, h) の範囲を切り出す。ROI がない場合は左上 1 pixel を返す。"""
+    if rect is None:
+        return arr[0:1, 0:1]
+    x, y, w, h = (int(v) for v in rect)
+    return arr[y : y + h, x : x + w]
+
+
+def merge_hist_series(
+    series: dict[str, tuple[np.ndarray, np.ndarray]], mode: str
+) -> dict[str, tuple[np.ndarray, np.ndarray]]:
+    """複数の histogram / ECDF の系列を共通の x 軸に揃える。
+
+    x 軸は全系列の x の和集合（前後 1 step を含む）。ECDF は前後の累積確率で補間し、Histogram は値のない x を 0 にする。
+    """
+    all_xs = []
+    for xs, _ in series.values():
+        xs = np.asarray(xs)
+        dx = xs[1] - xs[0] if len(xs) > 1 else 1.0
+        all_xs.append(np.concatenate([xs, xs - dx, xs + dx]))
+    x_common = np.unique(np.concatenate(all_xs)) if all_xs else np.array([])
+
+    merged = {}
+    for label, (xs, ys) in series.items():
+        if mode == "ECDF":
+            if len(xs) > 0:
+                ys_new = np.interp(x_common, xs, ys, left=0.0, right=1.0)
+            else:
+                ys_new = np.zeros_like(x_common, dtype=float)
+        else:
+            ys_new = np.zeros_like(x_common, dtype=ys.dtype)
+            indices = np.searchsorted(x_common, xs)
+            valid = (indices >= 0) & (indices < len(x_common))
+            ys_new[indices[valid]] = ys[valid]
+        merged[label] = (x_common, ys_new)
+    return merged
+
+
 def _iter_channels(arr: np.ndarray) -> list[tuple[int, str, np.ndarray]]:
     """(channel index, label, 2 次元配列) のリストを返す。label は多 channel なら 'C{index}'、1ch なら 'I'。"""
     if arr.ndim == 3 and arr.shape[2] > 1:

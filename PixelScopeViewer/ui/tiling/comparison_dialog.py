@@ -19,11 +19,13 @@ from PySide6.QtWidgets import (
 
 from PixelScopeViewer.core.image_io import get_image_metadata
 from PixelScopeViewer.core.statistics import (
+    crop_roi,
     determine_hist_bins,
     ecdf_series,
     get_profile_offset,
     histogram_series,
     histogram_stats,
+    merge_hist_series,
     profile_series,
 )
 from PixelScopeViewer.ui.analysis.dialog import AnalysisDialog
@@ -225,17 +227,7 @@ class TilingAnalysisDialog(AnalysisDialog):
                 continue
 
             roi_rect = tile_data.get("rect")
-            if roi_rect is not None:
-                x, y, w, h = (
-                    int(roi_rect.x()),
-                    int(roi_rect.y()),
-                    int(roi_rect.width()),
-                    int(roi_rect.height()),
-                )
-                arr = arr[y : y + h, x : x + w]
-            else:
-                arr = arr[0:1, 0:1]
-
+            arr = crop_roi(arr, roi_rect.getRect() if roi_rect is not None else None)
             if arr.size == 0:
                 continue
 
@@ -256,11 +248,7 @@ class TilingAnalysisDialog(AnalysisDialog):
 
         first_arr = valid_tiles[0]["array"]
         if first_arr.ndim == 3 and first_arr.shape[2] > 1:
-            nch = first_arr.shape[2]
-            if not self.settings.channel_checks:
-                self.settings.channel_checks = [True] * nch
-            elif len(self.settings.channel_checks) < nch:
-                self.settings.channel_checks.extend([True] * (nch - len(self.settings.channel_checks)))
+            self.settings.fit_channel_checks(first_arr.shape[2])
 
         self._ensure_overlay_channel_visibility(valid_tiles)
 
@@ -274,7 +262,7 @@ class TilingAnalysisDialog(AnalysisDialog):
         if not valid_tiles:
             return
 
-        all_hist_series = {}  # tile index -> {label -> (xs, ys)}
+        all_hist_series = {}  # "Tile {n} {label}" -> (xs, ys)
         all_stats = []  # 表示 ON の channel の統計量
 
         for tile in valid_tiles:
@@ -289,14 +277,9 @@ class TilingAnalysisDialog(AnalysisDialog):
                 hist_series = ecdf_series(arr)
             stats = histogram_stats(arr, self.settings.channel_checks)
 
-            tile_hist_series = {}
-            for label, (xs, ys) in hist_series.items():
-                channel_code = label
-                ch_visible = self._channel_visible(label, visibility)
-                if ch_visible:
-                    new_label = f"Tile {tile_idx + 1} {channel_code}"
-                    tile_hist_series[new_label] = (xs, ys)
-            all_hist_series[tile_idx] = tile_hist_series
+            for label, data in hist_series.items():
+                if self._channel_visible(label, visibility):
+                    all_hist_series[f"Tile {tile_idx + 1} {label}"] = data
 
             for stat in stats:
                 stat_ch_index = int(stat["ch"])
@@ -312,32 +295,7 @@ class TilingAnalysisDialog(AnalysisDialog):
                     stat_copy["curve_label"] = curve_label
                     all_stats.append(stat_copy)
 
-        # 全 tile の x の和集合（前後 1 step を含む）を共通の x 軸にする
-        all_xs = []
-        for series in all_hist_series.values():
-            for xs, _ in series.values():
-                xs = np.asarray(xs)
-                dx = xs[1] - xs[0] if len(xs) > 1 else 1.0
-                xs_extended = np.concatenate([xs, xs - dx, xs + dx])
-                all_xs.append(xs_extended)
-        x_common = np.array([]) if len(all_xs) == 0 else np.unique(np.concatenate(all_xs))
-
-        merged_series = {}
-        for series in all_hist_series.values():
-            for label, data in series.items():
-                xs, ys = data
-                if self.settings.hist_mode == "ECDF":
-                    # ECDF は np.interp で欠けている x を前後の累積確率で補間する
-                    if len(xs) > 0:
-                        ys_new = np.interp(x_common, xs, ys, left=0.0, right=1.0)
-                    else:
-                        ys_new = np.zeros_like(x_common, dtype=float)
-                else:
-                    ys_new = np.zeros_like(x_common, dtype=ys.dtype)
-                    indices = np.searchsorted(x_common, xs)
-                    valid = (indices >= 0) & (indices < len(x_common))
-                    ys_new[indices[valid]] = ys[valid]
-                merged_series[label] = (x_common, ys_new)
+        merged_series = merge_hist_series(all_hist_series, self.settings.hist_mode)
 
         ordered_labels = list(merged_series.keys())
         palette_map = self._assign_overlay_colors(ordered_labels)

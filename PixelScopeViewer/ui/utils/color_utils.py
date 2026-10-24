@@ -88,28 +88,9 @@ def flow_to_hsv(flow: np.ndarray) -> np.ndarray:
     hsv[..., 0] = np.clip(angle / 2, 0, 180).astype(np.uint8)  # Hue: 0〜180
     hsv[..., 1] = 255  # Upper_level fixed
 
-    if False:
-        # Value: Robust normalization of magnitude (using upper percentile as max)
-        # → Makes small movements more visible and prevents overall darkness
-        mag_max = float(np.percentile(magnitude, 99.0)) if magnitude.size > 0 else 0.0
-        if mag_max <= 0.0:
-            hsv[..., 2] = 0
-        else:
-            value = np.clip((magnitude / mag_max) * 255.0, 0, 255).astype(np.uint8)
-            hsv[..., 2] = value
-    if False:
-        # Value : Dynamic scaling ---
-        # Scale 255 based on the top 1% data
-        mag_max = float(np.percentile(magnitude, 99.0))
-        if mag_max < 1e-6:
-            hsv[..., 2] = 0
-        else:
-            hsv[..., 2] = np.clip((magnitude / mag_max) * 255.0, 0, 255).astype(np.uint8)
-
-    if True:
-        # Value: Fixed scale based on max_magnitude
-        max_magnitude = 1.0
-        hsv[..., 2] = np.clip((magnitude / max_magnitude) * 255.0, 0, 255).astype(np.uint8)
+    # Value: Fixed scale based on max_magnitude
+    max_magnitude = 1.0
+    hsv[..., 2] = np.clip((magnitude / max_magnitude) * 255.0, 0, 255).astype(np.uint8)
 
     bgr = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
     return bgr

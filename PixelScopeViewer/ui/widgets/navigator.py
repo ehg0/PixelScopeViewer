@@ -55,8 +55,6 @@ class NavigatorWidget(QGroupBox):
         if self.thumb_rect is None:
             return
 
-        mouse_pos = event.pos()
-
         pixmap = self.thumbnail_label.pixmap()
         if not pixmap:
             return

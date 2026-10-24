@@ -23,19 +23,17 @@ def determine_hist_bins_auto(arr: np.ndarray) -> np.ndarray | int:
     - Integer dtype: full value span (max - min + 1)
     """
     if np.issubdtype(arr.dtype, np.floating):
-        bins = 1000
-        if True:
-            data_min = arr.min()
-            data_max = arr.max()
-            step = 1
-            if data_max - data_min > 5:
-                data_min = int(data_min)
-                data_max = int(data_max + 0.5)
-            else:
-                data_min = int(data_min * 100) / 100
-                data_max = int(data_max * 100 + 0.5) / 100
-                step = 0.005
-            bins = np.arange(data_min, data_max, step)  # ヒストグラムを1.0刻みでプロット
+        data_min = arr.min()
+        data_max = arr.max()
+        step = 1
+        if data_max - data_min > 5:
+            data_min = int(data_min)
+            data_max = int(data_max + 0.5)
+        else:
+            data_min = int(data_min * 100) / 100
+            data_max = int(data_max * 100 + 0.5) / 100
+            step = 0.005
+        bins = np.arange(data_min, data_max, step)  # ヒストグラムを1.0刻みでプロット
         return bins
     data_min = arr.min()
     data_max = arr.max()

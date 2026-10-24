@@ -300,9 +300,9 @@ class HistogramTab(QWidget):
             if rgb:
                 return QColor(rgb[0], rgb[1], rgb[2], alpha)
 
-            # 2. Intensity
+            # 2. Intensity（1ch）は channel 0 の色
             if label == "I":
-                qcolor = QColor(theme.PLOT_INTENSITY_COLOR)
+                qcolor = QColor(channel_colors[0]) if channel_colors else QColor(theme.PLOT_INTENSITY_COLOR)
                 qcolor.setAlpha(alpha)
                 return qcolor
 
@@ -328,10 +328,8 @@ class HistogramTab(QWidget):
                     fallback[ch_index] if ch_index is not None and ch_index < len(fallback) else theme.PLOT_MUTED_COLOR
                 )
 
+            # 灰色系を黒にするかは ChannelDisplay.plot_colors で決めているため、そのまま使う
             qcolor = QColor(color_val)
-            # grayscale の色は見やすさのため黒で描画する
-            if qcolor.red() == qcolor.green() == qcolor.blue():
-                qcolor = QColor(theme.PLOT_INTENSITY_COLOR)
             qcolor.setAlpha(alpha)
 
             return qcolor

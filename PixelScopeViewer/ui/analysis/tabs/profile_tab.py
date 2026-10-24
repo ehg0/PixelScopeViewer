@@ -265,9 +265,9 @@ class ProfileTab(QWidget):
                 if rgb[0] == rgb[1] == rgb[2]:
                     return theme.PLOT_INTENSITY_COLOR
                 return f"rgb({rgb[0]},{rgb[1]},{rgb[2]})"
-            # Intensity は常に黒
+            # Intensity（1ch）は channel 0 の色
             if label == "I":
-                return theme.PLOT_INTENSITY_COLOR
+                return channel_colors[0].name() if channel_colors else theme.PLOT_INTENSITY_COLOR
             ch_index = None
             if label.startswith("C") and label[1:].isdigit():
                 ch_index = int(label[1:])
@@ -278,10 +278,8 @@ class ProfileTab(QWidget):
                         ch_index = int(p[1:])
                         break
             if ch_index is not None and channel_colors and 0 <= ch_index < len(channel_colors):
+                # 灰色系を黒にするかは ChannelDisplay.plot_colors で決めているため、そのまま使う
                 c = channel_colors[ch_index]
-                # grayscale の色は見やすさのため黒で描画する
-                if c.red() == c.green() == c.blue():
-                    return theme.PLOT_INTENSITY_COLOR
                 return c.name() if hasattr(c, "name") else theme.PLOT_MUTED_COLOR
             fallback = theme.PLOT_FALLBACK_CHANNEL_COLORS
             if ch_index is not None and ch_index < len(fallback):

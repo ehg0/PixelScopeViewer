@@ -33,9 +33,9 @@ from PySide6.QtWidgets import (
 )
 
 from PixelScopeViewer.core.brightness import determine_dtype_group
-from PixelScopeViewer.core.colormap import apply_jet_colormap, flow_to_hsv_rgb
 from PixelScopeViewer.core.constants import STANDARD_IMAGE_EXTENSIONS
 from PixelScopeViewer.core.image_io import ImageLoaderRegistry, is_image_file, load_image
+from PixelScopeViewer.core.render import render_display, render_thumbnail
 from PixelScopeViewer.ui.analysis import AnalysisDialog
 from PixelScopeViewer.ui.annotations import AnnotationsDialog
 from PixelScopeViewer.ui.annotations.model import AnnotationStore
@@ -275,49 +275,20 @@ class ImageViewer(QMainWindow):
             if self._annotations_dialog is not None:
                 self._annotations_dialog.refresh_from_manager()
 
+    def _render_options(self, arr: np.ndarray) -> dict:
+        """表示モードと、arr の channel 数に対応する channel の表示 ON/OFF・色を返す。"""
+        n = arr.shape[2] if arr.ndim >= 3 else 0
+        d = self.channel_display
+        return {
+            "jet": d.mode_1ch == MODE_1CH_JET,
+            "flow_hsv": d.mode_2ch == MODE_2CH_FLOW_HSV,
+            "checks": d.checks(n),
+            "colors_rgb": [c.getRgb()[:3] for c in d.colors(n)],
+        }
+
     def _prepare_thumbnail_array(self, arr: np.ndarray) -> np.ndarray:
         """現在の 1ch/2ch 表示モードに合わせた thumbnail 用の配列を返す。"""
-        if arr.ndim == 2 or (arr.ndim == 3 and arr.shape[2] == 1):
-            # メイン表示と揃えるため brightness を適用する
-            adj = self.brightness_manager.apply_brightness_adjustment(arr)
-            if self.channel_display.mode_1ch == MODE_1CH_JET:
-                if adj.ndim == 3 and adj.shape[2] == 1:
-                    adj = adj[..., 0]
-                return apply_jet_colormap(adj)
-            else:
-                if adj.ndim == 3 and adj.shape[2] == 1:
-                    adj = adj[..., 0]
-                return adj
-
-        if arr.ndim == 3 and arr.shape[2] == 2:
-            if self.channel_display.mode_2ch == MODE_2CH_FLOW_HSV:
-                # flow-hsv は brightness を適用せず元データから変換する
-                rgb = flow_to_hsv_rgb(arr)
-                return rgb
-            else:
-                # composite: brightness 適用後、channel の表示 ON/OFF と色で合成する
-                adj = self.brightness_manager.apply_brightness_adjustment(arr)
-                h, w, c = adj.shape
-                n = c
-                checks = self.channel_display.checks(n)
-                colors = self.channel_display.colors(n)
-                selected = [i for i, ck in enumerate(checks) if ck]
-                if not selected:
-                    return np.zeros((h, w, 3), dtype=np.uint8)
-                comp = np.zeros((h, w, 3), dtype=np.float32)
-                for idx in selected:
-                    if idx < n and idx < len(colors):
-                        col = colors[idx]
-                        r = col.red() / 255.0
-                        g = col.green() / 255.0
-                        b = col.blue() / 255.0
-                        ch = adj[:, :, idx].astype(np.float32) / 255.0
-                        comp[:, :, 0] += ch * r
-                        comp[:, :, 1] += ch * g
-                        comp[:, :, 2] += ch * b
-                return np.clip(comp * 255.0, 0, 255).astype(np.uint8)
-
-        return arr
+        return render_thumbnail(arr, self.brightness_manager.apply_brightness_adjustment, **self._render_options(arr))
 
     def _show_load_error(self, path: str, arr=None, error_msg: str = ""):
         """ファイルの詳細を添えて読み込みエラーを表示する。"""
@@ -583,66 +554,16 @@ class ImageViewer(QMainWindow):
         if self._cached_display_params == cache_key and self._cached_display_array is not None:
             return self._cached_display_array
 
-        # 疑似カラー表示（1ch の JET、2ch の flow-hsv）
-        if arr.ndim == 2 or (arr.ndim == 3 and arr.shape[2] == 1):
-            if self.channel_display.mode_1ch == MODE_1CH_JET:
-                adj = self.brightness_manager.apply_brightness_adjustment(arr)
-                if adj.ndim == 3 and adj.shape[2] == 1:
-                    adj = adj[..., 0]
-                result = apply_jet_colormap(adj)
-                self._cached_display_array = result
-                self._cached_display_params = cache_key
-                return result
-        elif arr.ndim == 3 and arr.shape[2] == 2 and self.channel_display.mode_2ch == MODE_2CH_FLOW_HSV:
-            result = flow_to_hsv_rgb(arr)
-            self._cached_display_array = result
-            self._cached_display_params = cache_key
-            return result
-
-        apply_adjust = False
-        if (
-            np.issubdtype(arr.dtype, np.floating)
-            or self.state.brightness.offset != 0
-            or self.state.brightness.gain != 1.0
-            or self.state.brightness.upper_level != 255
-        ):
-            apply_adjust = True
-
-        if apply_adjust:
-            arr = self.brightness_manager.apply_brightness_adjustment(arr)
-
-        # 表示する channel を選択した色で合成する
-        channel_checks = self.channel_checks
-        channel_colors = self.channel_colors
-        if arr.ndim >= 3 and channel_checks:
-            selected_channels = [i for i, checked in enumerate(channel_checks) if checked]
-            if not selected_channels:
-                return np.zeros((arr.shape[0], arr.shape[1], 3), dtype=np.uint8)
-
-            composite = np.zeros((arr.shape[0], arr.shape[1], 3), dtype=np.float32)
-            for channel_idx in selected_channels:
-                if channel_idx < len(channel_colors):
-                    color = channel_colors[channel_idx]
-                    r, g, b = color.red() / 255.0, color.green() / 255.0, color.blue() / 255.0
-                    channel_data = arr[:, :, channel_idx].astype(np.float32)
-                    if arr.dtype == np.uint8:
-                        channel_data /= 255.0
-                    elif np.issubdtype(arr.dtype, np.floating):
-                        channel_data = np.clip(channel_data, 0, 1)
-                    elif np.issubdtype(arr.dtype, np.integer):
-                        max_val = np.iinfo(arr.dtype).max
-                        channel_data /= max_val
-                    composite[:, :, 0] += channel_data * r
-                    composite[:, :, 1] += channel_data * g
-                    composite[:, :, 2] += channel_data * b
-            result = (np.clip(composite, 0, 1) * 255).astype(np.uint8)
-            self._cached_display_array = result
-            self._cached_display_params = cache_key
-            return result
-
-        self._cached_display_array = arr
+        b = self.state.brightness
+        result = render_display(
+            arr,
+            self.brightness_manager.apply_brightness_adjustment,
+            brightness_changed=(b.offset, b.gain, b.upper_level) != (0, 1.0, 255),
+            **self._render_options(arr),
+        )
+        self._cached_display_array = result
         self._cached_display_params = cache_key
-        return arr
+        return result
 
     def display_image(self, arr):
         """現在の zoom 倍率と表示設定で画像を表示する。"""

@@ -81,7 +81,7 @@ class DiffDialog(QDialog):
         self.accept()
 
     def get_result(self):
-        """get resulut of selections.
+        """get resulut of selections。
 
         Returns:
             tuple: (image_a_index, image_b_index, offset) or None

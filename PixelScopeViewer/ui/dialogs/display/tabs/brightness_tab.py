@@ -489,7 +489,7 @@ class BrightnessTab(QWidget):
             r = self.viewer.current_roi_rect
             if r and not r.isEmpty():
                 return r.x(), r.y(), r.width(), r.height()
-        return None
+            return None
 
     def _on_roi_changed(self, *args):
         """親側でROIが変更されたときにROIを更新する"""

@@ -316,7 +316,7 @@ class AnalysisDialog(QDialog):
 
         arguments:
             image_array: NumPy array of the image or selection
-            image_rect: Selection rectangle in image (QRect)
+            image_rect: Selection rectangle in image（QRect）
             image_path: File path of the image (used for metadata extraction)
         """
         self.image_array = image_array
@@ -327,10 +327,10 @@ class AnalysisDialog(QDialog):
         self.update_contents()
 
     def set_current_tab(self, tab):
-        """Switch tabs by name (prefix of 'Histogram','Profile','Info'  or index)
+        """Switch tabs by name（prefix of 'Histogram','Profile','Info'  or index）
 
         arguments:
-            tab: String tab name or index (int)
+            tab: String tab name or index（int）
         """
         if tab is None:
             return

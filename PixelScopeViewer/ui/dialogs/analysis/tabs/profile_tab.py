@@ -452,7 +452,7 @@ class ProfileTab(QWidget):
             mouse_point = plot_item.vb.mapSceneToView(pos)
             x_val, y_val = mouse_point.x(), mouse_point.y()
 
-            # Logモード判定&逆変換
+            # Logモード判定＆逆変換
             vb_state = plot_item.vb.getState()
             is_log_x = vb_state.get("logMode", [False, False])[0]
             is_log_y = vb_state.get("logMode", [False, False])[1]

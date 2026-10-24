@@ -128,9 +128,9 @@ class StatusUpdater:
             file_size_str = ""
 
         if file_size_str:
-            title = f"[{self.viewer.current_index + 1}/{len(self.viewer.images)}]  {filename} ({file_size_str}) - {w}x{h}, {c}ch"
+            title = f"[{self.viewer.current_index + 1}/{len(self.viewer.images)}]  {filename} ({file_size_str}) — {w}×{h}, {c}ch"
         else:
-            title = f"[{self.viewer.current_index + 1}/{len(self.viewer.images)}]  {filename} - {w}x{h}, {c}ch"
+            title = f"[{self.viewer.current_index + 1}/{len(self.viewer.images)}]  {filename} — {w}×{h}, {c}ch"
         self.viewer.setWindowTitle(title)
 
         # display current scale

@@ -618,7 +618,7 @@ class TilingComparisonDialog(AnalysisDialog):
     def _setup_overlay_channel_checkboxes(self):
         """Replace channel checkboxes UI in tabs with overlay tile checkboxes.
 
-        Ensures the fixed button row (Select All / Deselect All) is placed above the
+        Ensures the fixed button row (Setect All / Deselect All) is placed above the
         scroll area (non-scrollable), and the tile/channel checkboxes are
         placed inside the scroll area.
         """

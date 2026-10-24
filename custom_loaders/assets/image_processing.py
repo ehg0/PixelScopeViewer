@@ -82,8 +82,8 @@ def split_channels(
     Args:
         img (np.ndarray): 入力RAW画像。形状は (H, W)。
         cfa (str| np.ndarray, optional): CFAパターン。
-            文字列指定 (例: "rggb", "grbg") または2次元配列指定
-             (e.g. np.array([['R', 'GR'], ['GB', 'B']])) 。
+            文字列指定（例: "rggb", "grbg"）または2次元配列指定
+            （e.g. np.array([['R', 'GR'], ['GB', 'B']])）。
             デフォルトは "rggb"。
         full_size (bool, optional): True の場合、元画像サイズ (H, W) の全域マスク画像を返す。
             False の場合、スライスされた小画像 (H/cfa_h, W/cfa_w) を返す。
@@ -200,7 +200,7 @@ def merge_channels(
             入力チャンネルが元画像サイズ (H, W) のマスク画像の場合は True、
             縮小スライス画像の場合は False。 Defaults to False.
         subpix (bool, optional):
-            subpix=True で分離されたデータ (キー名に位置Suffix 'r00' 等が含まれる) の場合 True。
+            subpix=True で分離されたデータ（キー名に位置Suffix 'r00' 等が含まれる）の場合 True。
             Defaults to False.
 
     Returns:
@@ -252,7 +252,7 @@ def merge_channels(
         h, w = first_img.shape
         raw_img = np.zeros((h, w), dtype=target_dtype)
 
-        # マスク画像を単純加算 (各画素で排他的に値が存在するため np.bitwise_or や + でOK)
+        # マスク画像を単純加算（各画素で排他的に値が存在するため np.bitwise_or や + でOK）
         for img in ch_dict.values():
             raw_img |= img if np.issubdtype(target_dtype, np.integer) else raw_img + img
 
@@ -407,14 +407,14 @@ def wb(img: np.ndarray, wb_gain: np.ndarray = None, roi: list | np.ndarray = Non
     """
     ホワイトバランス補正
     Args:
-        img (ndarray): 入力画像 (Bayer画像 or RGB 3ch)
+        img (ndarray): 入力画像（Bayer画像 or RGB 3ch）
         wb_gain (ndarray): ホワイトバランスゲイン。Noneの場合、自動計算。
         roi (ndarray, list): wb_gain計算時のROI設定。配列長4で、(cx, cy, w, h)の順。入力画サイズベース。Noneだと画像全体から算出。
         cfa (str): カラーフィルタ配列
 
     Returns:
-        img (ndarray): ホワイトバランス補正後の画像 (float32)
-        wb_gain (ndarray): シェーディング補正 ゲインマップ (float)
+        img (ndarray): ホワイトバランス補正後の画像（float32）
+        wb_gain (ndarray): シェーディング補正 ゲインマップ（float）
     """
     if img.ndim == 2:
         img_dict = _split_channels(img.astype(np.float32), cfa=cfa)
@@ -502,7 +502,7 @@ def gamma(img: np.array, white_level: float, method: Literal["srgb", "bt709"] = 
         beta = 0.01805397
         out_img = np.where(img < beta, 4.5 * img, alpha * (img**0.45) - (alpha - 1))
     elif method == "srgb":
-        # sRGB規格 (IEC 61966-2-1:1999)
+        # sRGB規格（IEC 61966-2-1:1999）
         out_img = np.where(img <= 0.0031308, img * 12.92, 1.055 * (img ** (1.0 / 2.4)) - 0.055)
     return out_img
 
@@ -517,26 +517,26 @@ def calib_lens_shading(
     method: str = "spline",
     cfa: str = "rggb",
 ) -> np.ndarray:
-    """代表点 (ノット点) サンプリングと関数近似を組み合わせたシェーディング補正関数
+    """代表点（ノット点）サンプリングと関数近似を組み合わせたシェーディング補正関数
     静的なキャリブレーションでのゲインマップ取得用途
 
     Args:
-        img (ndarray): 入力画像 (Bayer画像前提, 2次元配列)
-        grid_cols (int): 横方向のノット (サンプリング点) の数
-        grid_rows (int): 縦方向のノット (サンプリング点) の数
-        win_w (int): サンプリング窓 (カーネル) の横幅
-        win_h (int): サンプリング窓 (カーネル) の縦幅
+        img (ndarray): 入力画像（Bayer画像前提, 2次元配列）
+        grid_cols (int): 横方向のノット（サンプリング点）の数
+        grid_rows (int): 縦方向のノット（サンプリング点）の数
+        win_w (int): サンプリング窓（カーネル）の横幅
+        win_h (int): サンプリング窓（カーネル）の縦幅
         stat_type (str): ノット輝度の計算方法 ('median' または 'mean')
         method (str): 近似手法 ('spline' [3次B-スプライン] または 'poly4' [4次多項式])
 
     Returns:
-        img_shading (ndarray): シェーディング補正後の画像 (float32)
-        img_lpf (ndarray): シェーディング成分の画像 (float32)
-        img_gain (ndarray): シェーディング補正 ゲインマップ (float32)
+        img_shading (ndarray): シェーディング補正後の画像（float32）
+        img_lpf (ndarray): シェーディング成分の画像（float32）
+        img_gain (ndarray): シェーディング補正 ゲインマップ（float32）
     """
     img_dict = _split_channels(img.astype(np.float32), cfa=cfa)
     luma = (img_dict["r"] + img_dict["gr"] + img_dict["gb"] + img_dict["b"]) / 4
-    # 縦 (axis=0) に2倍、横 (axis=1) に2倍、各要素を繰り返す
+    # 縦（axis=0）に2倍、横（axis=1）に2倍、各要素を繰り返す
     luma_img = np.repeat(np.repeat(luma, 2, axis=0), 2, axis=1)
 
     img_lpf = _lpf_from_knots(luma_img, grid_cols, grid_rows, win_w, win_h, stat_type, method)
@@ -557,22 +557,22 @@ def calib_color_shading(
     method: str = "spline",
     cfa: str = "rggb",
 ) -> np.ndarray:
-    """代表点 (ノット点) サンプリングと関数近似を組み合わせたカラーシェーディング補正関数
+    """代表点（ノット点）サンプリングと関数近似を組み合わせたカラーシェーディング補正関数
     静的なキャリブレーションでのゲインマップ取得用途
 
     Args:
-        img (ndarray): 入力画像 (Bayer画像前提, 2次元配列)
-        grid_cols (int): 横方向のノット (サンプリング点) の数
-        grid_rows (int): 縦方向のノット (サンプリング点) の数
-        win_w (int): サンプリング窓 (カーネル) の横幅 (imgの画サイズベース)
-        win_h (int): サンプリング窓 (カーネル) の縦幅 (imgの画サイズベース)
+        img (ndarray): 入力画像（Bayer画像前提, 2次元配列）
+        grid_cols (int): 横方向のノット（サンプリング点）の数
+        grid_rows (int): 縦方向のノット（サンプリング点）の数
+        win_w (int): サンプリング窓（カーネル）の横幅（imgの画サイズベース）
+        win_h (int): サンプリング窓（カーネル）の縦幅（imgの画サイズベース）
         stat_type (str): ノット輝度の計算方法 ('median' または 'mean')
         method (str): 近似手法 ('spline' [3次B-スプライン] または 'poly4' [4次多項式])
 
     Returns:
-        img_color_shading (ndarray): カラーシェーディング補正後の画像 (float32)
-        img_lpf (ndarray): カラーシェーディング成分の画像 (float32)
-        img_gain (ndarray): カラーシェーディング補正 ゲインマップ (float32)
+        img_color_shading (ndarray): カラーシェーディング補正後の画像（float32）
+        img_lpf (ndarray): カラーシェーディング成分の画像（float32）
+        img_gain (ndarray): カラーシェーディング補正 ゲインマップ（float32）
     """
     img_dict = _split_channels(img.astype(np.float32), cfa=cfa)
     img_g = (img_dict["gr"] + img_dict["gb"]) / 2
@@ -609,7 +609,7 @@ def _lpf_from_knots(
 
     h, w = img.shape[:2]
 
-    # 1. 各グリッドの中心座標を計算し、スプライン補正の「ノット (結節点) 座標」とする
+    # 1. 各グリッドの中心座標を計算し、スプライン補正の「ノット（結節点）座標」とする
     # 画角の最端部 [0, w-1] を必ず含むようにノットを配置
     x_knots = np.linspace(0, w - 1, grid_cols)
     y_knots = np.linspace(0, h - 1, grid_rows)
@@ -617,10 +617,10 @@ def _lpf_from_knots(
     # 各ノット位置における代表輝度値を格納する配列
     z_knots = np.zeros((grid_rows, grid_cols))
 
-    # 2. 各ノットの周辺窓 (カーネル) から代表輝度を算出
+    # 2. 各ノットの周辺窓（カーネル）から代表輝度を算出
     for r, y in enumerate(y_knots):
         for c, x in enumerate(x_knots):
-            # カーネルの範囲を計算 (画像外にはみ出さないようにクリップ)
+            # カーネルの範囲を計算（画像外にはみ出さないようにクリップ）
             y1 = max(0, int(y - win_h // 2))
             y2 = min(h, int(y + win_h // 2 + 1))
             x1 = max(0, int(x - win_w // 2))
@@ -628,7 +628,7 @@ def _lpf_from_knots(
 
             window_pixels = img[y1:y2, x1:x2]
 
-            # メディアン or 平均 の選択 (横長のゴミ対策には 'median' を推奨)
+            # メディアン or 平均 の選択（横長のゴミ対策には 'median' を推奨）
             if stat_type == "median":
                 z_knots[r, c] = np.median(window_pixels)
             else:
@@ -640,14 +640,14 @@ def _lpf_from_knots(
 
     # 3. 近似手法の適用
     if method == "spline":
-        # --- 3次B-スプライン補正 (RectBivariateSpline) ---
-        # 引数の kx, ky はB-スプラインの次数。デフォルトで3 (3次B-スプライン)
+        # --- 3次B-スプライン補正（RectBivariateSpline） ---
+        # 引数の kx, ky はB-スプラインの次数。デフォルトで3（3次B-スプライン）
         # ノット数が不足してエラーになるのを防ぐため、設定値に応じて次数を自動調整
         kx = min(3, grid_cols - 1)
         ky = min(3, grid_rows - 1)
 
-        # scipyのRectBivariateSplineは内部で高速な3次B-スプライン (FITPACK) を適用
-        # z_knots (各ノットの輝度) を通り、境界で滑らかに繋がる曲線を全画素へ展開
+        # scipyのRectBivariateSplineは内部で高速な3次B-スプライン（FITPACK）を適用
+        # z_knots（各ノットの輝度）を通り、境界で滑らかに繋がる曲線を全画素へ展開
         spline_func = RectBivariateSpline(y_knots, x_knots, z_knots, kx=kx, ky=ky)
         img_lpf = spline_func(all_y, all_x)
 
@@ -656,18 +656,18 @@ def _lpf_from_knots(
         # コサイン4乗則等の光学特性を模擬するため、XとYのそれぞれ独立した4次多項式で全面に広げる
         img_lpf = np.zeros((h, w), dtype=np.float32)
 
-        # 横方向 (X) の4次フィッティング (各行共通のXプロファイルをノット点から算出)
+        # 横方向（X）の4次フィッティング（各行共通のXプロファイルをノット点から算出）
         x_profile_knots = np.mean(z_knots, axis=0) if grid_rows > 1 else z_knots
         poly_coef_x = np.polyfit(x_knots, x_profile_knots, 4)
         shading_x = np.polyval(poly_coef_x, all_x)  # 2000要素の1次元配列
 
         if grid_rows > 1:
-            # 2次元拡張時：縦方向 (Y) の4次フィッティングも行う
+            # 2次元拡張時：縦方向（Y）の4次フィッティングも行う
             y_profile_knots = np.mean(z_knots, axis=1)
             poly_coef_y = np.polyfit(y_knots, y_profile_knots, 4)
             shading_y = np.polyval(poly_coef_y, all_y)  # 60要素の1次元配列
 
-            # Yのうねりとxのうねりを合成 (2次元画像として展開)
+            # Yのうねりとxのうねりを合成（2次元画像として展開）
             grid_x, grid_y = np.meshgrid(shading_x, shading_y)
             img_lpf = (grid_x * grid_y) / np.mean(z_knots)
         else:
@@ -701,7 +701,7 @@ def alpha_blend(
     # 各画像に割り当てるアルファマップの初期化 (全て 0.0)
     map_alphas = [np.zeros_like(images[0], dtype=np.float32) for _ in range(num_images)]
 
-    # 1.0 の初期ウェイト (残存ウェイト) からスタート
+    # 1.0 の初期ウェイト（残存ウェイト）からスタート
     remaining_weight = np.ones_like(images[0], dtype=np.float32)
 
     # 隣り合う画像間で順にブレンド率を判定
@@ -716,10 +716,10 @@ def alpha_blend(
         # 現在の長蓄画像 (images[i]) が受け持つアルファを確定
         map_alphas[i] = remaining_weight * (1.0 - alpha_short_step)
 
-        # 次のステップ (さらに短蓄側) へ引き継ぐウェイトを更新
+        # 次のステップ（さらに短蓄側）へ引き継ぐウェイトを更新
         remaining_weight = remaining_weight * alpha_short_step
 
-    # 最後の画像 (最も短蓄) に残ったウェイトをすべて割り当てる
+    # 最後の画像（最も短蓄）に残ったウェイトをすべて割り当てる
     map_alphas[-1] = remaining_weight
 
     # 加重合成 (各画像を expo_ratio でスケーリングして足し合わせる)

@@ -23,9 +23,7 @@ def is_binary_tag(tag: str) -> bool:
         True if tag should be skipped (binary/thumbnail data)
     """
     skip_keywords = ["thumbnail", "makernote", "printim"]
-    return any(keyword in tag.lower() for keyword in skip_keywords) or tag.startswith(
-        "Info."
-    )
+    return any(keyword in tag.lower() for keyword in skip_keywords) or tag.startswith("Info.")
 
 
 def is_printable_text(text: str, min_ratio: float = 0.7) -> bool:
@@ -129,9 +127,7 @@ def extract_png_metadata(path: str | Path) -> dict:
 
         # chunk : Header
         if ctype == b"IHDR":
-            width, height, bitdepth, colortype, comp, filt, interlace = struct.unpack(
-                ">IIBBBBB", data
-            )
+            width, height, bitdepth, colortype, comp, filt, interlace = struct.unpack(">IIBBBBB", data)
             metadata["IHDR width"] = width
             metadata["IHDR height"] = height
             metadata["IHDR bitdepth"] = bitdepth

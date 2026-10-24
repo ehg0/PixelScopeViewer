@@ -78,9 +78,9 @@ def flow_to_hsv(flow: np.ndarray) -> np.ndarray:
     fx, fy = flow[..., 0], flow[..., 1]
     magnitude, angle = cv2.cartToPolar(fx, fy, angleInDegrees=True)
 
-    # Hue: Direction (0°~360°)
-    # Value: Normalization of magnitude (0~1 → 0~255)
-    # Hue: Direction (0°~360°)
+    # Hue: Direction (0°〜360°)
+    # Value: Normalization of magnitude (0〜1 → 0〜255)
+    # Hue: Direction (0°〜360°)
     # Upper_level: Fixed maximum value
     # Value: Magnitude. Since NORM_MINMAX makes it dark when data is small,
     #        scale based on theoretical maximum magnitude (sqrt(2)*255)

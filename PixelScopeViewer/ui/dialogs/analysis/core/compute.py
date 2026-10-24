@@ -116,7 +116,7 @@ def compute_profile_1d(channel_data: np.ndarray, orientation: str, method: str =
     """Compute 1D profile for a single-channel 2D array.
 
     orientation: 'h' (horizontal), 'v' (vertical)
-    method: 'mean', 'std', 'min', 'max', 'p2p', 'median'
+    method: `mean`, 'std', 'min', 'max', 'p2p', 'median'
     """
     axis = 0 if orientation == "h" else 1
 

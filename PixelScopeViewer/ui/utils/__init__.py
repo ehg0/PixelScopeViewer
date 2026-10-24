@@ -1,4 +1,4 @@
-"""UI utility functions."""
+"""UI 共通の utility。"""
 
 from .channel_color_manager import (
     MODE_1CH_GRAYSCALE,

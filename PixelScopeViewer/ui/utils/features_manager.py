@@ -1,18 +1,4 @@
-"""Features loading and management using Polars.
-
-This module provides a small manager to:
-- Load feature files in JSON (flattened) and CSV formats using polars
-- Maintain a merged, editable in-memory table keyed by ``fullfilepath``
-- Resolve duplicates by letting the last loaded row win
-- Export the current table to CSV or JSON
-
-Notes:
-- For JSON, we follow the sample in ``sample/load_and_print_tables_polars.py``
-  to build an ``images_df``-equivalent table, then add ``fullfilepath`` by
-  joining the JSON file directory and ``file_name``.
-- For CSV, if ``fullfilepath`` does not exist but ``file_name`` does, we add
-  ``fullfilepath`` in the same way (relative to the CSV file directory).
-"""
+"""特徴量ファイル（JSON/CSV）の読み込みと管理。"""
 
 from __future__ import annotations
 
@@ -38,31 +24,32 @@ def _flatten_dict(d: dict[str, Any], parent_key: str = "", sep: str = "_") -> di
 
 
 class FeaturesManager:
-    """Manage feature rows keyed by fullfilepath.
+    """fullfilepath を key として特徴量の行を管理する。
 
-    Internally we keep an OrderedDict mapping ``fullfilepath`` (str) -> row (dict).
-    This makes it easy to replace rows on collision ("last wins") and to present
-    a stable iteration order (by load sequence).
+    同じ key の行は後から読み込んだもので置き換え、読み込み順を保持する。
     """
 
-    # Columns that should not be edited by the user
+    # ユーザーが編集できない列
     NON_EDITABLE_COLUMNS = {"fullfilepath", "file_name"}
 
     def __init__(self) -> None:
         self._rows_by_key: OrderedDict[str, dict[str, Any]] = OrderedDict()
-        # Optional rich data from JSON loads
         self._dataset_name: str | None = None
-        # Categories keyed by (source_json_path, category_id) to preserve per-file categories
+        # JSON ファイルごとの categories
         self._categories_by_source: dict[str, list[dict[str, Any]]] = {}
-        self._annotations_rows: list[dict[str, Any]] = []  # image_id, category_id, bbox(list of 4)
-        # Track last loaded path for save dialog
+        self._annotations_rows: list[dict[str, Any]] = []  # image_id, category_id, bbox(4 要素の list)
+        # 保存 dialog の初期パスに使う
         self._last_loaded_path: str | None = None
 
     # ------------------------
-    # Loaders
+    # 読み込み
     # ------------------------
     def load_feature_files(self, paths: Iterable[str]) -> int:
-        """Load multiple feature files (json or csv). Returns number of rows added/replaced."""
+        """JSON/CSV の特徴量ファイルを読み込む。
+
+        Returns:
+            追加・置換した行数。
+        """
         total = 0
         for p in paths or []:
             ext = Path(p).suffix.lower()
@@ -73,21 +60,19 @@ class FeaturesManager:
         return total
 
     def load_json(self, json_path: str) -> int:
-        """Load a JSON feature file and merge into the current table.
+        """sample/feature.json 形式の JSON を読み込み、現在の表に統合する。
 
-        The JSON schema is expected to follow the sample in ``sample/feature.json``.
-        Returns the number of rows inserted/replaced.
+        Returns:
+            追加・置換した行数。
         """
         path = Path(json_path)
-        self._last_loaded_path = str(path.resolve())  # Remember last loaded path
+        self._last_loaded_path = str(path.resolve())
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
 
-        # dataset_name
         if data.get("dataset_name"):
             self._dataset_name = data.get("dataset_name")
 
-        # categories: store per source JSON path (fullfilepath-based merge)
         json_key = str(path.resolve())
         cats = []
         for cat in data.get("categories", []) or []:
@@ -108,7 +93,6 @@ class FeaturesManager:
 
             anns = img.get("annotations") or []
             base["annotations_count"] = len(anns)
-            # store annotations (flatten bbox fields but keep list for JSON save)
             for a in anns:
                 bbox = a.get("bbox") or [None, None, None, None]
                 self._annotations_rows.append(
@@ -119,79 +103,76 @@ class FeaturesManager:
                     }
                 )
 
-            # Compute absolute fullfilepath relative to the JSON file directory
+            # JSON ファイルのディレクトリを基準に絶対パスを求める
             if base.get("file_name"):
                 full = (path.parent / str(base["file_name"]).strip()).resolve()
                 base["fullfilepath"] = str(full)
             images_rows.append(base)
 
-        # Sort images_rows by id in ascending order before merging
         images_rows.sort(key=lambda x: x.get("id") if x.get("id") is not None else float("inf"))
 
         return self._merge_rows(images_rows)
 
     def load_csv(self, csv_path: str) -> int:
-        """Load a CSV feature file and merge into the current table.
+        """CSV を読み込み、現在の表に統合する。
 
-        If ``fullfilepath`` is missing but ``file_name`` exists, an absolute
-        ``fullfilepath`` will be derived relative to the CSV file directory.
-        Returns the number of rows inserted/replaced.
+        fullfilepath 列がなく file_name 列がある場合は、CSV のディレクトリを基準に fullfilepath を補う。
+
+        Returns:
+            追加・置換した行数。
         """
         path = Path(csv_path)
-        self._last_loaded_path = str(path.resolve())  # Remember last loaded path
+        self._last_loaded_path = str(path.resolve())
         try:
             df = pl.read_csv(str(path))
         except Exception:
-            # Fallback to empty
             df = pl.DataFrame([])
 
         rows: list[dict[str, Any]] = df.to_dicts()
 
-        # Ensure fullfilepath
         for r in rows:
             if not r.get("fullfilepath") and r.get("file_name"):
                 full = (path.parent / str(r["file_name"]).strip()).resolve()
                 r["fullfilepath"] = str(full)
             elif not r.get("fullfilepath") and r.get("file_name") is None:
-                # As a last resort, keep as-is (may not be resolvable)
+                # 解決できないのでそのまま残す
                 pass
 
         return self._merge_rows(rows)
 
     # ------------------------
-    # Core ops
+    # 内部処理
     # ------------------------
     def _merge_rows(self, rows: Iterable[dict[str, Any]]) -> int:
-        """Merge given rows into current table. Last wins by 'fullfilepath'.
+        """fullfilepath を key に行を統合する（後勝ち）。
 
-        Returns number of affected rows (inserted+replaced).
+        Returns:
+            追加・置換した行数。
         """
         affected = 0
         for r in rows or []:
             key = r.get("fullfilepath")
             if not key:
-                # Skip rows without identifiable key
                 continue
             key = str(Path(key).resolve())
 
-            # If key already exists, delete first to move it to the end (last wins + preserve order)
+            # 既存の key は一度削除して末尾に移動する
             if key in self._rows_by_key:
                 del self._rows_by_key[key]
             self._rows_by_key[key] = dict(r)
-            # Ensure normalized key stored
             self._rows_by_key[key]["fullfilepath"] = key
             affected += 1
         return affected
 
     # ------------------------
-    # Accessors / Mutators
+    # 参照・更新
     # ------------------------
     def get_rows(self) -> list[dict[str, Any]]:
         return list(self._rows_by_key.values())
 
     def get_columns(self) -> list[str]:
+        """列名を id, file_name, fullfilepath, その他の順で返す。"""
         cols = OrderedDict()
-        # First check if id and file_name exist in any row
         has_id = False
         has_file_name = False
         for r in self._rows_by_key.values():
@@ -201,13 +182,10 @@ class FeaturesManager:
                 has_file_name = True
             if has_id and has_file_name:
                 break
-        # If both exist, put them first (id, file_name)
         if has_id and has_file_name:
             cols["id"] = True
             cols["file_name"] = True
-        # Then fullfilepath
         cols["fullfilepath"] = True
-        # Then all others
         for r in self._rows_by_key.values():
             for k in r:
                 cols.setdefault(k, True)
@@ -220,17 +198,15 @@ class FeaturesManager:
         return pl.DataFrame(rows)
 
     def get_last_loaded_directory(self) -> str | None:
-        """Return the directory of the last loaded feature file, or None."""
         if self._last_loaded_path:
             return str(Path(self._last_loaded_path).parent)
         return None
 
     def get_last_loaded_path(self) -> str | None:
-        """Return the full path of the last loaded feature file, or None."""
         return self._last_loaded_path
 
     def get_categories_rows(self) -> list[dict[str, Any]]:
-        # Flatten all categories from all sources, de-duplicate by id (last wins)
+        """全 JSON の categories を id で重複排除して返す（後勝ち）。"""
         merged: OrderedDict[int, dict[str, Any]] = OrderedDict()
         for cats in self._categories_by_source.values():
             for c in cats:
@@ -250,10 +226,10 @@ class FeaturesManager:
         return list(self._annotations_rows)
 
     def add_column(self, name: str, default_value: Any = None) -> None:
+        """全行に列を追加する。"""
         name = name.strip()
         if not name:
             return
-        # Add to all rows if missing
         for r in self._rows_by_key.values():
             if name not in r:
                 r[name] = default_value
@@ -280,26 +256,24 @@ class FeaturesManager:
         return name not in self.NON_EDITABLE_COLUMNS
 
     # ------------------------
-    # Export helpers
+    # 書き出し
     # ------------------------
     def save_to_csv(self, save_path: str) -> None:
         df = self.to_polars()
         df.write_csv(save_path)
 
     def save_to_json(self, save_path: str) -> None:
-        """Save in the nested JSON structure like sample/feature.json."""
+        """sample/feature.json と同じ入れ子構造の JSON で保存する。"""
         images_rows = self.get_rows()
 
-        # Build images with nested metrics and annotations
         images_list: list[dict[str, Any]] = []
         for r in images_rows:
             img_obj: dict[str, Any] = {}
-            # Base fields
             for k in ("id", "file_name", "width", "height"):
                 if k in r:
                     img_obj[k] = r.get(k)
 
-            # Other keys (except reserved/edit control columns)
+            # metrics_ で始まる列は metrics にまとめ、それ以外はそのまま出力する
             reserved = {"fullfilepath", "file_name"}
             metrics: dict[str, Any] = {}
             for k, v in r.items():
@@ -313,7 +287,7 @@ class FeaturesManager:
             if metrics:
                 img_obj["metrics"] = metrics
 
-            # Attach annotations by image_id
+            # image_id が一致する annotations を付与する
             anns: list[dict[str, Any]] = []
             img_id = r.get("id")
             if img_id is not None:
@@ -329,7 +303,6 @@ class FeaturesManager:
             img_obj["annotations"] = anns
             images_list.append(img_obj)
 
-        # Categories list (if available)
         categories_list = self.get_categories_rows()
 
         out = {
@@ -338,24 +311,22 @@ class FeaturesManager:
             "images": images_list,
         }
 
-        # Write with compact arrays/objects (no newline after commas inside arrays)
         with open(save_path, "w", encoding="utf-8") as f:
             content = json.dumps(out, ensure_ascii=False, indent=2, separators=(",", ": "))
-            # Post-process: remove newlines inside small arrays like bbox and category dicts
-            # Pattern: keep arrays on single line if they're simple (numbers/nulls only)
-            # Compact bbox arrays: [<num>, <num>, <num>, <num>]
+            # 小さな配列・object は 1 行にまとめる
+            # bbox: [<num>, <num>, <num>, <num>]
             content = re.sub(
                 r"\[\s+(-?\d+(?:\.\d+)?|null),\s+(-?\d+(?:\.\d+)?|null),\s+(-?\d+(?:\.\d+)?|null),\s+(-?\d+(?:\.\d+)?|null)\s+\]",
                 r"[\1, \2, \3, \4]",
                 content,
             )
-            # Compact small objects like {"id": X, "name": "Y"} on single line
+            # category: {"id": X, "name": "Y"}
             content = re.sub(r'\{\s+"id":\s+(\d+),\s+"name":\s+"([^"]+)"\s+\}', r'{"id": \1, "name": "\2"}', content)
-            # Compact category_id/bbox annotation objects
+            # annotation: {"category_id": X, "bbox": [...]}
             content = re.sub(
                 r'\{\s+"category_id":\s+(\d+),\s+"bbox":\s+(\[[^\]]+\])\s+\}',
                 r'{"category_id": \1, "bbox": \2}',
                 content,
             )
             f.write(content)
-            f.write("\n")  # Add trailing newline
+            f.write("\n")

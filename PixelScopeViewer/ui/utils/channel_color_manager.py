@@ -1,9 +1,4 @@
-"""Centralized channel color and display mode management.
-
-This module keeps per-channel-count color lists and special display modes
-for 1-channel and 2-channel images. It serves as the single source of truth
-for color decisions to avoid duplication across viewer and dialogs.
-"""
+"""channel の色と表示モードを一元管理する。"""
 
 from __future__ import annotations
 
@@ -22,28 +17,20 @@ MODE_2CH_FLOW_HSV = "flow-hsv"
 
 @dataclass
 class ChannelColorManager:
-    """Stores colors per channel count and display modes for 1ch/2ch.
-
-    - Colors are keyed by channel count (n -> List[QColor]).
-    - Channel visibility checks are keyed by channel count (n -> List[bool]).
-    - Modes: 1ch (grayscale/jet), 2ch (composite/flow-hsv)
-    """
+    """channel 数ごとの色・表示 ON/OFF と、1ch/2ch 画像の表示モードを保持する。"""
 
     colors_by_n: dict[int, list[QColor]] = field(default_factory=dict)
     checks_by_n: dict[int, list[bool]] = field(default_factory=dict)
     mode_1ch: str = MODE_1CH_GRAYSCALE
-    mode_2ch: str = MODE_2CH_FLOW_HSV  # Default: flow-hsv for 2ch
+    mode_2ch: str = MODE_2CH_FLOW_HSV
 
     def get_colors(self, n_channels: int) -> list[QColor]:
-        """Return stored colors for this channel count, falling back to defaults.
-        Ensures the length is exactly n_channels.
-        """
+        """channel 数に対応する色を返す。未設定や不足分は既定色で補い、長さを n_channels に揃える。"""
         if n_channels <= 0:
             return []
         if n_channels not in self.colors_by_n:
             self.colors_by_n[n_channels] = get_default_channel_colors(n_channels)
         else:
-            # extend or truncate to match n
             current = self.colors_by_n[n_channels]
             if len(current) < n_channels:
                 defaults = get_default_channel_colors(n_channels)
@@ -54,9 +41,7 @@ class ChannelColorManager:
         return self.colors_by_n[n_channels]
 
     def set_colors(self, n_channels: int, colors: list[QColor]) -> None:
-        """Set (override) the colors for a specific channel count.
-        The list will be truncated/extended using defaults to match n.
-        """
+        """channel 数に対応する色を設定する。不足分は既定色で補う。"""
         if n_channels <= 0:
             return
         defaults = get_default_channel_colors(n_channels)
@@ -64,16 +49,14 @@ class ChannelColorManager:
         self.colors_by_n[n_channels] = fixed
 
     def resolve_with_existing(self, n_channels: int, existing: list[QColor] | None) -> list[QColor]:
-        """Resolve colors by combining an existing list with defaults, store and return it.
-        Useful when migrating existing viewer state into the manager.
-        """
+        """既存の色リストの不足分を既定色で補って保存し、返す。"""
         existing = existing or []
         defaults = get_default_channel_colors(n_channels)
         resolved = [existing[i] if i < len(existing) else defaults[i] for i in range(n_channels)]
         self.colors_by_n[n_channels] = resolved
         return resolved
 
-    # ---- Mode helpers ----
+    # ---- 表示モード ----
     def set_mode_1ch(self, mode: str) -> None:
         if mode in (MODE_1CH_GRAYSCALE, MODE_1CH_JET):
             self.mode_1ch = mode
@@ -82,17 +65,14 @@ class ChannelColorManager:
         if mode in (MODE_2CH_COMPOSITE, MODE_2CH_FLOW_HSV):
             self.mode_2ch = mode
 
-    # ---- Channel checks helpers ----
+    # ---- channel の表示 ON/OFF ----
     def get_checks(self, n_channels: int) -> list[bool]:
-        """Return stored channel visibility checks for this channel count.
-        Defaults to all True (visible).
-        """
+        """channel 数に対応する表示 ON/OFF を返す。未設定や不足分は True（表示）にする。"""
         if n_channels <= 0:
             return []
         if n_channels not in self.checks_by_n:
             self.checks_by_n[n_channels] = [True] * n_channels
         else:
-            # extend or truncate to match n
             current = self.checks_by_n[n_channels]
             if len(current) < n_channels:
                 current = current + [True] * (n_channels - len(current))
@@ -102,7 +82,7 @@ class ChannelColorManager:
         return self.checks_by_n[n_channels]
 
     def set_checks(self, n_channels: int, checks: list[bool]) -> None:
-        """Set channel visibility checks for a specific channel count."""
+        """channel 数に対応する表示 ON/OFF を設定する。"""
         if n_channels <= 0:
             return
         fixed = [(checks[i] if i < len(checks) else True) for i in range(n_channels)]

@@ -1,9 +1,13 @@
+"""汎用の custom Qt widget。"""
+
 from PySide6.QtWidgets import QSlider
 
 
 class StepSlider(QSlider):
+    """wheel 1 回で 1 step だけ動く QSlider。"""
+
     def wheelEvent(self, event):
-        # ホイールの回転方向のみを取得 (上スクロール: 正 / 下スクロール: 負)
+        # 回転方向のみを使う（上: 正 / 下: 負）
         delta = event.angleDelta().y()
 
         if delta > 0:
@@ -11,5 +15,5 @@ class StepSlider(QSlider):
         elif delta < 0:
             self.setValue(self.value() - 1)
 
-        # OS側の「3行スクロール」計算をキャンセル
+        # OS 側の複数行 scroll を打ち消す
         event.accept()

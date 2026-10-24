@@ -1,7 +1,4 @@
-"""Color utility functions for channel visualization.
-
-This module provides common color schemes for multi-channel image display.
-"""
+"""channel 表示用の色と colormap。"""
 
 import cv2
 import numpy as np
@@ -9,86 +6,49 @@ from PySide6.QtGui import QColor
 
 
 def get_default_channel_colors(n_channels: int) -> list:
-    """Get default colors for n channels using hybrid scheme.
+    """channel 数に応じた既定の QColor のリストを返す。
 
-    Color scheme:
-    - 1 channel: White (grayscale)
-    - 3 channels: RGB (Red, Green, Blue)
-    - 4 channels: RGBIR-like (Red, Green, Blue, Gray)
-    - 5+ channels: Evenly distributed hues from color wheel
-
-    Args:
-        n_channels: Number of channels
-
-    Returns:
-        List of QColor objects
-
-    Examples:
-        >>> colors = get_default_channel_colors(3)
-        >>> [c.name() for c in colors]
-        ['#ff0000', '#00ff00', '#0000ff']
-
-        >>> colors = get_default_channel_colors(8)
-        >>> len(colors)
-        8
+    1ch は白、2ch は赤・緑、3ch は RGB、4ch は RGB + 灰色、5ch 以上は hue を均等に割り当てる。
     """
-    # 1 channel: White
     if n_channels == 1:
         return [QColor(255, 255, 255)]
 
-    # 2 channel : Use hue in HSV color space
+    # 2ch は optical flow を想定し、flow_x を赤、flow_y を緑にする
     if n_channels == 2:
-        # flow_x → red, flow_y → green
         return [
-            QColor.fromHsv(0, 255, 255),  # hue 0° (red)
-            QColor.fromHsv(120, 255, 255),  # hue 120° (green)
+            QColor.fromHsv(0, 255, 255),
+            QColor.fromHsv(120, 255, 255),
         ]
 
-    # 3 channels: RGB
     if n_channels == 3:
         return [QColor(255, 0, 0), QColor(0, 255, 0), QColor(0, 0, 255)]
 
-    # 4 channels: RGBIR-like
+    # RGBIR を想定
     if n_channels == 4:
         return [QColor(255, 0, 0), QColor(0, 255, 0), QColor(0, 0, 255), QColor(127, 127, 127)]
 
-    # 5+ channels: Color wheel distribution
     colors = []
     for i in range(n_channels):
-        hue = int(360 * i / n_channels)  # Evenly distribute hues
-        color = QColor.fromHsv(hue, 200, 255)  # Moderate upper_level for better visibility
+        hue = int(360 * i / n_channels)
+        color = QColor.fromHsv(hue, 200, 255)  # 見やすさのため saturation は控えめにする
         colors.append(color)
     return colors
 
 
 def flow_to_hsv(flow: np.ndarray) -> np.ndarray:
-    """2ch optical flow → 3ch HSV color map
-
-    Args:
-        flow: 2-channel array (height, width, 2) with x and y components.
-              Can be float or uint8.
-
-    Returns:
-        3-channel BGR image (uint8)
-    """
-    # Ensure float type for cv2.cartToPolar
+    """2ch の optical flow を、向きを hue・大きさを value とした BGR 画像（uint8）に変換する。"""
+    # cv2.cartToPolar は float が必要
     if flow.dtype != np.float32 and flow.dtype != np.float64:
         flow = flow.astype(np.float32)
 
     fx, fy = flow[..., 0], flow[..., 1]
     magnitude, angle = cv2.cartToPolar(fx, fy, angleInDegrees=True)
 
-    # Hue: Direction (0°〜360°)
-    # Value: Normalization of magnitude (0〜1 → 0〜255)
-    # Hue: Direction (0°〜360°)
-    # Upper_level: Fixed maximum value
-    # Value: Magnitude. Since NORM_MINMAX makes it dark when data is small,
-    #        scale based on theoretical maximum magnitude (sqrt(2)*255)
     hsv = np.zeros((*flow.shape[:2], 3), dtype=np.uint8)
-    hsv[..., 0] = np.clip(angle / 2, 0, 180).astype(np.uint8)  # Hue: 0〜180
-    hsv[..., 1] = 255  # Upper_level fixed
+    hsv[..., 0] = np.clip(angle / 2, 0, 180).astype(np.uint8)  # OpenCV の hue は 0〜180
+    hsv[..., 1] = 255  # saturation は固定
 
-    # Value: Fixed scale based on max_magnitude
+    # value は固定の最大値で scale する（NORM_MINMAX だと小さい動きの画像が暗くなるため）
     max_magnitude = 1.0
     hsv[..., 2] = np.clip((magnitude / max_magnitude) * 255.0, 0, 255).astype(np.uint8)
 
@@ -97,30 +57,22 @@ def flow_to_hsv(flow: np.ndarray) -> np.ndarray:
 
 
 def flow_to_hsv_rgb(flow: np.ndarray) -> np.ndarray:
-    """2ch optical flow → 3ch RGB color image.
-
-    Wrapper around ``flow_to_hsv`` that converts BGR to RGB for Qt display.
-    """
+    """2ch の optical flow を Qt 表示用の RGB 画像に変換する。"""
     bgr = flow_to_hsv(flow)
     rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
     return rgb
 
 
 def apply_jet_colormap(gray: np.ndarray) -> np.ndarray:
-    """Apply 'JET' colormap to a single-channel image and return RGB uint8.
-
-    - Accepts float or integer arrays; values are normalized to [0, 255].
-    - Returns an RGB image (height, width, 3) dtype uint8.
-    """
+    """1ch 画像を [0, 255] に正規化して JET colormap を適用し、RGB の uint8 画像を返す。"""
     if gray is None:
         return None
     a = np.asarray(gray)
     if a.ndim == 3 and a.shape[2] == 1:
         a = a[..., 0]
     if a.ndim != 2:
-        # Fallback: average across channels
+        # 多 channel の場合は平均する
         a = a.mean(axis=2) if a.ndim == 3 else a
-    # Normalize to 0..255 uint8
     if np.issubdtype(a.dtype, np.floating):
         amin, amax = np.nanmin(a), np.nanmax(a)
         norm = (a - amin) / (amax - amin) if amax > amin else np.zeros_like(a, dtype=np.float32)
@@ -136,7 +88,7 @@ def apply_jet_colormap(gray: np.ndarray) -> np.ndarray:
             u8 = np.clip((a.astype(np.float32) / max_val) * 255.0, 0, 255).astype(np.uint8)
     else:
         u8 = np.clip(a, 0, 255).astype(np.uint8)
-    # OpenCV colormap produces BGR
+    # OpenCV の colormap は BGR で出力される
     bgr = cv2.applyColorMap(u8, cv2.COLORMAP_JET)
     rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
     return rgb
@@ -149,16 +101,20 @@ def colorbar_jet(
     min_label: str | None = None,
     max_label: str | None = None,
 ) -> np.ndarray:
-    """Generate a horizontal JET colorbar (RGB uint8).
+    """横向きの JET colorbar（RGB の uint8 画像）を生成する。
 
-    Optionally annotate with custom min/max labels.
+    Args:
+        width: 幅。
+        height: 高さ。
+        with_labels: 両端に label を描画するか。
+        min_label: 左端の label。None の場合は "0"。
+        max_label: 右端の label。None の場合は "255"。
     """
     grad = np.linspace(0, 255, width, dtype=np.uint8)
     bar = np.tile(grad[None, :], (height, 1))
     bgr = cv2.applyColorMap(bar, cv2.COLORMAP_JET)
     rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
     if with_labels:
-        # Add simple 0 and 255 tick labels (or custom labels)
         rgb = rgb.copy()
         left_txt = min_label if min_label is not None else "0"
         right_txt = max_label if max_label is not None else "255"
@@ -172,49 +128,36 @@ def colorbar_jet(
 
 
 def colorbar_flow_hsv(width: int = 256, height: int = 256, with_labels: bool = True) -> np.ndarray:
-    """Generate a circular HSV (hue) colorbar for flow angle visualization (RGB uint8).
-
-    Instead of a linear bar, creates a circular hue wheel without numeric labels.
-    The angle mapping matches generate_dummy_flow direction.
-    """
-    # Create a square canvas to fit a circle
+    """optical flow の向きを示す円形の hue wheel（RGB の uint8 画像）を生成する。"""
     size = max(width, height)
     center = size / 2.0
     radius = 1.0
 
-    # Create HSV image with circular gradient
     hsv = np.zeros((size, size, 3), dtype=np.uint8)
 
-    # For each pixel, compute angle from center and set hue accordingly
-    # Use the same coordinate system as generate_dummy_flow
+    # 中心からの正規化座標
     y, x = np.mgrid[:size, :size]
-    dx = (x - center) / center  # Normalize like generate_dummy_flow
+    dx = (x - center) / center
     dy = (y - center) / center
 
-    # Distance from center (normalized)
     distance = np.sqrt(dx**2 + dy**2)
 
-    # Angle in degrees (0-360), same as flow_to_hsv
-    # cv2.cartToPolar returns angle in degrees when angleInDegrees=True
+    # flow_to_hsv と同じく角度（度）を hue に対応させる
     magnitude, angle = cv2.cartToPolar(dx.astype(np.float32), dy.astype(np.float32), angleInDegrees=True)
 
-    # Convert angle to OpenCV HSV hue range (0-180)
+    # OpenCV の hue の範囲（0〜180）に変換する
     hue = (angle / 2).astype(np.uint8)
 
-    # Create circular mask (include pixels within radius)
     mask = distance <= radius
 
-    # Set HSV values: full upper_level and value inside circle, black outside
+    # 円の内側のみ色を付け、外側は黒にする
     hsv[mask, 0] = hue[mask]
     hsv[mask, 1] = 255
-    # hsv[mask, 2] = 255
     hsv[mask, 2] = np.clip((magnitude[mask] / radius) * 255, 0, 255).astype(np.uint8)
 
-    # Convert to BGR then RGB
     bgr = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
     rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
 
-    # Resize to requested dimensions if needed
     if size != width or size != height:
         rgb = cv2.resize(rgb, (width, height), interpolation=cv2.INTER_LINEAR)
 

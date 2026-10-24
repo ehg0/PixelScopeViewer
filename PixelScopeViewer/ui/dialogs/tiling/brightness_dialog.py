@@ -1,25 +1,24 @@
 """Brightness adjustment dialog for tiling comparison."""
 
-from typing import Dict
+from PySide6.QtCore import QEvent, Qt, Signal
 from PySide6.QtWidgets import (
+    QCheckBox,
     QDialog,
-    QVBoxLayout,
+    QDoubleSpinBox,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
-    QDoubleSpinBox,
     QPushButton,
-    QGroupBox,
-    QCheckBox,
+    QVBoxLayout,
 )
-from PySide6.QtCore import Signal, Qt, QEvent
 
-from PixelScopeViewer.ui.dialogs.display.tabs.logic import get_dtype_defaults
+from PixelScopeViewer.core.constants import get_dtype_defaults
 
 
 class TilingBrightnessDialog(QDialog):
     """Dialog for adjusting brightness parameters in tiling comparison.
 
-    Provides per-dtype-group controls for offset and saturation,
+    Provides per-dtype-group controls for offset and upper_level,
     and a common gain control.
     """
 
@@ -29,12 +28,12 @@ class TilingBrightnessDialog(QDialog):
     # Store position before minimize to restore after showNormal()
     _position_before_minimize = None
 
-    def __init__(self, parent, brightness_params_by_dtype: Dict[str, Dict[str, float]], common_gain: float):
+    def __init__(self, parent, brightness_params_by_dtype: dict[str, dict[str, float]], common_gain: float):
         """Initialize brightness dialog.
 
         Args:
             parent: Parent widget
-            brightness_params_by_dtype: Dict mapping dtype groups to {offset, saturation}
+            brightness_params_by_dtype: Dict mapping dtype groups to {offset, upper_level}
             common_gain: Common gain value
         """
         super().__init__(parent)
@@ -84,7 +83,7 @@ class TilingBrightnessDialog(QDialog):
             # Get ranges from centralized defaults
             defaults = get_dtype_defaults(dtype_group)
             offset_range = defaults["offset_range"]
-            sat_range = defaults["saturation_range"]
+            upper_level_range = defaults["upper_level_range"]
             is_float = defaults["is_float_type"]
             decimals = 5 if is_float else 0
 
@@ -102,26 +101,28 @@ class TilingBrightnessDialog(QDialog):
 
             group_layout.addLayout(offset_layout)
 
-            # Saturation control
-            sat_layout = QHBoxLayout()
-            sat_layout.addWidget(QLabel("Saturation:"))
+            # Upper_level control
+            upper_level_layout = QHBoxLayout()
+            upper_level_layout.addWidget(QLabel("Upper_level:"))
 
-            sat_spinbox = QDoubleSpinBox()
-            sat_spinbox.setRange(sat_range[0], sat_range[1])
-            sat_spinbox.setDecimals(decimals)
-            sat_spinbox.setSingleStep(0.01 if is_float else 1.0)
-            sat_spinbox.setValue(defaults["initial_saturation"])
-            sat_spinbox.valueChanged.connect(lambda v, dg=dtype_group: self._on_saturation_spinbox_changed(dg, v))
-            sat_layout.addWidget(sat_spinbox)
+            upper_level_spinbox = QDoubleSpinBox()
+            upper_level_spinbox.setRange(upper_level_range[0], upper_level_range[1])
+            upper_level_spinbox.setDecimals(decimals)
+            upper_level_spinbox.setSingleStep(0.01 if is_float else 1.0)
+            upper_level_spinbox.setValue(defaults["initial_upper_level"])
+            upper_level_spinbox.valueChanged.connect(
+                lambda v, dg=dtype_group: self._on_upper_level_spinbox_changed(dg, v)
+            )
+            upper_level_layout.addWidget(upper_level_spinbox)
 
-            group_layout.addLayout(sat_layout)
+            group_layout.addLayout(upper_level_layout)
 
             layout.addWidget(group_box)
 
             # Store controls for later updates
             self.dtype_controls[dtype_group] = {
                 "offset_spinbox": offset_spinbox,
-                "sat_spinbox": sat_spinbox,
+                "upper_level_spinbox": upper_level_spinbox,
             }
 
         # Auto-apply checkbox
@@ -159,16 +160,16 @@ class TilingBrightnessDialog(QDialog):
             params = self.brightness_params_by_dtype[dtype_group]
 
             offset = params["offset"]
-            saturation = params["saturation"]
+            upper_level = params["upper_level"]
 
             controls["offset_spinbox"].blockSignals(True)
-            controls["sat_spinbox"].blockSignals(True)
+            controls["upper_level_spinbox"].blockSignals(True)
 
             controls["offset_spinbox"].setValue(offset)
-            controls["sat_spinbox"].setValue(saturation)
+            controls["upper_level_spinbox"].setValue(upper_level)
 
             controls["offset_spinbox"].blockSignals(False)
-            controls["sat_spinbox"].blockSignals(False)
+            controls["upper_level_spinbox"].blockSignals(False)
 
     def _on_gain_spinbox_changed(self, value: float):
         """Handle gain spinbox change."""
@@ -184,9 +185,9 @@ class TilingBrightnessDialog(QDialog):
         if self.auto_apply_checkbox.isChecked():
             self._emit_brightness_changed()
 
-    def _on_saturation_spinbox_changed(self, dtype_group: str, value: float):
-        """Handle saturation spinbox change."""
-        self.brightness_params_by_dtype[dtype_group]["saturation"] = value
+    def _on_upper_level_spinbox_changed(self, dtype_group: str, value: float):
+        """Handle upper_level spinbox change."""
+        self.brightness_params_by_dtype[dtype_group]["upper_level"] = value
 
         if self.auto_apply_checkbox.isChecked():
             self._emit_brightness_changed()
@@ -201,7 +202,7 @@ class TilingBrightnessDialog(QDialog):
 
             self.brightness_params_by_dtype[dtype_group] = {
                 "offset": defaults["initial_offset"],
-                "saturation": defaults["initial_saturation"],
+                "upper_level": defaults["initial_upper_level"],
             }
 
         self._update_values_from_params()
@@ -218,14 +219,14 @@ class TilingBrightnessDialog(QDialog):
             dtype_group: {
                 "gain": self.common_gain,
                 "offset": params["offset"],
-                "saturation": params["saturation"],
+                "upper_level": params["upper_level"],
             }
             for dtype_group, params in self.brightness_params_by_dtype.items()
         }
 
         self.brightness_changed.emit(full_params)
 
-    def get_brightness_params(self) -> tuple[Dict[str, Dict[str, float]], float]:
+    def get_brightness_params(self) -> tuple[dict[str, dict[str, float]], float]:
         """Get current brightness parameters.
 
         Returns:
@@ -239,8 +240,6 @@ class TilingBrightnessDialog(QDialog):
             if self.isMinimized():
                 # Save current position before minimize
                 TilingBrightnessDialog._position_before_minimize = self.pos()
-            elif event.oldState() & Qt.WindowMinimized:
-                # Restore position after showNormal()
-                if TilingBrightnessDialog._position_before_minimize is not None:
-                    self.move(TilingBrightnessDialog._position_before_minimize)
+            elif event.oldState() & Qt.WindowMinimized and TilingBrightnessDialog._position_before_minimize is not None:
+                self.move(TilingBrightnessDialog._position_before_minimize)
         super().changeEvent(event)

@@ -2,18 +2,12 @@
 
 from typing import Optional
 import numpy as np
-from PySide6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
-    QHBoxLayout,
-    QLabel,
-    QFrame,
-    QScrollArea,
-)
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QScrollArea, QSizePolicy
 from PySide6.QtCore import Qt, Signal, QEvent
 from PySide6.QtGui import QPalette
 
 from .tile_image_label import TileImageLabel
+from PixelScopeViewer.ui.dialogs.display.core.compute import apply_brightness_adjustment
 
 
 class TileWidget(QWidget):
@@ -85,6 +79,9 @@ class TileWidget(QWidget):
             }
         """
         )
+        self.filename_label.setWordWrap(False)
+        self.filename_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.filename_label.setMinimumWidth(200)
         status_layout.addWidget(self.filename_label, 1)
 
         # Pixel value label (right-aligned)
@@ -251,16 +248,16 @@ class TileWidget(QWidget):
         else:
             self.mouse_coords_changed.emit(None)
 
-    def set_image(self, array: np.ndarray, gain: float, offset: float, saturation: float):
+    def set_image(self, array: np.ndarray, gain: float, offset: float, upper_level: float):
         """Set image data with brightness parameters.
 
         Args:
             array: Image array to display
             gain: Brightness gain
             offset: Brightness offset
-            saturation: Saturation value
+            upper_level: Upper_level value
         """
-        self.image_label.set_image(array, gain, offset, saturation)
+        self.image_label.set_image(array, gain, offset, upper_level)
 
     def set_image_data(self, image_data: dict):
         """Set new image data for this tile.
@@ -285,10 +282,10 @@ class TileWidget(QWidget):
             gain = brightness_params["gain"]
         else:
             # Fallback to default values
-            params = {"offset": 0, "saturation": 255}
+            params = {"offset": 0, "upper_level": 255}
             gain = 1.0
 
-        self.image_label.set_image(arr, gain, params["offset"], params["saturation"])
+        self.image_label.set_image(arr, gain, params["offset"], params["upper_level"])
 
         # Update filename display with tile number
         path = self.image_data.get("path", f"Image {self.tile_index + 1}")
@@ -298,8 +295,31 @@ class TileWidget(QWidget):
         # Add tile number to the display (1-indexed)
         display_text = f"Tile {self.tile_index + 1}: {filename}"
         self.filename_label.setText(display_text)
+        self.filename_label.setToolTip(display_text)
 
     def get_displayed_array(self) -> np.ndarray:
+        """Get currently displayed array.
+
+        Returns:
+            Image array
+        """
+        arr = self.image_data.get("base_array")
+        if hasattr(self.parent_dialog, "brightness_manager") and self.parent_dialog.brightness_manager:
+            brightness_params = self.parent_dialog.brightness_manager.get_brightness_params()
+            dtype_group = self.parent_dialog.tile_manager.get_tile_dtype_groups()[self.tile_index]
+            params = brightness_params["params_by_dtype"][dtype_group]
+            gain = brightness_params["gain"]
+        else:
+            # Fallback to default values
+            params = {"offset": 0, "upper_level": 255}
+            gain = 1.0
+
+        adjusted = apply_brightness_adjustment(
+            arr, gain=gain, offset=params["offset"], upper_level=params["upper_level"]
+        )
+        return adjusted
+
+    def get_base_array(self) -> np.ndarray:
         """Get currently displayed array.
 
         Returns:

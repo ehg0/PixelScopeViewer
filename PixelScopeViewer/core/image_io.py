@@ -10,17 +10,16 @@ This module provides functions for:
 All functions handle edge cases gracefully and are UI-independent.
 """
 
+import struct
+from collections.abc import Callable
 from pathlib import Path
-from io import StringIO
-from contextlib import redirect_stdout, redirect_stderr
-from typing import Union, Optional, Callable, List, Tuple
-import numpy as np
-from PySide6.QtGui import QImage
-import cv2
-import OpenImageIO as oiio
-import exifread
 
-from .metadata_utils import is_binary_tag, is_printable_text, decode_bytes
+import cv2
+import numpy as np
+import OpenImageIO as oiio
+from PySide6.QtGui import QImage
+
+from .metadata_utils import extract_exif, extract_png_metadata
 
 
 class ImageLoaderRegistry:
@@ -59,8 +58,8 @@ class ImageLoaderRegistry:
 
     def register(
         self,
-        loader_func: Callable[[str], Optional[np.ndarray]],
-        extensions: Optional[List[str]] = None,
+        loader_func: Callable[[str], np.ndarray | None],
+        extensions: list[str] | None = None,
         priority: int = 0,
     ):
         """Register a custom image loader.
@@ -104,7 +103,7 @@ class ImageLoaderRegistry:
         # Sort by priority (high to low)
         self.custom_loaders.sort(key=lambda x: x["priority"], reverse=True)
 
-    def get_supported_extensions(self) -> Tuple[List[str], bool]:
+    def get_supported_extensions(self) -> tuple[list[str], bool]:
         """Get all supported extensions from custom loaders.
 
         Returns:
@@ -123,7 +122,7 @@ class ImageLoaderRegistry:
 
         return sorted(exts), has_wildcard
 
-    def try_load(self, path: str) -> Optional[np.ndarray]:
+    def try_load(self, path: str) -> np.ndarray | None:
         """Try to load an image using registered custom loaders.
 
         Args:
@@ -143,8 +142,8 @@ class ImageLoaderRegistry:
                     result = loader_info["func"](path)
                     if result is not None:
                         return result
-                except Exception:
-                    # Loader failed, try next one
+                except Exception as e:
+                    print(f"Error: {e}")
                     continue
 
         # 2. Try wildcard loaders (lower priority fallback)
@@ -155,8 +154,8 @@ class ImageLoaderRegistry:
                 result = loader_info["func"](path)
                 if result is not None:
                     return result
-            except Exception:
-                # Loader failed, try next one
+            except Exception as e:
+                print(f"Error: {e}")
                 continue
 
         return None
@@ -222,7 +221,37 @@ def cv2_imread_unicode(path: str):
     return cv2.imdecode(data, cv2.IMREAD_UNCHANGED)
 
 
-def load_image(path: Union[str, Path]) -> np.ndarray:
+def read_bin(filename: Path, has_header: bool = True) -> np.ndarray:
+    """Load 16-bit little-endian image data from a binary file.
+
+    If a 4-byte header is present, it is interpreted as two unsigned
+    16-bit integers (width, height) in little-endian order.
+
+    Args:
+        filename: Path to the binary image file.
+        has_header: Whether the file includes a 4-byte (W, H) header.
+            Defaults to ``True``.
+
+    Returns:
+        array: NumPy array of the image data (dtype: ``uint16``).
+
+    Raises:
+        FileNotFoundError: If the file does not exist.
+        ValueError: If header dimensions do not match the data size.
+    """
+    with open(filename, "rb") as f:
+        if has_header:
+            header = f.read(4)
+            width, height = struct.unpack("<HH", header)
+            data = np.frombuffer(f.read(), dtype="<u2")
+            img = data.reshape((height, width))
+        else:
+            data = np.frombuffer(f.read(), dtype="<u2")
+            img = data
+    return img
+
+
+def load_image(path: str | Path) -> np.ndarray:
     """Load an image file into a NumPy array.
 
     Custom loaders registered via ImageLoaderRegistry are tried based on priority:
@@ -272,11 +301,12 @@ def load_image(path: Union[str, Path]) -> np.ndarray:
                 result = loader_info["func"](path_str)
                 if result is not None:
                     return result
-            except Exception:
-                continue  # Try next loader
+            except Exception as e:
+                print(f"Error: {e}")
+                continue
 
     # Standard loaders (implicit priority = 0)
-    # EXR / HDR は OpenImageIO で読み込む
+    # Read EXR / HDR files by OpenImageIO
     if ext in [".exr", ".hdr"]:
         img = oiio.ImageInput.open(str(path))
         arr = img.read_image()
@@ -285,16 +315,19 @@ def load_image(path: Union[str, Path]) -> np.ndarray:
     elif ext == ".npy":
         arr = np.load(path)
         return arr
+    elif ext == ".bin":
+        arr = read_bin(path)
+        return arr
     elif ext in [".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".gif", ".webp"]:
-        # LDR画像は OpenCV
+        # Read LDR image by OpenCV
         img = cv2_imread_unicode(path_str)
         if img is None:
             raise RuntimeError(f"Cannot open image: {path_str}")
 
-        # 4チャンネルの場合は BGRA → RGBA に変換
+        # Convert BGRA to RGBA
         if img.ndim == 3 and img.shape[2] == 4:
             img = cv2.cvtColor(img, cv2.COLOR_BGRA2RGBA)
-        # 3チャンネルは BGR → RGB に変換
+        # Convert BGR to RGB
         elif img.ndim == 3 and img.shape[2] == 3:
             img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         return img
@@ -309,7 +342,8 @@ def load_image(path: Union[str, Path]) -> np.ndarray:
                 result = loader_info["func"](path_str)
                 if result is not None:
                     return result
-            except Exception:
+            except Exception as e:
+                print(f"Error: {e}")
                 continue
 
     # Try low-priority/fallback custom loaders (priority < 0)
@@ -322,14 +356,15 @@ def load_image(path: Union[str, Path]) -> np.ndarray:
                 result = loader_info["func"](path_str)
                 if result is not None:
                     return result
-            except Exception:
+            except Exception as e:
+                print(f"Error: {e}")
                 continue
 
     # No loader succeeded
     raise RuntimeError(f"Cannot open image: {path_str} (unsupported format)")
 
 
-def is_image_file(path: Union[str, Path]) -> bool:
+def is_image_file(path: str | Path) -> bool:
     """Return True if the given path has a supported image file suffix.
 
     This is a lightweight check that relies solely on the filename suffix
@@ -347,7 +382,7 @@ def is_image_file(path: Union[str, Path]) -> bool:
     ext = path_obj.suffix.lower()
 
     # Standard extensions
-    standard_exts = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".exr", ".npy", ".hdr", ".gif", ".webp"}
+    standard_exts = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".exr", ".npy", ".bin", ".hdr", ".gif", ".webp"}
     if ext in standard_exts:
         return True
 
@@ -363,14 +398,15 @@ def is_image_file(path: Union[str, Path]) -> bool:
     return ext in custom_exts
 
 
-def get_image_metadata(path_or_img: Union[str, Path]) -> dict:
+def get_image_metadata(path: str | Path, arr: np.ndarray = None) -> dict:
     """Return a dictionary of image metadata.
 
     The function extracts basic image properties (format, size, dtype) and,
     when available, comprehensive EXIF tags using the ``exifread`` library.
 
     Args:
-        path_or_img: Filesystem path (str/Path) to the image file
+        path: Filesystem path (str/Path) to the image file
+        arr: Numeric array-like image
 
     Returns:
         dict: Mapping of metadata keys to values. Basic keys include
@@ -387,7 +423,6 @@ def get_image_metadata(path_or_img: Union[str, Path]) -> dict:
         >>> print(md['Format'], md.get('EXIF_DateTimeDigitized'))
     """
     metadata = {}
-    path = path_or_img
 
     # Extract basic information based on file type
     if path:
@@ -395,6 +430,7 @@ def get_image_metadata(path_or_img: Union[str, Path]) -> dict:
 
         # Add file size for all file types
         try:
+            metadata["Filepath"] = str(path_obj.resolve())
             file_size = path_obj.stat().st_size
             if file_size < 1024:
                 size_str = f"{file_size} B"
@@ -409,44 +445,25 @@ def get_image_metadata(path_or_img: Union[str, Path]) -> dict:
             pass
 
         ext = path_obj.suffix.lower()
-        if ext in (".exr", ".npy"):
+        if ext in (".exr"):
             try:
-                if ext == ".exr":
-                    img = oiio.ImageInput.open(str(path))
-                    spec = img.spec()
-                    metadata["Filepath"] = str(path_obj.resolve())
-                    metadata["Format"] = "EXR"
-                    metadata["Size"] = f"{spec.width} x {spec.height}"
-                    metadata["Channels"] = spec.nchannels
-                    metadata["DataType"] = str(spec.format).split()[-1]
-                    # Add additional metadata from spec
-                    if spec.get_string_attribute("compression"):
-                        metadata["Compression"] = spec.get_string_attribute("compression")
-                    if spec.get_string_attribute("Software"):
-                        metadata["Software"] = spec.get_string_attribute("Software")
-                    img.close()
-                elif ext == ".npy":
-                    arr = np.load(path)
-                    metadata["Filepath"] = str(path_obj.resolve())
-                    metadata["Format"] = "NPY"
-                    if arr.ndim == 2:
-                        metadata["Channels"] = 1
-                        metadata["Size"] = f"{arr.shape[1]} x {arr.shape[0]}"
-                    elif arr.ndim == 3:
-                        metadata["Size"] = f"{arr.shape[1]} x {arr.shape[0]}"
-                        metadata["Channels"] = arr.shape[2]
-                    metadata["DataType"] = str(arr.dtype)
+                img = oiio.ImageInput.open(str(path_obj))
+                spec = img.spec()
+                metadata["Format"] = "EXR"
+                metadata["Size"] = f"{spec.width} x {spec.height}"
+                metadata["Channels"] = spec.nchannels
+                metadata["DataType"] = str(spec.format).split()[-1]
+                # Add additional metadata from spec
+                if spec.get_string_attribute("compression"):
+                    metadata["Compression"] = spec.get_string_attribute("compression")
+                if spec.get_string_attribute("Software"):
+                    metadata["Software"] = spec.get_string_attribute("Software")
+                img.close()
             except Exception as e:
                 metadata["Error"] = str(e)
         else:
-            path_str = str(path)
             try:
-                arr = cv2_imread_unicode(path_str)
-                if arr is None:
-                    raise ValueError(f"Could not load image with OpenCV: {path_str}")
-
                 h, w = arr.shape[:2]
-                metadata["Filepath"] = str(Path(path).resolve())
                 metadata["Format"] = Path(path).suffix.lstrip(".").upper() or "Unknown"
                 metadata["Size"] = f"{w} x {h}"
                 metadata["DataType"] = str(arr.dtype)
@@ -468,43 +485,18 @@ def get_image_metadata(path_or_img: Union[str, Path]) -> dict:
                 metadata["Error (OpenCV)"] = str(e)
 
             try:
-                with open(path_str, "rb") as f:
-                    # Suppress exifread's debug messages
-                    with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
-                        tags = exifread.process_file(f, details=False)
-
-                    for tag, value in tags.items():
-                        # Skip binary/thumbnail data
-                        if is_binary_tag(tag):
-                            continue
-
-                        try:
-                            value_str = str(value)
-
-                            # Handle byte data with multiple encoding attempts
-                            if isinstance(value.values, bytes):
-                                # Skip large binary data
-                                if len(value.values) > 1000:
-                                    continue
-
-                                # Try decoding with multiple encodings
-                                decoded = decode_bytes(value.values)
-                                if not decoded:
-                                    continue
-                                value_str = decoded
-
-                            # Skip fields with excessive control characters
-                            if not is_printable_text(value_str, min_ratio=0.8):
-                                continue
-
-                            # Store with cleaned tag name
-                            clean_tag = tag.replace(" ", "_")
-                            metadata[clean_tag] = value_str
-
-                        except Exception:
-                            continue
-
+                exif_metadata = extract_exif(path_obj)
+                for k, v in exif_metadata.items():
+                    metadata[k] = v
             except Exception as e:
                 metadata["Error (EXIF)"] = str(e)
+
+            if ext in (".png"):
+                try:
+                    png_metadata = extract_png_metadata(path_obj)
+                    for k, v in png_metadata.items():
+                        metadata[k] = v
+                except Exception as e:
+                    metadata["Error (PNG chunks)"] = str(e)
 
     return metadata

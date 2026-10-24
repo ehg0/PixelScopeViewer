@@ -5,21 +5,25 @@ generation and statistical calculations.
 """
 
 from .compute import (
-    determine_hist_bins,
-    histogram_series,
-    profile_series,
+    calc_stats,
     compute_profile_1d,
+    determine_hist_bins,
+    ecdf_series,
     get_profile_offset,
+    histogram_series,
     histogram_stats,
+    profile_series,
     profile_stats,
 )
 
 __all__ = [
-    "determine_hist_bins",
-    "histogram_series",
-    "profile_series",
+    "calc_stats",
     "compute_profile_1d",
+    "determine_hist_bins",
+    "ecdf_series",
     "get_profile_offset",
+    "histogram_series",
     "histogram_stats",
+    "profile_series",
     "profile_stats",
 ]

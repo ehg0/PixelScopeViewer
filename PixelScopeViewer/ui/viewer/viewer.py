@@ -403,11 +403,7 @@ class ImageViewer(QMainWindow):
     def show_annotations_dialog(self):
         if self._annotations_dialog is not None:
             # 最後に読み込んだファイルを title に反映する
-            title = "特徴量表示"
-            last_path = self.annotations.get_last_loaded_path()
-            if last_path:
-                title = f"特徴量表示 - {last_path}"
-            self._annotations_dialog.setWindowTitle(title)
+            self._annotations_dialog.update_title()
             bring_to_front(self._annotations_dialog)
             return
         dlg = AnnotationsDialog(self, self.annotations)

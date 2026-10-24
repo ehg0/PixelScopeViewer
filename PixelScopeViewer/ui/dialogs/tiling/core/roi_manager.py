@@ -4,7 +4,7 @@ import numpy as np
 from PySide6.QtCore import QRect, Signal
 from PySide6.QtGui import QGuiApplication
 
-from PixelScopeViewer.core.image_io import numpy_to_qimage
+from PixelScopeViewer.ui.common.qt_image import numpy_to_qimage
 
 
 class ROIManager:

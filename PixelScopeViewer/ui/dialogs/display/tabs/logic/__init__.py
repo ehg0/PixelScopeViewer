@@ -3,7 +3,6 @@
 from PixelScopeViewer.ui.dialogs.display.tabs.logic.brightness_builder import BrightnessUIBuilder
 from PixelScopeViewer.ui.dialogs.display.tabs.logic.brightness_utils import (
     clamp_value,
-    determine_dtype_defaults,
     format_gain_label,
     format_value_label,
     round_to_power_of_2,
@@ -14,7 +13,6 @@ from PixelScopeViewer.ui.dialogs.display.tabs.logic.brightness_utils import (
 __all__ = [
     "BrightnessUIBuilder",
     "clamp_value",
-    "determine_dtype_defaults",
     "format_gain_label",
     "format_value_label",
     "round_to_power_of_2",

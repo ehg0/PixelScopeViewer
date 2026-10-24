@@ -6,8 +6,9 @@ import numpy as np
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QVBoxLayout, QWidget
 
+from PixelScopeViewer.core.brightness import determine_dtype_defaults
 from PixelScopeViewer.core.constants import get_dtype_defaults
-from PixelScopeViewer.ui.dialogs.display.tabs.logic import clamp_value, determine_dtype_defaults, round_to_power_of_2
+from PixelScopeViewer.ui.dialogs.display.tabs.logic import clamp_value, round_to_power_of_2
 from PixelScopeViewer.ui.dialogs.display.tabs.logic.brightness_builder import BrightnessUIBuilder
 
 

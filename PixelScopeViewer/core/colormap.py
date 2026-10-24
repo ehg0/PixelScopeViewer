@@ -1,37 +1,7 @@
-"""channel 表示用の色と colormap。"""
+"""optical flow と JET の colormap・colorbar の生成（Qt 非依存）。"""
 
 import cv2
 import numpy as np
-from PySide6.QtGui import QColor
-
-from PixelScopeViewer.ui import theme
-
-
-def get_default_channel_colors(n_channels: int) -> list:
-    """channel 数に応じた既定の QColor のリストを返す。
-
-    1ch は白、2ch は赤・緑、3ch は RGB、4ch は RGB + 灰色、5ch 以上は hue を均等に割り当てる。
-    """
-    if n_channels == 1:
-        return [QColor(theme.CHANNEL_COLOR_1CH)]
-
-    # 2ch は optical flow を想定し、flow_x を赤、flow_y を緑にする
-    if n_channels == 2:
-        return [QColor.fromHsv(hue, 255, 255) for hue in theme.CHANNEL_HUES_2CH]
-
-    if n_channels == 3:
-        return [QColor(c) for c in theme.CHANNEL_COLORS_3CH]
-
-    # RGBIR を想定
-    if n_channels == 4:
-        return [QColor(c) for c in theme.CHANNEL_COLORS_4CH]
-
-    colors = []
-    for i in range(n_channels):
-        hue = int(360 * i / n_channels)
-        color = QColor.fromHsv(hue, theme.CHANNEL_SATURATION_MANY, 255)
-        colors.append(color)
-    return colors
 
 
 def flow_to_hsv(flow: np.ndarray) -> np.ndarray:
@@ -99,6 +69,7 @@ def colorbar_jet(
     with_labels: bool = True,
     min_label: str | None = None,
     max_label: str | None = None,
+    label_rgb: tuple[int, int, int] = (255, 255, 255),
 ) -> np.ndarray:
     """横向きの JET colorbar（RGB の uint8 画像）を生成する。
 
@@ -108,6 +79,7 @@ def colorbar_jet(
         with_labels: 両端に label を描画するか。
         min_label: 左端の label。None の場合は "0"。
         max_label: 右端の label。None の場合は "255"。
+        label_rgb: label の色。
     """
     grad = np.linspace(0, 255, width, dtype=np.uint8)
     bar = np.tile(grad[None, :], (height, 1))
@@ -117,9 +89,7 @@ def colorbar_jet(
         rgb = rgb.copy()
         left_txt = min_label if min_label is not None else "0"
         right_txt = max_label if max_label is not None else "255"
-        cv2.putText(
-            rgb, left_txt, (2, height - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.4, theme.COLORBAR_LABEL_RGB, 1, cv2.LINE_AA
-        )
+        cv2.putText(rgb, left_txt, (2, height - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.4, label_rgb, 1, cv2.LINE_AA)
         txt = right_txt
         (tw, th), _ = cv2.getTextSize(txt, cv2.FONT_HERSHEY_SIMPLEX, 0.4, 1)
         cv2.putText(
@@ -128,7 +98,7 @@ def colorbar_jet(
             (width - tw - 2, height - 6),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.4,
-            theme.COLORBAR_LABEL_RGB,
+            label_rgb,
             1,
             cv2.LINE_AA,
         )

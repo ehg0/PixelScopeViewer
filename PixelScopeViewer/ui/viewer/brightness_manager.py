@@ -7,12 +7,12 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QMessageBox
 
+from PixelScopeViewer.core.brightness import apply_brightness_adjustment as apply_brightness_core
+from PixelScopeViewer.core.brightness import determine_dtype_defaults
 from PixelScopeViewer.core.constants import DTYPE_DEFAULTS, GAIN_STEP, get_dtype_defaults
-from PixelScopeViewer.core.image_io import numpy_to_qimage
+from PixelScopeViewer.ui.common.qt_image import numpy_to_qimage
 from PixelScopeViewer.ui.dialogs import BrightnessDialog
 from PixelScopeViewer.ui.dialogs.display import BrightnessDialog as _BD
-from PixelScopeViewer.ui.dialogs.display.core import apply_brightness_adjustment as apply_brightness_core
-from PixelScopeViewer.ui.dialogs.display.tabs.logic.brightness_utils import determine_dtype_defaults
 from PixelScopeViewer.ui.utils import MODE_1CH_GRAYSCALE, MODE_1CH_JET, MODE_2CH_COMPOSITE, MODE_2CH_FLOW_HSV
 
 

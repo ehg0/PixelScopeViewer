@@ -18,8 +18,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout as QV,
 )
 
-from PixelScopeViewer.core.image_io import numpy_to_qimage
 from PixelScopeViewer.ui import theme
+from PixelScopeViewer.ui.common.qt_image import numpy_to_qimage
 from PixelScopeViewer.ui.utils import colorbar_flow_hsv, colorbar_jet, get_default_channel_colors
 
 
@@ -272,7 +272,9 @@ class ChannelTab(QWidget):
                     max_label = fmt(vmax)
                 except Exception:
                     pass
-            bar = colorbar_jet(256, 24, True, min_label=min_label, max_label=max_label)
+            bar = colorbar_jet(
+                256, 24, True, min_label=min_label, max_label=max_label, label_rgb=theme.COLORBAR_LABEL_RGB
+            )
         elif nchan == 2 and self._mode2 == "flow-hsv":
             # 円形の hue wheel（数値 label なし）
             bar = colorbar_flow_hsv(256, 256, False)

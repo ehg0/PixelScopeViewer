@@ -2,23 +2,6 @@
 
 import math
 
-import numpy as np
-
-from PixelScopeViewer.core.constants import get_dtype_defaults
-
-
-def determine_dtype_defaults(image_array=None, image_path=None):
-    """画像の dtype に応じた brightness の初期設定を返す。
-
-    Returns:
-        float の画像は "float"、それ以外は "uint8" の get_dtype_defaults の戻り値。
-    """
-    if image_array is None:
-        return get_dtype_defaults("uint8")
-
-    dtype = "float" if np.issubdtype(image_array.dtype, np.floating) else "uint8"
-    return get_dtype_defaults(dtype)
-
 
 def clamp_value(value, min_val, max_val):
     return max(min_val, min(max_val, value))

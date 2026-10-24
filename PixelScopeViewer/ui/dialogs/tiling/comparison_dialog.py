@@ -18,15 +18,15 @@ from PySide6.QtWidgets import (
 )
 
 from PixelScopeViewer.core.image_io import get_image_metadata
-from PixelScopeViewer.ui import theme
-from PixelScopeViewer.ui.dialogs.analysis.core import determine_hist_bins
-from PixelScopeViewer.ui.dialogs.analysis.core.compute import (
+from PixelScopeViewer.core.statistics import (
+    determine_hist_bins,
     ecdf_series,
     get_profile_offset,
     histogram_series,
     histogram_stats,
     profile_series,
 )
+from PixelScopeViewer.ui import theme
 from PixelScopeViewer.ui.dialogs.analysis.dialog import AnalysisDialog
 
 

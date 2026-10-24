@@ -5,10 +5,10 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QKeyEvent, QMouseEvent, QPainter, QPen, QPixmap, QWheelEvent
 from PySide6.QtWidgets import QLabel
 
+from PixelScopeViewer.core.brightness import apply_brightness_adjustment
 from PixelScopeViewer.core.constants import MAX_ZOOM_SCALE, MIN_ZOOM_SCALE, ZOOM_STEP
-from PixelScopeViewer.core.image_io import numpy_to_qimage
 from PixelScopeViewer.ui import theme
-from PixelScopeViewer.ui.dialogs.display.core.compute import apply_brightness_adjustment
+from PixelScopeViewer.ui.common.qt_image import numpy_to_qimage
 
 
 class TileImageLabel(QLabel):

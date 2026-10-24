@@ -31,8 +31,9 @@ from PySide6.QtWidgets import (
 )
 
 from PixelScopeViewer.core.constants import STANDARD_IMAGE_EXTENSIONS, get_dtype_defaults
-from PixelScopeViewer.core.image_io import ImageLoaderRegistry, is_image_file, load_image, numpy_to_qimage
+from PixelScopeViewer.core.image_io import ImageLoaderRegistry, is_image_file, load_image
 from PixelScopeViewer.ui import defaults, theme
+from PixelScopeViewer.ui.common.qt_image import numpy_to_qimage
 from PixelScopeViewer.ui.dialogs import AnalysisDialog, DiffDialog, FeaturesDialog, HelpDialog
 from PixelScopeViewer.ui.dialogs.tiling import TilingDialog
 from PixelScopeViewer.ui.utils import (

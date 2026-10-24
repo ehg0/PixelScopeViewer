@@ -6,7 +6,35 @@ from dataclasses import dataclass, field
 
 from PySide6.QtGui import QColor
 
-from PixelScopeViewer.ui.utils.color_utils import get_default_channel_colors
+from PixelScopeViewer.ui import theme
+
+
+def get_default_channel_colors(n_channels: int) -> list:
+    """channel 数に応じた既定の QColor のリストを返す。
+
+    1ch は白、2ch は赤・緑、3ch は RGB、4ch は RGB + 灰色、5ch 以上は hue を均等に割り当てる。
+    """
+    if n_channels == 1:
+        return [QColor(theme.CHANNEL_COLOR_1CH)]
+
+    # 2ch は optical flow を想定し、flow_x を赤、flow_y を緑にする
+    if n_channels == 2:
+        return [QColor.fromHsv(hue, 255, 255) for hue in theme.CHANNEL_HUES_2CH]
+
+    if n_channels == 3:
+        return [QColor(c) for c in theme.CHANNEL_COLORS_3CH]
+
+    # RGBIR を想定
+    if n_channels == 4:
+        return [QColor(c) for c in theme.CHANNEL_COLORS_4CH]
+
+    colors = []
+    for i in range(n_channels):
+        hue = int(360 * i / n_channels)
+        color = QColor.fromHsv(hue, theme.CHANNEL_SATURATION_MANY, 255)
+        colors.append(color)
+    return colors
+
 
 MODE_1CH_GRAYSCALE = "grayscale"
 MODE_1CH_JET = "jet"

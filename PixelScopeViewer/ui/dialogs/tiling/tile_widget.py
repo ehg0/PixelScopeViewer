@@ -7,8 +7,8 @@ import numpy as np
 from PySide6.QtCore import QEvent, Qt, QTimer, Signal
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QScrollArea, QSizePolicy, QVBoxLayout, QWidget
 
+from PixelScopeViewer.core.brightness import apply_brightness_adjustment
 from PixelScopeViewer.ui import theme
-from PixelScopeViewer.ui.dialogs.display.core.compute import apply_brightness_adjustment
 from PixelScopeViewer.ui.dialogs.tiling.tile_image_label import TileImageLabel
 
 

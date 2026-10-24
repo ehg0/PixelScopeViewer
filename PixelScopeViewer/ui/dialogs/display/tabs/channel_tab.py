@@ -20,12 +20,7 @@ from PySide6.QtWidgets import (
 
 from PixelScopeViewer.core.image_io import numpy_to_qimage
 from PixelScopeViewer.ui import theme
-
-from ....utils import (
-    colorbar_flow_hsv,
-    colorbar_jet,
-    get_default_channel_colors,
-)
+from PixelScopeViewer.ui.utils import colorbar_flow_hsv, colorbar_jet, get_default_channel_colors
 
 
 class ChannelTab(QWidget):

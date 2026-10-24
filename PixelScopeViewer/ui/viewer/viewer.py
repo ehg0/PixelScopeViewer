@@ -30,19 +30,24 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from PixelScopeViewer.core.constants import STANDARD_IMAGE_EXTENSIONS, get_dtype_defaults
+from PixelScopeViewer.core.image_io import ImageLoaderRegistry, is_image_file, load_image, numpy_to_qimage
 from PixelScopeViewer.ui import defaults, theme
-
-from ...core.constants import STANDARD_IMAGE_EXTENSIONS, get_dtype_defaults
-from ...core.image_io import ImageLoaderRegistry, is_image_file, load_image, numpy_to_qimage
-from ..dialogs import AnalysisDialog, DiffDialog, FeaturesDialog, HelpDialog
-from ..dialogs.tiling import TilingDialog
-from ..utils import MODE_1CH_JET, MODE_2CH_FLOW_HSV, ChannelColorManager, apply_jet_colormap, flow_to_hsv_rgb
-from ..utils.features_manager import FeaturesManager
-from ..widgets import DisplayInfoWidget, ImageLabel, NavigatorWidget, ROIInfoWidget
-from .brightness_manager import BrightnessManager
-from .menu_builder import create_menus
-from .status_updater import StatusUpdater
-from .zoom_manager import ZoomManager
+from PixelScopeViewer.ui.dialogs import AnalysisDialog, DiffDialog, FeaturesDialog, HelpDialog
+from PixelScopeViewer.ui.dialogs.tiling import TilingDialog
+from PixelScopeViewer.ui.utils import (
+    MODE_1CH_JET,
+    MODE_2CH_FLOW_HSV,
+    ChannelColorManager,
+    apply_jet_colormap,
+    flow_to_hsv_rgb,
+)
+from PixelScopeViewer.ui.utils.features_manager import FeaturesManager
+from PixelScopeViewer.ui.viewer.brightness_manager import BrightnessManager
+from PixelScopeViewer.ui.viewer.menu_builder import create_menus
+from PixelScopeViewer.ui.viewer.status_updater import StatusUpdater
+from PixelScopeViewer.ui.viewer.zoom_manager import ZoomManager
+from PixelScopeViewer.ui.widgets import DisplayInfoWidget, ImageLabel, NavigatorWidget, ROIInfoWidget
 
 
 class ImageViewer(QMainWindow):

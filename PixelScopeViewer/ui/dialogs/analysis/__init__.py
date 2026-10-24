@@ -1,5 +1,5 @@
 """単一画像の解析 dialog（histogram・profile・metadata）。"""
 
-from .dialog import AnalysisDialog
+from PixelScopeViewer.ui.dialogs.analysis.dialog import AnalysisDialog
 
 __all__ = ["AnalysisDialog"]

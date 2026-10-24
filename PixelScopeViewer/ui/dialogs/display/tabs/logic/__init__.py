@@ -1,7 +1,7 @@
 """brightness tab の UI 構築と計算処理。"""
 
-from .brightness_builder import BrightnessUIBuilder
-from .brightness_utils import (
+from PixelScopeViewer.ui.dialogs.display.tabs.logic.brightness_builder import BrightnessUIBuilder
+from PixelScopeViewer.ui.dialogs.display.tabs.logic.brightness_utils import (
     clamp_value,
     determine_dtype_defaults,
     format_gain_label,

@@ -6,7 +6,7 @@ from pathlib import Path
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 
-from .ui.viewer import ImageViewer
+from PixelScopeViewer.ui.viewer import ImageViewer
 
 RESTART_EXIT_CODE = 1001
 

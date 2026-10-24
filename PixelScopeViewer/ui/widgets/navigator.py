@@ -4,9 +4,8 @@ from PySide6.QtCore import QEvent, Qt
 from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QGroupBox, QLabel, QVBoxLayout
 
+from PixelScopeViewer.core.image_io import numpy_to_qimage
 from PixelScopeViewer.ui import theme
-
-from ...core.image_io import numpy_to_qimage
 
 
 class NavigatorWidget(QGroupBox):

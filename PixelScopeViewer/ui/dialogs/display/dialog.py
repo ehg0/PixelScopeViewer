@@ -11,9 +11,8 @@ from PySide6.QtWidgets import (
 )
 
 from PixelScopeViewer.ui import defaults, theme
-
-from ...utils import MODE_1CH_GRAYSCALE, MODE_2CH_FLOW_HSV
-from .tabs import BrightnessTab, ChannelTab
+from PixelScopeViewer.ui.dialogs.display.tabs import BrightnessTab, ChannelTab
+from PixelScopeViewer.ui.utils import MODE_1CH_GRAYSCALE, MODE_2CH_FLOW_HSV
 
 
 class BrightnessDialog(QDialog):

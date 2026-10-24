@@ -9,8 +9,8 @@ import numpy as np
 import OpenImageIO as oiio
 from PySide6.QtGui import QImage
 
-from .constants import OIIO_EXTENSIONS, OPENCV_EXTENSIONS, STANDARD_IMAGE_EXTENSIONS
-from .metadata_utils import extract_exif, extract_png_metadata
+from PixelScopeViewer.core.constants import OIIO_EXTENSIONS, OPENCV_EXTENSIONS, STANDARD_IMAGE_EXTENSIONS
+from PixelScopeViewer.core.metadata_utils import extract_exif, extract_png_metadata
 
 
 class ImageLoaderRegistry:

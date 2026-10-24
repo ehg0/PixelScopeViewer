@@ -14,9 +14,8 @@ from PySide6.QtWidgets import (
 )
 
 from PixelScopeViewer.ui import theme
-
-from .....utils.custom_qtwidgets import StepSlider
-from ..components import PowerOfTwoSpinBox
+from PixelScopeViewer.ui.dialogs.display.tabs.components import PowerOfTwoSpinBox
+from PixelScopeViewer.ui.utils.custom_qtwidgets import StepSlider
 
 
 class BrightnessUIBuilder:

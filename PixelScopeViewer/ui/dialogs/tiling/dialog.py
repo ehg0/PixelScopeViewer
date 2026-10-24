@@ -16,20 +16,19 @@ from PySide6.QtWidgets import (
 )
 
 from PixelScopeViewer.ui import defaults
-
-from ..analysis.dialog import AnalysisDialog
-from .brightness_dialog import TilingBrightnessDialog
-from .comparison_dialog import TilingAnalysisDialog
-from .core import (
+from PixelScopeViewer.ui.dialogs.analysis.dialog import AnalysisDialog
+from PixelScopeViewer.ui.dialogs.tiling.brightness_dialog import TilingBrightnessDialog
+from PixelScopeViewer.ui.dialogs.tiling.comparison_dialog import TilingAnalysisDialog
+from PixelScopeViewer.ui.dialogs.tiling.core import (
     BrightnessManager,
     ROIManager,
     ScrollManager,
     TileManager,
     ZoomManager,
 )
-from .help_dialog import TilingHelpDialog
-from .selection_dialog import TileSelectionDialog
-from .tile_widget import TileWidget
+from PixelScopeViewer.ui.dialogs.tiling.help_dialog import TilingHelpDialog
+from PixelScopeViewer.ui.dialogs.tiling.selection_dialog import TileSelectionDialog
+from PixelScopeViewer.ui.dialogs.tiling.tile_widget import TileWidget
 
 
 class TilingDialog(QDialog):

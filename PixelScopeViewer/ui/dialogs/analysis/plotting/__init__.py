@@ -1,6 +1,6 @@
 """pyqtgraph の plot 設定と状態管理。"""
 
-from .pyqtgraph import (
+from PixelScopeViewer.ui.dialogs.analysis.plotting.pyqtgraph import (
     apply_plot_settings,
     connect_plot_controls,
     save_viewbox_state,

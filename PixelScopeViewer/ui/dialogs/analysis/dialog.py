@@ -22,11 +22,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from PixelScopeViewer.core.image_io import get_image_metadata
 from PixelScopeViewer.ui import defaults, theme
-
-from ....core.image_io import get_image_metadata
-from ...utils.color_utils import get_default_channel_colors
-from .core import (
+from PixelScopeViewer.ui.dialogs.analysis.core import (
     calc_stats,
     compute_profile_1d,
     determine_hist_bins,
@@ -37,13 +35,14 @@ from .core import (
     profile_series,
     profile_stats,
 )
-from .exporting import series_to_csv
-from .plotting import apply_plot_settings as pg_apply_plot_settings
-from .plotting import connect_plot_controls as pg_connect_plot_controls
-from .plotting import save_viewbox_state as pg_save_viewbox_state
-from .tabs.histogram_tab import HistogramTab
-from .tabs.metadata_tab import MetadataTab
-from .tabs.profile_tab import ProfileTab
+from PixelScopeViewer.ui.dialogs.analysis.exporting import series_to_csv
+from PixelScopeViewer.ui.dialogs.analysis.plotting import apply_plot_settings as pg_apply_plot_settings
+from PixelScopeViewer.ui.dialogs.analysis.plotting import connect_plot_controls as pg_connect_plot_controls
+from PixelScopeViewer.ui.dialogs.analysis.plotting import save_viewbox_state as pg_save_viewbox_state
+from PixelScopeViewer.ui.dialogs.analysis.tabs.histogram_tab import HistogramTab
+from PixelScopeViewer.ui.dialogs.analysis.tabs.metadata_tab import MetadataTab
+from PixelScopeViewer.ui.dialogs.analysis.tabs.profile_tab import ProfileTab
+from PixelScopeViewer.ui.utils.color_utils import get_default_channel_colors
 
 
 class AnalysisDialog(QDialog):

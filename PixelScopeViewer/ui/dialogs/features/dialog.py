@@ -28,15 +28,14 @@ from PySide6.QtWidgets import (
 )
 
 from PixelScopeViewer.ui import defaults
-
-from ...utils.features_manager import FeaturesManager
-from .widgets import (
+from PixelScopeViewer.ui.dialogs.features.widgets import (
     AnnotationsTableModel,
     FeaturesTableModel,
     LoadedOnlyProxyModel,
     PlainTextDelegate,
     SimpleDictTableModel,
 )
+from PixelScopeViewer.ui.utils.features_manager import FeaturesManager
 
 
 class FeaturesDialog(QDialog):

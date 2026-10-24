@@ -9,8 +9,7 @@ from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QScrollArea, QSizePol
 
 from PixelScopeViewer.ui import theme
 from PixelScopeViewer.ui.dialogs.display.core.compute import apply_brightness_adjustment
-
-from .tile_image_label import TileImageLabel
+from PixelScopeViewer.ui.dialogs.tiling.tile_image_label import TileImageLabel
 
 
 class TileWidget(QWidget):

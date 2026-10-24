@@ -1,13 +1,13 @@
 """UI 共通の utility。"""
 
-from .channel_color_manager import (
+from PixelScopeViewer.ui.utils.channel_color_manager import (
     MODE_1CH_GRAYSCALE,
     MODE_1CH_JET,
     MODE_2CH_COMPOSITE,
     MODE_2CH_FLOW_HSV,
     ChannelColorManager,
 )
-from .color_utils import (
+from PixelScopeViewer.ui.utils.color_utils import (
     apply_jet_colormap,
     colorbar_flow_hsv,
     colorbar_jet,

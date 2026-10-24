@@ -3,10 +3,10 @@
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QImage, QPainter, QWheelEvent
 
-from ...core.constants import MAX_ZOOM_SCALE, MIN_ZOOM_SCALE, ZOOM_STEP
-from .base_image_label import BaseImageLabel
-from .roi_editor import RoiEditorMixin
-from .roi_manager import RoiManagerMixin
+from PixelScopeViewer.core.constants import MAX_ZOOM_SCALE, MIN_ZOOM_SCALE, ZOOM_STEP
+from PixelScopeViewer.ui.widgets.base_image_label import BaseImageLabel
+from PixelScopeViewer.ui.widgets.roi_editor import RoiEditorMixin
+from PixelScopeViewer.ui.widgets.roi_manager import RoiManagerMixin
 
 
 class ImageLabel(RoiManagerMixin, RoiEditorMixin, BaseImageLabel):

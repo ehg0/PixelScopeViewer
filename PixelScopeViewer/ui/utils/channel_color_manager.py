@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 
 from PySide6.QtGui import QColor
 
-from .color_utils import get_default_channel_colors
+from PixelScopeViewer.ui.utils.color_utils import get_default_channel_colors
 
 MODE_1CH_GRAYSCALE = "grayscale"
 MODE_1CH_JET = "jet"

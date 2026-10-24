@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from ...core.constants import MAX_ZOOM_SCALE, MIN_ZOOM_SCALE
+from PixelScopeViewer.core.constants import MAX_ZOOM_SCALE, MIN_ZOOM_SCALE
 
 
 class ZoomManager:

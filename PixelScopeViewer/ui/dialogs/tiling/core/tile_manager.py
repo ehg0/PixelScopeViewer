@@ -2,7 +2,7 @@
 
 from PySide6.QtWidgets import QGridLayout
 
-from .utils import determine_dtype_group
+from PixelScopeViewer.ui.dialogs.tiling.core.utils import determine_dtype_group
 
 
 class TileManager:

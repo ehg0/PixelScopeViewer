@@ -7,9 +7,8 @@ from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QVBoxLayout, QWidget
 
 from PixelScopeViewer.core.constants import get_dtype_defaults
-
-from .logic import clamp_value, determine_dtype_defaults, round_to_power_of_2
-from .logic.brightness_builder import BrightnessUIBuilder
+from PixelScopeViewer.ui.dialogs.display.tabs.logic import clamp_value, determine_dtype_defaults, round_to_power_of_2
+from PixelScopeViewer.ui.dialogs.display.tabs.logic.brightness_builder import BrightnessUIBuilder
 
 
 class BrightnessTab(QWidget):

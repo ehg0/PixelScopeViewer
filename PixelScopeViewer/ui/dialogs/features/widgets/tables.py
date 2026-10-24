@@ -10,8 +10,7 @@ from PySide6.QtCore import QAbstractTableModel, QModelIndex, QSortFilterProxyMod
 from PySide6.QtGui import QBrush, QColor
 
 from PixelScopeViewer.ui import theme
-
-from ....utils.features_manager import FeaturesManager
+from PixelScopeViewer.ui.utils.features_manager import FeaturesManager
 
 
 class FeaturesTableModel(QAbstractTableModel):

@@ -1,6 +1,6 @@
 """Qt に依存しない解析の計算処理。"""
 
-from .compute import (
+from PixelScopeViewer.ui.dialogs.analysis.core.compute import (
     calc_stats,
     compute_profile_1d,
     determine_hist_bins,

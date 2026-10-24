@@ -4,7 +4,7 @@ target-version = "py310"
 extend-exclude = ["custom_loaders", "sample"]
 
 [tool.ruff.lint]
-select = ["E", "W", "F", "I", "UP", "B", "SIM", "D"]
+select = ["E", "W", "F", "I", "UP", "B", "SIM", "D", "TID"]
 ignore = [
     # 不要な docstring は書かない方針のため、docstring 欠落は許容する
     "D100", "D101", "D102", "D103", "D104", "D105", "D106", "D107",
@@ -17,6 +17,10 @@ ignore = [
 [tool.ruff.lint.flake8-bugbear]
 # Qt model の rowCount(parent=QModelIndex()) などの慣用句を許容する
 extend-immutable-calls = ["PySide6.QtCore.QModelIndex"]
+
+[tool.ruff.lint.flake8-tidy-imports]
+# ファイルを移動しても import を機械的に置換できるよう、相対 import を禁止する
+ban-relative-imports = "all"
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"

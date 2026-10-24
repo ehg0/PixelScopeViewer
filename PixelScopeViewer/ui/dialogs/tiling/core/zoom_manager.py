@@ -1,7 +1,6 @@
 """Zoom management for tiling comparison."""
 
 from typing import List, Optional
-from PySide6.QtWidgets import QApplication
 from PixelScopeViewer.core.constants import MIN_ZOOM_SCALE, MAX_ZOOM_SCALE
 import numpy as np
 
@@ -62,7 +61,6 @@ class ZoomManager:
         image_y = (scroll_y + viewport_y) / self.scale
 
         # Apply new zoom (use same limits as main viewer)
-        old_scale = self.scale
         self.scale *= factor
         # Use zoom limits from main viewer (MIN_ZOOM_SCALE, MAX_ZOOM_SCALE)
         self.scale = max(MIN_ZOOM_SCALE, min(self.scale, MAX_ZOOM_SCALE))
@@ -153,6 +151,3 @@ class ZoomManager:
         """Get current zoom scale."""
         return self.scale
 
-    def is_fit_zoom(self) -> bool:
-        """Check if in fit zoom mode."""
-        return self._is_fit_zoom

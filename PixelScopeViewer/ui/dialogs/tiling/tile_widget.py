@@ -4,7 +4,6 @@ from typing import Optional
 import numpy as np
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QScrollArea, QSizePolicy
 from PySide6.QtCore import Qt, Signal, QEvent
-from PySide6.QtGui import QPalette
 
 from .tile_image_label import TileImageLabel
 from PixelScopeViewer.ui.dialogs.display.core.compute import apply_brightness_adjustment
@@ -375,14 +374,6 @@ class TileWidget(QWidget):
         """
         h, w = array_shape[:2]
         self.image_label.set_roi([0, 0, w, h])
-
-    def get_zoom_factor(self) -> float:
-        """Get current zoom factor.
-
-        Returns:
-            Zoom factor
-        """
-        return self.image_label.zoom_factor
 
     def set_zoom(self, factor: float):
         """Set zoom factor.

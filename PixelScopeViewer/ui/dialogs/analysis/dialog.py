@@ -68,7 +68,6 @@ from .exporting import series_to_csv
 from .plotting import apply_plot_settings as pg_apply_plot_settings
 from .plotting import connect_plot_controls as pg_connect_plot_controls
 from .plotting import save_viewbox_state as pg_save_viewbox_state
-from .plotting import show_default_context_menu as pg_show_default_context_menu
 from .tabs.histogram_tab import HistogramTab
 from .tabs.metadata_tab import MetadataTab
 from .tabs.profile_tab import ProfileTab
@@ -816,19 +815,6 @@ class AnalysisDialog(QDialog):
         else:
             self.hist_bar_alpha_spin_box.setEnabled(False)
         self.update_contents()
-
-    def _show_plot_context_menu(self, widget, which: str, pos):
-        # Delegate to plotting helper
-        pg_show_default_context_menu(widget, pos)
-
-    def _on_external_grid_toggled(self, checked: bool):
-        # Keep backward compatibility: grid affects both plots
-        val = bool(checked)
-        try:
-            self.plot_settings.setdefault("hist", {})["grid"] = val
-            self.plot_settings.setdefault("prof", {})["grid"] = val
-        except Exception:
-            pass
 
     def _on_external_log_toggled(self, checked: bool):
         # When user toggles Log Y via pyqtgraph menu, update store and replot

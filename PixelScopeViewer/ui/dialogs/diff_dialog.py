@@ -4,15 +4,12 @@ This module provides a dialog for selecting two images from the
 loaded image list and creating a difference image with configurable offset.
 """
 
-from typing import Optional
-import numpy as np
 from PySide6.QtWidgets import (
     QDialog,
     QVBoxLayout,
     QHBoxLayout,
     QLabel,
     QComboBox,
-    QSpinBox,
     QDoubleSpinBox,
     QPushButton,
     QMessageBox,

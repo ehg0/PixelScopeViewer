@@ -3,9 +3,8 @@
 This module combines all widget functionality into a single ImageLabel class.
 """
 
-from typing import Optional
-from PySide6.QtGui import QPixmap, QPainter, QImage, QWheelEvent
-from PySide6.QtCore import Qt, QRect
+from PySide6.QtGui import QPainter, QImage, QWheelEvent
+from PySide6.QtCore import Qt
 
 from .base_image_label import BaseImageLabel
 from .roi_manager import RoiManagerMixin

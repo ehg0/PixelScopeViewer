@@ -122,45 +122,6 @@ class ImageLoaderRegistry:
 
         return sorted(exts), has_wildcard
 
-    def try_load(self, path: str) -> np.ndarray | None:
-        """Try to load an image using registered custom loaders.
-
-        Args:
-            path: Path to the image file
-
-        Returns:
-            NumPy array if a loader successfully handled the file, None otherwise.
-        """
-        ext = Path(path).suffix.lower()
-
-        # 1. Try extension-specific loaders first (higher priority)
-        for loader_info in self.custom_loaders:
-            if loader_info["is_wildcard"]:
-                continue
-            if ext in loader_info["extensions"]:
-                try:
-                    result = loader_info["func"](path)
-                    if result is not None:
-                        return result
-                except Exception as e:
-                    print(f"Error: {e}")
-                    continue
-
-        # 2. Try wildcard loaders (lower priority fallback)
-        for loader_info in self.custom_loaders:
-            if not loader_info["is_wildcard"]:
-                continue
-            try:
-                result = loader_info["func"](path)
-                if result is not None:
-                    return result
-            except Exception as e:
-                print(f"Error: {e}")
-                continue
-
-        return None
-
-
 def numpy_to_qimage(arr: np.ndarray) -> QImage:
     """Convert a NumPy image array to a Qt QImage suitable for display.
 

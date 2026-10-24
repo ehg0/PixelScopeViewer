@@ -172,5 +172,5 @@ class StatusUpdater:
 
             brightness_text = f"Offset: {offset_str}, Gain: {gain_str}, Upper: {upper_str}"
             self.viewer.status_brightness.setText(brightness_text)
-        except Exception as e:
+        except Exception:
             self.viewer.status_brightness.setText("")

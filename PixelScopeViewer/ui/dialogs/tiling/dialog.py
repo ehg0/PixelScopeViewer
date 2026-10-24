@@ -202,13 +202,6 @@ class TilingComparisonDialog(QDialog):
         self.zoom_manager = ZoomManager(tiles, self.tile_manager.get_active_tile_index)
         self.roi_manager = ROIManager(tiles, self.tile_manager.get_active_tile_index, self.common_roi_changed)
 
-    def _clear_tiles(self):
-        """Clear all existing tiles from the grid."""
-        self.tile_manager.clear_tiles()
-        # Clear ROI
-        if self.roi_manager:
-            self.roi_manager.common_roi_rect = None
-
     def _rebuild_tiles(self):
         """Rebuild tiles based on current selection."""
         self.tile_manager.rebuild_tiles(

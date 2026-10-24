@@ -337,9 +337,6 @@ class ChannelTab(QWidget):
         else:
             pass
 
-    def get_channel_states(self):
-        return [cb.isChecked() for cb in self.checkboxes]
-
     def set_channel_states(self, states):
         for i, state in enumerate(states or []):
             if i < len(self.checkboxes):

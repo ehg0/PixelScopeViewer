@@ -2,7 +2,7 @@
 
 from PySide6.QtWidgets import QGroupBox, QVBoxLayout, QLabel
 from PySide6.QtGui import QPixmap, QPainter, QPen, QColor, QMouseEvent
-from PySide6.QtCore import Qt, QEvent, QPoint
+from PySide6.QtCore import Qt, QEvent
 
 
 class NavigatorWidget(QGroupBox):
@@ -73,7 +73,6 @@ class NavigatorWidget(QGroupBox):
         # - Horizontally centered
         # - Vertically aligned to top
         label_width = self.thumbnail_label.width()
-        label_height = self.thumbnail_label.height()
         x_offset = (label_width - thumb_width) / 2
         y_offset = 0  # Top-aligned, so no vertical offset
 

@@ -3,8 +3,8 @@
 from typing import Optional
 import numpy as np
 from PySide6.QtWidgets import QLabel
-from PySide6.QtGui import QPixmap, QPainter, QPen, QImage, QColor, QMouseEvent, QKeyEvent, QWheelEvent
-from PySide6.QtCore import Qt, QRect, Signal
+from PySide6.QtGui import QPixmap, QPainter, QPen, QColor, QMouseEvent, QKeyEvent, QWheelEvent
+from PySide6.QtCore import Qt, Signal
 
 from PixelScopeViewer.core.image_io import numpy_to_qimage
 from PixelScopeViewer.core.constants import MIN_ZOOM_SCALE, MAX_ZOOM_SCALE
@@ -118,19 +118,6 @@ class TileImageLabel(QLabel):
         # Ensure scroll area can scroll
         self.setFixedSize(pixmap.size())
         self.update()
-
-    def update_brightness(self, gain: float, offset: float, upper_level: float):
-        """Update brightness parameters and refresh display.
-
-        Args:
-            gain: Brightness gain
-            offset: Brightness offset
-            upper_level: Upper_level value
-        """
-        self.gain = gain
-        self.offset = offset
-        self.upper_level = upper_level
-        self._update_display()
 
     def set_roi(self, roi_rect: Optional[list]):
         """Set ROI rectangle.

@@ -173,10 +173,6 @@ class BrightnessDialog(QDialog):
         """Get current brightness parameters."""
         return self.brightness_tab.get_parameters()
 
-    def get_channels(self):
-        """Get current channel visibility."""
-        return self.channel_tab.get_channel_states()
-
     def get_channel_colors(self):
         """Get current channel colors."""
         return self.channel_tab.get_channel_colors()

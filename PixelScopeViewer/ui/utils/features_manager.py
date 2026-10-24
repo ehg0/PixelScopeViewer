@@ -247,17 +247,6 @@ class FeaturesManager:
     def get_annotations_rows(self) -> List[Dict[str, Any]]:
         return list(self._annotations_rows)
 
-    def get_annotations_columns(self) -> List[str]:
-        cols = OrderedDict()
-        # Standardize columns
-        preferred = ["image_id", "category_id", "bbox_x", "bbox_y", "bbox_w", "bbox_h"]
-        for p in preferred:
-            cols[p] = True
-        # ensure bbox split
-        for r in self._annotations_rows:
-            pass
-        return list(cols.keys())
-
     def add_column(self, name: str, default_value: Any = None) -> None:
         name = name.strip()
         if not name:
@@ -287,13 +276,6 @@ class FeaturesManager:
 
     def column_is_editable(self, name: str) -> bool:
         return name not in self.NON_EDITABLE_COLUMNS
-
-    def find_row_index_by_path(self, fullpath: str) -> Optional[int]:
-        full = str(Path(fullpath).resolve())
-        for i, r in enumerate(self.get_rows()):
-            if str(Path(r.get("fullfilepath", "")).resolve()) == full:
-                return i
-        return None
 
     # ------------------------
     # Export helpers

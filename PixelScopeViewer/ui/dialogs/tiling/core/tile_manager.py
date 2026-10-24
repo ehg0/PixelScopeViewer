@@ -21,32 +21,6 @@ class TileManager:
         self.displayed_image_data: List[Dict] = []
         self.active_tile_index = 0
 
-    def clear_tiles(self):
-        """Clear all existing tiles from the grid."""
-        # Disconnect and remove all tiles
-        for tile in self.tiles:
-            # Disconnect signals
-            try:
-                tile.activated.disconnect()
-                tile.roi_changed.disconnect()
-                tile.image_label.hover_info.disconnect()
-                if tile.scroll_area.horizontalScrollBar():
-                    tile.scroll_area.horizontalScrollBar().sliderMoved.disconnect()
-                if tile.scroll_area.verticalScrollBar():
-                    tile.scroll_area.verticalScrollBar().sliderMoved.disconnect()
-            except:
-                pass
-
-            # Remove from grid
-            self.grid_layout.removeWidget(tile)
-            tile.setParent(None)
-            tile.deleteLater()
-
-        # Clear lists
-        self.tiles.clear()
-        self.tile_dtype_groups.clear()
-        self.displayed_image_data.clear()
-
     def rebuild_tiles(
         self,
         all_images: List[Dict],

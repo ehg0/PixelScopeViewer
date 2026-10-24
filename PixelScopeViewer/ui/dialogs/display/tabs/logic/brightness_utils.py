@@ -68,32 +68,6 @@ def value_to_slider(value, is_float, multiplier=10):
     return int(value)
 
 
-def gain_to_log2(gain):
-    """Convert gain value to log2 slider value.
-
-    Args:
-        gain: Gain value (power of 2)
-
-    Returns:
-        Integer log2 value
-    """
-    if gain <= 0:
-        return 0
-    return int(round(math.log2(gain)))
-
-
-def log2_to_gain(log2_value):
-    """Convert log2 slider value to gain.
-
-    Args:
-        log2_value: Integer log2 value
-
-    Returns:
-        Gain as power of 2
-    """
-    return 2**log2_value
-
-
 def round_to_power_of_2(value, log2_min=-7, log2_max=10):
     """Round a value to the nearest power of 2 within range.
 

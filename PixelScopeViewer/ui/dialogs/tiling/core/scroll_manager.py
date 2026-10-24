@@ -150,6 +150,3 @@ class ScrollManager:
 
         return True
 
-    def is_syncing(self) -> bool:
-        """Check if currently syncing scroll."""
-        return self._syncing_scroll

@@ -1,4 +1,4 @@
-from PySide6.QtCore import QSortFilterProxyModel, QModelIndex, Qt
+from PySide6.QtCore import QSortFilterProxyModel, QModelIndex
 from pathlib import Path
 
 

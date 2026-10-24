@@ -173,7 +173,6 @@ class BrightnessTab(QWidget):
     def _on_dtype_changed(self, dtype_text):
         """Handle manual dtype selection from combo box."""
         # Save current params for the old dtype
-        prev_dtype = self.current_dtype
         prev_params = (
             self.offset_spinbox.value(),
             self.gain_spinbox.value(),
@@ -213,13 +212,6 @@ class BrightnessTab(QWidget):
         self.is_float_type = defaults["is_float_type"]
         self.offset_range = defaults["offset_range"]
         self.upper_level_range = defaults["upper_level_range"]
-
-    def _get_params_for_dtype(self, dtype_key):
-        """Return (offset, gain, upper_level) for dtype: saved if available, else defaults."""
-        if dtype_key in self.dtype_params:
-            return self.dtype_params[dtype_key]
-        defaults = get_dtype_defaults(dtype_key)
-        return (defaults["initial_offset"], defaults["initial_gain"], defaults["initial_upper_level"])
 
     def _configure_offset_widgets(self):
         self.offset_slider.blockSignals(True)
@@ -433,7 +425,6 @@ class BrightnessTab(QWidget):
 
         self.image_array = image_array
         self.image_path = image_path
-        old_is_float = self.is_float_type
 
         # auto scaleする場合。早期return
         if self.auto_scale_cb.isChecked():

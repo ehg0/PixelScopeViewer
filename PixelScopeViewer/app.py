@@ -71,9 +71,5 @@ def main(argv=None):
     return app.exec()
 
 
-def reboot(self):
-    QApplication.exit(RESTART_EXIT_CODE)
-
-
 if __name__ == "__main__":
     sys.exit(main())

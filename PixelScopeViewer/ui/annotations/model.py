@@ -125,7 +125,7 @@ class AnnotationStore:
         self._last_loaded_path = str(path.resolve())
         try:
             df = pl.read_csv(str(path))
-        except Exception:
+        except (OSError, pl.exceptions.PolarsError):  # 読めない CSV は空の表として扱う
             df = pl.DataFrame([])
 
         rows: list[dict[str, Any]] = df.to_dicts()

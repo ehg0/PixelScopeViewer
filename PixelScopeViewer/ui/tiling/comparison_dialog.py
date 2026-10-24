@@ -126,9 +126,6 @@ class TilingAnalysisDialog(AnalysisDialog):
 
     def _update_metadata(self):
         """全 tile の metadata を比較する table を表示する。"""
-        if not hasattr(self, "metadata_table"):
-            return
-
         if not self.tiles_data:
             self.meta_tab.set_rows([("Info", "No tiles available")])
             return
@@ -177,7 +174,7 @@ class TilingAnalysisDialog(AnalysisDialog):
         num_tiles = len(all_metadata)
         num_rows = len(sorted_keys)
 
-        self.metadata_table.setColumnCount(1 + num_tiles)
+        self.meta_tab.metadata_table.setColumnCount(1 + num_tiles)
 
         headers = ["Property"]
         for tile_meta in all_metadata:
@@ -189,15 +186,15 @@ class TilingAnalysisDialog(AnalysisDialog):
             else:
                 headers.append(f"Tile {tile_idx}\n(no file)")
 
-        self.metadata_table.setHorizontalHeaderLabels(headers)
-        self.metadata_table.setRowCount(num_rows)
-        self.metadata_table.setMouseTracking(True)
+        self.meta_tab.metadata_table.setHorizontalHeaderLabels(headers)
+        self.meta_tab.metadata_table.setRowCount(num_rows)
+        self.meta_tab.metadata_table.setMouseTracking(True)
 
         diff_color = QColor(theme.HIGHLIGHT_BACKGROUND)
 
         for row_idx, key in enumerate(sorted_keys):
             prop_item = QTableWidgetItem(key)
-            self.metadata_table.setItem(row_idx, 0, prop_item)
+            self.meta_tab.metadata_table.setItem(row_idx, 0, prop_item)
 
             values = []
             for tile_meta in all_metadata:
@@ -217,9 +214,9 @@ class TilingAnalysisDialog(AnalysisDialog):
                     value_item.setBackground(QBrush(diff_color))
 
                 value_item.setToolTip(str(value))
-                self.metadata_table.setItem(row_idx, col_idx + 1, value_item)
+                self.meta_tab.metadata_table.setItem(row_idx, col_idx + 1, value_item)
 
-        header = self.metadata_table.horizontalHeader()
+        header = self.meta_tab.metadata_table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
         for i in range(1, 1 + num_tiles):
             header.setSectionResizeMode(i, QHeaderView.Stretch)
@@ -475,36 +472,35 @@ class TilingAnalysisDialog(AnalysisDialog):
         ordered_prof_labels = list(merged_series.keys())
         prof_palette_map = self._assign_overlay_colors(ordered_prof_labels)
 
-        if hasattr(self, "prof_widget") and self.prof_widget:
-            self.prof_widget.clear()
-            self.profile_plot_items.clear()
-            orientation_label = {"h": "Horizontal", "v": "Vertical"}[self.settings.profile_orientation]
-            mode_label = "Absolute" if self.settings.profile_x_mode == "absolute" else "Relative"
-            method_label = {
-                "mean": "Mean",
-                "std": "Std",
-                "max": "Max",
-                "min": "Min",
-                "p2p": "Peak-to-Peak",
-                "median": "Median",
-            }[self.settings.profile_method]
-            if merged_series:
-                for label, (xs, ys) in merged_series.items():
-                    rgb = prof_palette_map.get(label, QColor(theme.PLOT_FALLBACK_COLOR).getRgb()[:3])
-                    pen = self._make_pen(rgb, width=2, alpha=255)
-                    item = self.prof_widget.plot(xs, ys, pen=pen, name=label)
-                    self.profile_plot_items[label] = item
-                self.prof_widget.setTitle(
-                    f"Profile Overlay (All Tiles) - {orientation_label} / {mode_label} / {method_label}",
-                    color=theme.PLOT_TEXT_COLOR,
-                    size="12pt",
-                )
-            else:
-                self.prof_widget.setTitle(
-                    f"Profile Overlay (No channels visible)  - {orientation_label} / {mode_label} / {method_label}",
-                    color=theme.PLOT_MUTED_COLOR,
-                    size="11pt",
-                )
+        self.profile_tab.prof_widget.clear()
+        self.profile_plot_items.clear()
+        orientation_label = {"h": "Horizontal", "v": "Vertical"}[self.settings.profile_orientation]
+        mode_label = "Absolute" if self.settings.profile_x_mode == "absolute" else "Relative"
+        method_label = {
+            "mean": "Mean",
+            "std": "Std",
+            "max": "Max",
+            "min": "Min",
+            "p2p": "Peak-to-Peak",
+            "median": "Median",
+        }[self.settings.profile_method]
+        if merged_series:
+            for label, (xs, ys) in merged_series.items():
+                rgb = prof_palette_map.get(label, QColor(theme.PLOT_FALLBACK_COLOR).getRgb()[:3])
+                pen = self._make_pen(rgb, width=2, alpha=255)
+                item = self.profile_tab.prof_widget.plot(xs, ys, pen=pen, name=label)
+                self.profile_plot_items[label] = item
+            self.profile_tab.prof_widget.setTitle(
+                f"Profile Overlay (All Tiles) - {orientation_label} / {mode_label} / {method_label}",
+                color=theme.PLOT_TEXT_COLOR,
+                size="12pt",
+            )
+        else:
+            self.profile_tab.prof_widget.setTitle(
+                f"Profile Overlay (No channels visible)  - {orientation_label} / {mode_label} / {method_label}",
+                color=theme.PLOT_MUTED_COLOR,
+                size="11pt",
+            )
 
         if hasattr(self, "profile_tab"):
             self.profile_tab._populate_stats_table(all_profile_stats)

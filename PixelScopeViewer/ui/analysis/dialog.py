@@ -122,9 +122,7 @@ class AnalysisDialog(QDialog):
         main.addWidget(self.tabs)
 
         self.meta_tab = MetadataTab(self)
-        self.metadata_table = self.meta_tab.metadata_table
-        self.metadata_copy_btn = self.meta_tab.copy_btn
-        self.metadata_copy_btn.clicked.connect(self.copy_metadata_to_clipboard)
+        self.meta_tab.copy_btn.clicked.connect(self.copy_metadata_to_clipboard)
         self.tabs.addTab(self.meta_tab, "Metadata")
 
         self.profile_tab = ProfileTab(
@@ -133,19 +131,11 @@ class AnalysisDialog(QDialog):
             on_channel_changed=lambda checks: self._on_channel_changed(checks),
             parent=self,
         )
-        self.prof_widget = self.profile_tab.prof_widget
-        self.prof_stats_table = self.profile_tab.prof_stats_table
-        self.prof_orientation_btn = self.profile_tab.orientation_btn
-        self.prof_xmode_btn = self.profile_tab.xmode_btn
-        self.prof_compute_method_combo = self.profile_tab.compute_method_combo
-        self.prof_copy_btn = self.profile_tab.copy_btn
-        self.prof_copy_stats_btn = self.profile_tab.copy_stats_btn
-        self.prof_get_all_plane_data = self.profile_tab.get_all_plane_data
-        self.prof_orientation_btn.clicked.connect(self._on_prof_orientation_toggle)
-        self.prof_xmode_btn.clicked.connect(self._on_prof_xmode_toggle)
-        self.prof_compute_method_combo.currentTextChanged.connect(self._on_prof_compute_method_combo)
-        self.prof_copy_btn.clicked.connect(self.copy_profile_to_clipboard)
-        self.prof_copy_stats_btn.clicked.connect(self.copy_prof_stats_to_clipboard)
+        self.profile_tab.orientation_btn.clicked.connect(self._on_prof_orientation_toggle)
+        self.profile_tab.xmode_btn.clicked.connect(self._on_prof_xmode_toggle)
+        self.profile_tab.compute_method_combo.currentTextChanged.connect(self._on_prof_compute_method_combo)
+        self.profile_tab.copy_btn.clicked.connect(self.copy_profile_to_clipboard)
+        self.profile_tab.copy_stats_btn.clicked.connect(self.copy_prof_stats_to_clipboard)
         self.tabs.addTab(self.profile_tab, "Profile")
         self.profile_tab.channel_list.color_clicked.connect(self._on_plot_color_clicked)
         self.profile_tab.channel_list.reset_requested.connect(self._on_plot_color_reset)
@@ -158,20 +148,11 @@ class AnalysisDialog(QDialog):
             on_spinbox_bar_alpha_changed=lambda new_value: self._on_spinbox_bar_alpha_changed(new_value),
             parent=self,
         )
-        self.hist_widget = self.hist_tab.hist_widget
-        self.hist_stats_table = self.hist_tab.stats_table
-        self.hist_config_mode_btn = self.hist_tab.config_mode_btn
-        self.hist_config_reset_btn = self.hist_tab.config_reset_btn
-        self.hist_chart_kind_combo = self.hist_tab.chart_kind_combo
-        self.hist_bar_alpha_spin_box = self.hist_tab.bar_alpha_spin_box
-        self.hist_copy_btn = self.hist_tab.copy_btn
-        self.hist_copy_stats_btn = self.hist_tab.copy_stats_btn
-        self.hist_get_all_plane_data = self.hist_tab.get_all_plane_data
-        self.hist_chart_kind_combo.currentTextChanged.connect(self._on_hist_chart_kind_combo)
-        self.hist_config_mode_btn.clicked.connect(self.hist_config_mode_toggle)
-        self.hist_config_reset_btn.clicked.connect(self.hist_config_reset)
-        self.hist_copy_btn.clicked.connect(self.copy_histogram_to_clipboard)
-        self.hist_copy_stats_btn.clicked.connect(self.copy_hist_stats_to_clipboard)
+        self.hist_tab.chart_kind_combo.currentTextChanged.connect(self._on_hist_chart_kind_combo)
+        self.hist_tab.config_mode_btn.clicked.connect(self.hist_config_mode_toggle)
+        self.hist_tab.config_reset_btn.clicked.connect(self.hist_config_reset)
+        self.hist_tab.copy_btn.clicked.connect(self.copy_histogram_to_clipboard)
+        self.hist_tab.copy_stats_btn.clicked.connect(self.copy_hist_stats_to_clipboard)
         self.tabs.addTab(self.hist_tab, "Histogram")
         self.hist_tab.channel_list.color_clicked.connect(self._on_plot_color_clicked)
         self.hist_tab.channel_list.reset_requested.connect(self._on_plot_color_reset)
@@ -396,11 +377,11 @@ class AnalysisDialog(QDialog):
         # 保存済みの ViewBox 状態がなければ、データに合わせて表示範囲を自動調整する
         try:
             if not hasattr(self, "viewbox_full_hist"):
-                hist_vb = self.hist_widget.getViewBox()
+                hist_vb = self.hist_tab.hist_widget.getViewBox()
                 hist_vb.autoRange()
                 hist_vb.enableAutoRange(axis=pg.ViewBox.XYAxes)
             if not hasattr(self, "viewbox_full_prof"):
-                prof_vb = self.prof_widget.getViewBox()
+                prof_vb = self.profile_tab.prof_widget.getViewBox()
                 prof_vb.autoRange()
                 prof_vb.enableAutoRange(axis=pg.ViewBox.XYAxes)
         except Exception:
@@ -411,9 +392,6 @@ class AnalysisDialog(QDialog):
 
     def _update_metadata(self):
         """画像ファイルの metadata を metadata tab に表示する。"""
-        if not hasattr(self, "metadata_table"):
-            return
-
         if self.image_path is None or not self.image_path:
             self.meta_tab.set_rows([("Error", "No file path available")])
             self.last_metadata = []
@@ -455,10 +433,10 @@ class AnalysisDialog(QDialog):
     def hist_config_mode_toggle(self):
         if self.settings.hist_mode == "Histogram":
             self.settings.hist_mode = "ECDF"
-            self.hist_config_mode_btn.setText("ECDF")
+            self.hist_tab.config_mode_btn.setText("ECDF")
         else:
             self.settings.hist_mode = "Histogram"
-            self.hist_config_mode_btn.setText("Histogram")
+            self.hist_tab.config_mode_btn.setText("Histogram")
         self.update_contents()
 
     def _on_plot_color_clicked(self, idx: int):
@@ -548,15 +526,12 @@ class AnalysisDialog(QDialog):
 
     def copy_hist_stats_to_clipboard(self):
         """ROI の統計量を CSV で clipboard にコピーする。"Target: All plane" の場合は全画像を対象にする。"""
-        if not hasattr(self, "hist_stats_table"):
-            QMessageBox.information(self, "Copy", "No histogram stats to copy.")
-            return
         imgs = self.viewer.images
         current_id = self.viewer.state.current_index
         x, y, w, h = self.viewer.state.roi.getRect()
         text = "path,ch,x_sta,y_sta,width,hight,mean,std,median,min,max,fano\n"
 
-        targets = imgs if self.hist_get_all_plane_data.isChecked() else [imgs[current_id]]
+        targets = imgs if self.hist_tab.get_all_plane_data.isChecked() else [imgs[current_id]]
 
         for img in targets:
             path = img.get("path")
@@ -578,9 +553,6 @@ class AnalysisDialog(QDialog):
 
     def copy_prof_stats_to_clipboard(self):
         """ROI の profile の統計量を CSV で clipboard にコピーする。"Target: All plane" の場合は全画像を対象にする。"""
-        if not hasattr(self, "prof_stats_table"):
-            QMessageBox.information(self, "Copy", "No profile stats to copy.")
-            return
         imgs = self.viewer.images
         current_id = self.viewer.state.current_index
         x, y, w, h = self.viewer.state.roi.getRect()
@@ -588,7 +560,7 @@ class AnalysisDialog(QDialog):
         method = self.settings.profile_method
         text = "path,ch,x_sta,y_sta,width,hight,orientation,method,mean,std,median,min,max,fano\n"
 
-        targets = imgs if self.prof_get_all_plane_data.isChecked() else [imgs[current_id]]
+        targets = imgs if self.profile_tab.get_all_plane_data.isChecked() else [imgs[current_id]]
 
         for img in targets:
             path = img.get("path")
@@ -612,31 +584,31 @@ class AnalysisDialog(QDialog):
     def _on_prof_orientation_toggle(self):
         if self.settings.profile_orientation == "h":
             self.settings.profile_orientation = "v"
-            self.prof_orientation_btn.setText("Vertical")
+            self.profile_tab.orientation_btn.setText("Vertical")
         else:
             self.settings.profile_orientation = "h"
-            self.prof_orientation_btn.setText("Horizontal")
+            self.profile_tab.orientation_btn.setText("Horizontal")
         self.update_contents()
 
     def _on_prof_xmode_toggle(self):
         if self.settings.profile_x_mode == "relative":
             self.settings.profile_x_mode = "absolute"
-            self.prof_xmode_btn.setText("Absolute")
+            self.profile_tab.xmode_btn.setText("Absolute")
         else:
             self.settings.profile_x_mode = "relative"
-            self.prof_xmode_btn.setText("Relative")
+            self.profile_tab.xmode_btn.setText("Relative")
         self.update_contents()
 
     def _on_prof_compute_method_combo(self):
-        self.settings.profile_method = self.prof_compute_method_combo.currentText()
+        self.settings.profile_method = self.profile_tab.compute_method_combo.currentText()
         self.update_contents()
 
     def _on_hist_chart_kind_combo(self):
-        self.settings.hist_chart_kind = self.hist_chart_kind_combo.currentText()
+        self.settings.hist_chart_kind = self.hist_tab.chart_kind_combo.currentText()
         if self.settings.hist_chart_kind == "Bar":
-            self.hist_bar_alpha_spin_box.setEnabled(True)
+            self.hist_tab.bar_alpha_spin_box.setEnabled(True)
         else:
-            self.hist_bar_alpha_spin_box.setEnabled(False)
+            self.hist_tab.bar_alpha_spin_box.setEnabled(False)
         self.update_contents()
 
     def _on_external_log_toggled(self, checked: bool):
@@ -660,10 +632,13 @@ class AnalysisDialog(QDialog):
     def _apply_plot_settings(self):
         try:
             pg_apply_plot_settings(
-                self.hist_widget, "hist", self.settings.plot_settings, getattr(self, "viewbox_full_hist", None)
+                self.hist_tab.hist_widget, "hist", self.settings.plot_settings, getattr(self, "viewbox_full_hist", None)
             )
             pg_apply_plot_settings(
-                self.prof_widget, "prof", self.settings.plot_settings, getattr(self, "viewbox_full_prof", None)
+                self.profile_tab.prof_widget,
+                "prof",
+                self.settings.plot_settings,
+                getattr(self, "viewbox_full_prof", None),
             )
         except Exception:
             pass

@@ -29,13 +29,7 @@ class RoiManagerMixin:
 
     def _update_selection_rect_in_widget_coords(self, img_rect: QRect):
         """画像座標の矩形を widget 座標に変換して roi_rect に設定する。"""
-        left = self._image_to_widget_x(img_rect.left())
-        top = self._image_to_widget_y(img_rect.top())
-        right_ex = self._image_to_widget_x(img_rect.left() + img_rect.width())
-        bottom_ex = self._image_to_widget_y(img_rect.top() + img_rect.height())
-        w = max(1, right_ex - left)
-        h = max(1, bottom_ex - top)
-        self.roi_rect = QRect(left, top, w, h)
+        self.roi_rect = self._image_rect_to_widget(img_rect)
 
     def _handle_resize_operation(self, cur_img):
         """画像座標のマウス位置 cur_img に合わせて ROI をリサイズする。"""

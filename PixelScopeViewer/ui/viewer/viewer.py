@@ -597,16 +597,6 @@ class ImageViewer(QMainWindow):
                 initial_mode_2ch=self.channel_display.mode_2ch,
             )
 
-        try:
-            img = self.images[self.state.current_index]
-            arr_for_analysis = img.get("base_array", img.get("array"))
-            img_path = img.get("path", None)
-            if self._analysis_dialog:
-                with contextlib.suppress(Exception):
-                    self._analysis_dialog.set_image_and_rect(arr_for_analysis, self.state.roi, img_path)
-        except Exception:
-            pass
-
         if self.state.roi:
             s = self.state.scale
             rect = QRect(

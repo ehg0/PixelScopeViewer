@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QComboBox,
     QSpinBox,
+    QDoubleSpinBox,
     QPushButton,
     QMessageBox,
 )
@@ -52,7 +53,7 @@ class DiffDialog(QDialog):
 
         h3 = QHBoxLayout()
         h3.addWidget(QLabel("オフセット:"))
-        self.offset_spin = QSpinBox()
+        self.offset_spin = QDoubleSpinBox()
         self.offset_spin.setRange(0, 65535)
         self.offset_spin.setValue(default_offset)
         h3.addWidget(self.offset_spin)
@@ -80,10 +81,10 @@ class DiffDialog(QDialog):
         self.accept()
 
     def get_result(self):
-        """選択結果を返します。
+        """get resulut of selections.
 
-        戻り値:
-            tuple: (image_a_index, image_b_index, offset) - 未選択時は各要素が None になります。
+        Returns:
+            tuple: (image_a_index, image_b_index, offset) or None
         """
         return (
             getattr(self, "selected_a", None),

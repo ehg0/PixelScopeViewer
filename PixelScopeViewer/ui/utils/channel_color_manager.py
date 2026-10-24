@@ -6,12 +6,12 @@ for color decisions to avoid duplication across viewer and dialogs.
 """
 
 from __future__ import annotations
+
 from dataclasses import dataclass, field
-from typing import Dict, List
+
 from PySide6.QtGui import QColor
 
 from .color_utils import get_default_channel_colors
-
 
 MODE_1CH_GRAYSCALE = "grayscale"
 MODE_1CH_JET = "jet"
@@ -29,12 +29,12 @@ class ChannelColorManager:
     - Modes: 1ch (grayscale/jet), 2ch (composite/flow-hsv)
     """
 
-    colors_by_n: Dict[int, List[QColor]] = field(default_factory=dict)
-    checks_by_n: Dict[int, List[bool]] = field(default_factory=dict)
+    colors_by_n: dict[int, list[QColor]] = field(default_factory=dict)
+    checks_by_n: dict[int, list[bool]] = field(default_factory=dict)
     mode_1ch: str = MODE_1CH_GRAYSCALE
     mode_2ch: str = MODE_2CH_FLOW_HSV  # Default: flow-hsv for 2ch
 
-    def get_colors(self, n_channels: int) -> List[QColor]:
+    def get_colors(self, n_channels: int) -> list[QColor]:
         """Return stored colors for this channel count, falling back to defaults.
         Ensures the length is exactly n_channels.
         """
@@ -53,7 +53,7 @@ class ChannelColorManager:
                 self.colors_by_n[n_channels] = current[:n_channels]
         return self.colors_by_n[n_channels]
 
-    def set_colors(self, n_channels: int, colors: List[QColor]) -> None:
+    def set_colors(self, n_channels: int, colors: list[QColor]) -> None:
         """Set (override) the colors for a specific channel count.
         The list will be truncated/extended using defaults to match n.
         """
@@ -63,7 +63,7 @@ class ChannelColorManager:
         fixed = [(colors[i] if i < len(colors) else defaults[i]) for i in range(n_channels)]
         self.colors_by_n[n_channels] = fixed
 
-    def resolve_with_existing(self, n_channels: int, existing: List[QColor] | None) -> List[QColor]:
+    def resolve_with_existing(self, n_channels: int, existing: list[QColor] | None) -> list[QColor]:
         """Resolve colors by combining an existing list with defaults, store and return it.
         Useful when migrating existing viewer state into the manager.
         """
@@ -83,7 +83,7 @@ class ChannelColorManager:
             self.mode_2ch = mode
 
     # ---- Channel checks helpers ----
-    def get_checks(self, n_channels: int) -> List[bool]:
+    def get_checks(self, n_channels: int) -> list[bool]:
         """Return stored channel visibility checks for this channel count.
         Defaults to all True (visible).
         """
@@ -101,7 +101,7 @@ class ChannelColorManager:
                 self.checks_by_n[n_channels] = current[:n_channels]
         return self.checks_by_n[n_channels]
 
-    def set_checks(self, n_channels: int, checks: List[bool]) -> None:
+    def set_checks(self, n_channels: int, checks: list[bool]) -> None:
         """Set channel visibility checks for a specific channel count."""
         if n_channels <= 0:
             return

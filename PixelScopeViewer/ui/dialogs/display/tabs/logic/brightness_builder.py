@@ -2,15 +2,16 @@
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QVBoxLayout,
+    QCheckBox,
+    QComboBox,
+    QDoubleSpinBox,
     QHBoxLayout,
     QLabel,
-    QSlider,
-    QDoubleSpinBox,
     QPushButton,
-    QComboBox,
+    QSlider,
 )
 
+from .....utils.custom_qtwidgets import StepSlider
 from ..components import PowerOfTwoSpinBox
 
 
@@ -43,7 +44,7 @@ class BrightnessUIBuilder:
             on_dtype_changed_callback: Callback for dtype changes
         """
         dtype_layout = QHBoxLayout()
-        dtype_label = QLabel("データ型 (Data Type):")
+        dtype_label = QLabel("データ型 (Data Type)")
         dtype_label.setStyleSheet("font-weight: bold; font-size: 10pt;")
 
         dtype_combo = QComboBox()
@@ -60,6 +61,32 @@ class BrightnessUIBuilder:
 
         self.widgets["dtype_combo"] = dtype_combo
         return dtype_combo
+
+    def build_autoscale(self, layout, on_autoscale_cb_callback, set_as_default_callback):
+        # group = QGroupBox("Auto Scale (Range: min-max)")
+        # group.setStyleSheet("""QGroupBox {font-weight: bold;font-size: 10pt;}""")
+        # _layout = QHBoxLayout(group)
+        _layout = QHBoxLayout()
+
+        autoscale_cb = QCheckBox("Auto Scale (min-max)")
+        autoscale_cb.toggled.connect(on_autoscale_cb_callback)
+
+        use_roi_cb = QCheckBox("Use Current ROI")
+        use_roi_cb.toggled.connect(on_autoscale_cb_callback)
+
+        set_ad_default_bt = QPushButton("Set as Default")
+        set_ad_default_bt.clicked.connect(set_as_default_callback)
+
+        _layout.addWidget(autoscale_cb)
+        _layout.addWidget(use_roi_cb)
+        _layout.addWidget(set_ad_default_bt)
+        _layout.addStretch()
+
+        # layout.addWidget(group)
+        layout.addLayout(_layout)
+        layout.addSpacing(10)
+
+        return autoscale_cb, use_roi_cb, set_ad_default_bt
 
     def build_offset_controls(
         self,
@@ -81,37 +108,22 @@ class BrightnessUIBuilder:
             spinbox_callback: Callback for spinbox changes
 
         Returns:
-            tuple: (value_label, slider, spinbox)
+            tuple: (slider, spinbox)
         """
-        # Label with value
-        label_layout = QHBoxLayout()
-        title_label = QLabel("オフセット (Offset)")
-        title_label.setStyleSheet("font-weight: bold; font-size: 10pt;")
-
-        value_label = QLabel(f"{initial_value:.0f}" if not is_float else f"{initial_value:.5f}")
-        value_label.setStyleSheet("color: #555; font-size: 10pt;")
-
-        label_layout.addWidget(title_label)
-        label_layout.addWidget(value_label)
-        label_layout.addStretch()
-        layout.addLayout(label_layout)
-
-        # Controls
         control_layout = QHBoxLayout()
         control_layout.setSpacing(10)
 
         caption = QLabel("Offset")
-        caption.setStyleSheet("font-size: 9pt; color: #888; min-width: 50px;")
         caption.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         control_layout.addWidget(caption)
 
         slider = QSlider(Qt.Horizontal)
-        slider.setRange(int(offset_range[0] * 10), int(offset_range[1] * 10))
+        slider.setRange(int(offset_range[0]), int(offset_range[1]))
         slider.setTickPosition(QSlider.TicksBelow)
         slider.setTickInterval((offset_range[1] - offset_range[0]) // 4)
         slider.setStyleSheet(self.SLIDER_STYLESHEET)
         slider.blockSignals(True)
-        slider.setValue(int(initial_value * 10))
+        slider.setValue(int(initial_value))
         slider.blockSignals(False)
         slider.valueChanged.connect(slider_callback)
 
@@ -135,11 +147,10 @@ class BrightnessUIBuilder:
         control_layout.addWidget(spinbox, 1)
         layout.addLayout(control_layout)
 
-        self.widgets["offset_value_label"] = value_label
         self.widgets["offset_slider"] = slider
         self.widgets["offset_spinbox"] = spinbox
 
-        return value_label, slider, spinbox
+        return slider, spinbox
 
     def build_gain_controls(
         self,
@@ -165,39 +176,24 @@ class BrightnessUIBuilder:
             spinbox_callback: Callback for spinbox changes
 
         Returns:
-            tuple: (value_label, slider, spinbox)
+            tuple: (slider, spinbox)
         """
         import math
 
-        # Label with value
-        label_layout = QHBoxLayout()
-        title_label = QLabel("ゲイン (Gain)")
-        title_label.setStyleSheet("font-weight: bold; font-size: 10pt;")
-        title_label.setToolTip("ゲイン×0.5 : <,  ゲイン×2 : >")
-
-        value_label = QLabel(f"{initial_value:.2f}")
-        value_label.setStyleSheet("color: #555; font-size: 10pt;")
-
-        label_layout.addWidget(title_label)
-        label_layout.addWidget(value_label)
-        label_layout.addStretch()
-        layout.addLayout(label_layout)
-
-        # Controls
         control_layout = QHBoxLayout()
         caption = QLabel("Gain")
-        caption.setStyleSheet("font-size: 9pt; color: #888; min-width: 50px;")
         caption.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         control_layout.addWidget(caption)
 
         # Slider uses log2 scale
-        slider = QSlider(Qt.Horizontal)
+        slider = StepSlider(Qt.Horizontal)
         slider.setRange(log2_min, log2_max)
+        slider.setSingleStep(1)
         slider.setTickPosition(QSlider.TicksBelow)
         slider.setTickInterval(1)
         slider.setStyleSheet(self.SLIDER_STYLESHEET)
         slider.blockSignals(True)
-        initial_log2 = int(round(math.log2(initial_value)))
+        initial_log2 = round(math.log2(initial_value))
         initial_log2 = max(log2_min, min(log2_max, initial_log2))
         slider.setValue(initial_log2)
         slider.blockSignals(False)
@@ -221,51 +217,35 @@ class BrightnessUIBuilder:
         control_layout.addWidget(spinbox, 1)
         layout.addLayout(control_layout)
 
-        self.widgets["gain_value_label"] = value_label
         self.widgets["gain_slider"] = slider
         self.widgets["gain_spinbox"] = spinbox
 
-        return value_label, slider, spinbox
+        return slider, spinbox
 
-    def build_saturation_controls(
+    def build_upper_level_controls(
         self,
         layout,
         initial_value,
-        saturation_range,
+        upper_level_range,
         is_float,
         slider_callback,
         spinbox_callback,
     ):
-        """Build saturation label, slider and spinbox controls.
+        """Build upper_level label, slider and spinbox controls.
 
         Args:
             layout: QVBoxLayout to add to
-            initial_value: Initial saturation value
-            saturation_range: Tuple (min, max)
+            initial_value: Initial upper_level value
+            upper_level_range: Tuple (min, max)
             is_float: Whether values are float type
             slider_callback: Callback for slider changes
             spinbox_callback: Callback for spinbox changes
 
         Returns:
-            tuple: (value_label, slider, spinbox)
+            tuple: (slider, spinbox)
         """
-        # Label with value
-        label_layout = QHBoxLayout()
-        title_label = QLabel("飽和レベル (Saturation)")
-        title_label.setStyleSheet("font-weight: bold; font-size: 10pt;")
-
-        value_label = QLabel(f"{initial_value:.0f}" if not is_float else f"{initial_value:.5f}")
-        value_label.setStyleSheet("color: #555; font-size: 10pt;")
-
-        label_layout.addWidget(title_label)
-        label_layout.addWidget(value_label)
-        label_layout.addStretch()
-        layout.addLayout(label_layout)
-
-        # Controls
         control_layout = QHBoxLayout()
-        caption = QLabel("Saturation")
-        caption.setStyleSheet("font-size: 9pt; color: #888; min-width: 50px;")
+        caption = QLabel("Upper_level")
         caption.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         control_layout.addWidget(caption)
 
@@ -273,31 +253,24 @@ class BrightnessUIBuilder:
         slider.setTickPosition(QSlider.TicksBelow)
         slider.setStyleSheet(self.SLIDER_STYLESHEET)
 
-        if is_float:
-            slider.setRange(int(saturation_range[0] * 1000), int(saturation_range[1] * 1000))
-            slider.setTickInterval(int((saturation_range[1] - saturation_range[0]) * 1000 / 4))
-            slider.blockSignals(True)
-            slider.setValue(int(initial_value * 1000))
-            slider.blockSignals(False)
-        else:
-            slider.setRange(saturation_range[0], saturation_range[1])
-            slider.setTickInterval((saturation_range[1] - saturation_range[0]) // 4)
-            slider.blockSignals(True)
-            slider.setValue(int(initial_value))
-            slider.blockSignals(False)
+        slider.setRange(int(upper_level_range[0]), int(upper_level_range[1]))
+        slider.setTickInterval(int((upper_level_range[1] - upper_level_range[0]) // 4))
+        slider.blockSignals(True)
+        slider.setValue(int(initial_value))
+        slider.blockSignals(False)
 
         slider.valueChanged.connect(slider_callback)
 
         spinbox = QDoubleSpinBox()
         if is_float:
-            spinbox.setDecimals(5)
-            spinbox.setSingleStep(0.01)
+            spinbox.setDecimals(3)
+            spinbox.setSingleStep(10)
         else:
             spinbox.setDecimals(0)
             spinbox.setSingleStep(1)
         spinbox.setReadOnly(False)
         spinbox.setKeyboardTracking(True)
-        spinbox.setRange(saturation_range[0], saturation_range[1])
+        spinbox.setRange(upper_level_range[0], upper_level_range[1])
         spinbox.setStyleSheet(self.SPINBOX_STYLESHEET)
         spinbox.blockSignals(True)
         spinbox.setValue(initial_value)
@@ -308,11 +281,10 @@ class BrightnessUIBuilder:
         control_layout.addWidget(spinbox, 1)
         layout.addLayout(control_layout)
 
-        self.widgets["saturation_value_label"] = value_label
-        self.widgets["saturation_slider"] = slider
-        self.widgets["saturation_spinbox"] = spinbox
+        self.widgets["upper_level_slider"] = slider
+        self.widgets["upper_level_spinbox"] = spinbox
 
-        return value_label, slider, spinbox
+        return slider, spinbox
 
     def build_formula_and_reset(self, layout, reset_callback):
         """Build formula label and reset button.
@@ -324,7 +296,7 @@ class BrightnessUIBuilder:
         Returns:
             QPushButton: The reset button
         """
-        formula_label = QLabel("-> yout = gain × (yin - offset) / saturation × 255")
+        formula_label = QLabel("-> yout = gain × (yin - offset) / (upper_level - offset) × 255")
         formula_label.setStyleSheet("font-style: italic; font-size: 10pt")
         layout.addWidget(formula_label)
 
@@ -336,14 +308,3 @@ class BrightnessUIBuilder:
 
         self.widgets["reset_button"] = reset_button
         return reset_button
-
-    def get_widget(self, name):
-        """Get a widget by name.
-
-        Args:
-            name: Widget identifier
-
-        Returns:
-            The widget, or None if not found
-        """
-        return self.widgets.get(name)

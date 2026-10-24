@@ -46,7 +46,7 @@ class TileImageLabel(QLabel):
         # Brightness parameters
         self.gain = 1.0
         self.offset = 0.0
-        self.saturation = 1.0
+        self.upper_level = 1.0
 
         # ROI
         self.roi_rect = None  # [x, y, w, h] in image coordinates
@@ -59,19 +59,19 @@ class TileImageLabel(QLabel):
         self._resize_edge = None  # 'left', 'right', 'top', 'bottom', 'tl', 'tr', 'bl', 'br'
         self._edge_grab_distance = 8  # pixels from edge to trigger resize
 
-    def set_image(self, array: np.ndarray, gain: float, offset: float, saturation: float):
+    def set_image(self, array: np.ndarray, gain: float, offset: float, upper_level: float):
         """Set image data with brightness parameters.
 
         Args:
             array: Image array to display
             gain: Brightness gain
             offset: Brightness offset
-            saturation: Saturation value
+            upper_level: Upper_level value
         """
         self.array = array
         self.gain = gain
         self.offset = offset
-        self.saturation = saturation
+        self.upper_level = upper_level
 
         self._update_display()
 
@@ -82,14 +82,14 @@ class TileImageLabel(QLabel):
             return
 
         # Check if brightness parameters changed
-        current_brightness_params = (self.gain, self.offset, self.saturation)
+        current_brightness_params = (self.gain, self.offset, self.upper_level)
         brightness_changed = self._cached_brightness_params != current_brightness_params
 
         # Only recalculate brightness if parameters changed
         if brightness_changed or self._cached_brightness_qimage is None:
             # Apply brightness adjustment to full array
             adjusted = apply_brightness_adjustment(
-                self.array, gain=self.gain, offset=self.offset, saturation=self.saturation
+                self.array, gain=self.gain, offset=self.offset, upper_level=self.upper_level
             )
 
             # Convert to QImage (full resolution)
@@ -119,17 +119,17 @@ class TileImageLabel(QLabel):
         self.setFixedSize(pixmap.size())
         self.update()
 
-    def update_brightness(self, gain: float, offset: float, saturation: float):
+    def update_brightness(self, gain: float, offset: float, upper_level: float):
         """Update brightness parameters and refresh display.
 
         Args:
             gain: Brightness gain
             offset: Brightness offset
-            saturation: Saturation value
+            upper_level: Upper_level value
         """
         self.gain = gain
         self.offset = offset
-        self.saturation = saturation
+        self.upper_level = upper_level
         self._update_display()
 
     def set_roi(self, roi_rect: Optional[list]):

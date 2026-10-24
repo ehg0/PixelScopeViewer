@@ -3,9 +3,9 @@
 This module provides common color schemes for multi-channel image display.
 """
 
-from PySide6.QtGui import QColor
-import numpy as np
 import cv2
+import numpy as np
+from PySide6.QtGui import QColor
 
 
 def get_default_channel_colors(n_channels: int) -> list:
@@ -36,7 +36,7 @@ def get_default_channel_colors(n_channels: int) -> list:
     if n_channels == 1:
         return [QColor(255, 255, 255)]
 
-    # 2 channel : HSV色空間での色相を利用
+    # 2 channel : Use hue in HSV color space
     if n_channels == 2:
         # flow_x → red, flow_y → green
         return [
@@ -56,7 +56,7 @@ def get_default_channel_colors(n_channels: int) -> list:
     colors = []
     for i in range(n_channels):
         hue = int(360 * i / n_channels)  # Evenly distribute hues
-        color = QColor.fromHsv(hue, 200, 255)  # Moderate saturation for better visibility
+        color = QColor.fromHsv(hue, 200, 255)  # Moderate upper_level for better visibility
         colors.append(color)
     return colors
 
@@ -78,19 +78,19 @@ def flow_to_hsv(flow: np.ndarray) -> np.ndarray:
     fx, fy = flow[..., 0], flow[..., 1]
     magnitude, angle = cv2.cartToPolar(fx, fy, angleInDegrees=True)
 
-    # Hue: 方向 (0°〜360°)
-    # Value: 大きさの正規化（0〜1 → 0〜255）
-    # Hue: 方向 (0°〜360°)
-    # Saturation: 固定で最大値
-    # Value: 大きさ。NORM_MINMAXだとデータが小さい場合に暗くなるため、
-    #        理論上の最大magnitude(sqrt(2)*255)を基準にスケーリング
+    # Hue: Direction (0°~360°)
+    # Value: Normalization of magnitude (0~1 → 0~255)
+    # Hue: Direction (0°~360°)
+    # Upper_level: Fixed maximum value
+    # Value: Magnitude. Since NORM_MINMAX makes it dark when data is small,
+    #        scale based on theoretical maximum magnitude (sqrt(2)*255)
     hsv = np.zeros((*flow.shape[:2], 3), dtype=np.uint8)
     hsv[..., 0] = np.clip(angle / 2, 0, 180).astype(np.uint8)  # Hue: 0〜180
-    hsv[..., 1] = 255  # Saturation固定
+    hsv[..., 1] = 255  # Upper_level fixed
 
     if False:
-        # Valueはmagnitudeをロバスト正規化（上位パーセンタイルを最大基準に）
-        # → 小さい動きでも可視化されやすく、全体が暗くなりにくい
+        # Value: Robust normalization of magnitude (using upper percentile as max)
+        # → Makes small movements more visible and prevents overall darkness
         mag_max = float(np.percentile(magnitude, 99.0)) if magnitude.size > 0 else 0.0
         if mag_max <= 0.0:
             hsv[..., 2] = 0
@@ -98,9 +98,8 @@ def flow_to_hsv(flow: np.ndarray) -> np.ndarray:
             value = np.clip((magnitude / mag_max) * 255.0, 0, 255).astype(np.uint8)
             hsv[..., 2] = value
     if False:
-        # Value の動的スケーリング ---
-        # データの上位1%を基準に255スケーリング
-        # → Viewerで明暗が適度に分かれ、低速も見やすい
+        # Value : Dynamic scaling ---
+        # Scale 255 based on the top 1% data
         mag_max = float(np.percentile(magnitude, 99.0))
         if mag_max < 1e-6:
             hsv[..., 2] = 0
@@ -108,7 +107,7 @@ def flow_to_hsv(flow: np.ndarray) -> np.ndarray:
             hsv[..., 2] = np.clip((magnitude / mag_max) * 255.0, 0, 255).astype(np.uint8)
 
     if True:
-        # Value: 固定スケール（max_magnitude基準）
+        # Value: Fixed scale based on max_magnitude
         max_magnitude = 1.0
         hsv[..., 2] = np.clip((magnitude / max_magnitude) * 255.0, 0, 255).astype(np.uint8)
 
@@ -227,7 +226,7 @@ def colorbar_flow_hsv(width: int = 256, height: int = 256, with_labels: bool = T
     # Create circular mask (include pixels within radius)
     mask = distance <= radius
 
-    # Set HSV values: full saturation and value inside circle, black outside
+    # Set HSV values: full upper_level and value inside circle, black outside
     hsv[mask, 0] = hue[mask]
     hsv[mask, 1] = 255
     # hsv[mask, 2] = 255
@@ -246,8 +245,9 @@ def colorbar_flow_hsv(width: int = 256, height: int = 256, with_labels: bool = T
 
 if __name__ == "__main__":
     import sys
-    from PySide6.QtWidgets import QApplication, QLabel, QMainWindow, QVBoxLayout, QWidget
+
     from PySide6.QtGui import QImage, QPixmap
+    from PySide6.QtWidgets import QApplication, QLabel, QMainWindow, QVBoxLayout, QWidget
 
     class FlowViewer(QMainWindow):
         def __init__(self, flow: np.ndarray):
@@ -272,7 +272,7 @@ if __name__ == "__main__":
             self.setCentralWidget(central_widget)
 
     def generate_dummy_flow(w=512, h=512):
-        """テスト用: 円形のベクトルパターンを生成"""
+        """For test :  Genarate circle ventor"""
         y, x = np.mgrid[0:h, 0:w]
         cx, cy = w / 2, h / 2
         fx = (x - cx) / w * 2
@@ -280,7 +280,7 @@ if __name__ == "__main__":
         return np.stack((fx, fy), axis=-1).astype(np.float32)
 
     app = QApplication(sys.argv)
-    flow = generate_dummy_flow()  # ダミーのベクトル場
+    flow = generate_dummy_flow()  # Dummy vector field
 
     # Save flow to a .npy file
     np.save("sample\\flow.npy", flow)

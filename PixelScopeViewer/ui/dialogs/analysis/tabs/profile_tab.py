@@ -1,18 +1,19 @@
-from typing import Callable, Optional
+from collections.abc import Callable
 
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
-    QWidget,
-    QHBoxLayout,
-    QVBoxLayout,
-    QPushButton,
-    QTableWidget,
-    QHeaderView,
-    QGroupBox,
-    QScrollArea,
     QCheckBox,
+    QComboBox,
+    QGroupBox,
+    QHBoxLayout,
+    QHeaderView,
+    QPushButton,
+    QScrollArea,
+    QTableWidget,
+    QVBoxLayout,
+    QWidget,
 )
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QPixmap, QColor
 
 try:
     import pyqtgraph as pg
@@ -35,12 +36,15 @@ class ProfileTab(QWidget):
         Callback to connect PlotItem control signals for persistence; receives PlotItem.
     """
 
+    # ステータスバーに表示したい文字列を送るシグナルを定義
+    status_changed = Signal(str)
+
     def __init__(
         self,
         pyqtgraph_available: bool,
-        on_save_viewbox_state: Optional[Callable[[object], None]] = None,
-        on_connect_plot_controls: Optional[Callable[[object], None]] = None,
-        on_channel_changed: Optional[Callable[[list], None]] = None,
+        on_save_viewbox_state: Callable[[object], None] | None = None,
+        on_connect_plot_controls: Callable[[object], None] | None = None,
+        on_channel_changed: Callable[[list], None] | None = None,
         parent=None,
     ):
         super().__init__(parent)
@@ -87,9 +91,12 @@ class ProfileTab(QWidget):
                 pass
             left.addWidget(self.prof_widget, 3)
 
+            # マウスオーバーしたら、ステータスバーにマウス位置の値を表示
+            self.prof_widget.scene().sigMouseMoved.connect(self._on_mouse_over)
+
         # Stats table
         self.prof_stats_table = QTableWidget()
-        stats_headers = ["ch", "Mean", "Std", "Median", "Min", "Max"]
+        stats_headers = ["ch", "Mean", "Std", "Median", "Min", "Max", "Fano"]
         self.prof_stats_table.setColumnCount(len(stats_headers))
         self.prof_stats_table.setHorizontalHeaderLabels(stats_headers)
         self.prof_stats_table.setRowCount(0)
@@ -121,8 +128,7 @@ class ProfileTab(QWidget):
         right.setSpacing(8)
 
         channels_group = QGroupBox("Channels")
-        channels_group.setStyleSheet(
-            """
+        channels_group.setStyleSheet("""
             QGroupBox {
                 font-weight: bold;
                 border: 2px solid #cccccc;
@@ -135,8 +141,7 @@ class ProfileTab(QWidget):
                 left: 10px;
                 padding: 0 5px 0 5px;
             }
-            """
-        )
+            """)
         channels_layout = QVBoxLayout(channels_group)
         channels_layout.setContentsMargins(8, 5, 8, 8)
 
@@ -175,6 +180,10 @@ class ProfileTab(QWidget):
         self.xmode_btn = QPushButton("Relative")
         self.xmode_btn.setMinimumWidth(100)
         display_layout.addWidget(self.xmode_btn)
+        self.compute_method_combo = QComboBox()
+        self.compute_method_combo.addItems(["mean", "std", "max", "min", "p2p", "median"])
+        self.compute_method_combo.setMinimumWidth(100)
+        display_layout.addWidget(self.compute_method_combo)
         right.addWidget(display_group)
 
         export_group = QGroupBox("Export")
@@ -187,6 +196,9 @@ class ProfileTab(QWidget):
         self.copy_stats_btn = QPushButton("Copy stats")
         self.copy_stats_btn.setMinimumWidth(100)
         export_layout.addWidget(self.copy_stats_btn)
+        self.get_all_plane_data = QCheckBox("Target: All plane")
+        self.get_all_plane_data.setMinimumWidth(100)
+        export_layout.addWidget(self.get_all_plane_data)
         right.addWidget(export_group)
 
         right.addStretch(1)
@@ -198,7 +210,7 @@ class ProfileTab(QWidget):
             checks = [cb.isChecked() for cb in self.channel_checkboxes if cb.isVisible()]
             self.on_channel_changed(checks)
 
-    def update_channel_checkboxes(self, nch: int, checks: list[bool], channel_colors: list = None):
+    def update_channel_checkboxes(self, nch: int, checks: list[bool], channel_colors: list | None = None):
         """Update channel checkboxes visibility, state, and colors.
 
         Parameters
@@ -235,7 +247,15 @@ class ProfileTab(QWidget):
             else:
                 cb.setVisible(False)
 
-    def update(self, series: dict, stats_rows: list[dict], orientation: str, x_mode: str, channel_colors: list = None):
+    def update(
+        self,
+        series: dict,
+        stats_rows: list[dict],
+        orientation: str,
+        x_mode: str,
+        method: str,
+        channel_colors: list | None = None,
+    ):
         """Update profile plot and statistics table with pre-computed data.
 
         Parameters
@@ -245,9 +265,11 @@ class ProfileTab(QWidget):
         stats_rows: list[dict]
             List of dicts with keys: ch, mean, std, median, min, max, is_int
         orientation: str
-            'h', 'v', or 'd' for horizontal/vertical/diagonal
+            'h', or 'v' for horizontal/vertical
         x_mode: str
             'relative' or 'absolute' for x-axis mode
+        method: str
+            "mean", "std", "max", "min", "p2p", or "median" for profile computation
         channel_colors: list, optional
             List of QColor objects for channel colors from viewer
         """
@@ -278,6 +300,9 @@ class ProfileTab(QWidget):
         def _color_for_label(label: str) -> str:
             rgb = overlay_map.get(label)
             if rgb:
+                # 表示カラーがグレースケールの時はグラフ線色を黒にする
+                if rgb[0] == rgb[1] == rgb[2]:
+                    return f"rgb(0, 0, 0)"
                 return f"rgb({rgb[0]},{rgb[1]},{rgb[2]})"
             # Intensity always black
             if label == "I":
@@ -293,6 +318,9 @@ class ProfileTab(QWidget):
                         break
             if ch_index is not None and channel_colors and 0 <= ch_index < len(channel_colors):
                 c = channel_colors[ch_index]
+                # 表示カラーがグレースケールの時はグラフ線色を黒にする
+                if c.red() == c.green() == c.blue():
+                    return "#000000"
                 return c.name() if hasattr(c, "name") else "#7f8c8d"
             fallback = ["#ff0000", "#00c800", "#0066ff", "#7f7f7f"]
             if ch_index is not None and ch_index < len(fallback):
@@ -306,29 +334,28 @@ class ProfileTab(QWidget):
         # Set title and labels
         orientation_label = {"h": "Horizontal", "v": "Vertical", "d": "Diagonal"}[orientation]
         mode_label = "Absolute" if x_mode == "absolute" else "Relative"
-        self.prof_widget.setTitle(f"Profile ({orientation_label}, {mode_label})", color="#2c3e50", size="12pt")
+        method_label = {
+            "mean": "Mean",
+            "std": "Std",
+            "max": "Max",
+            "min": "Min",
+            "p2p": "Peak-to-Peak",
+            "median": "Median",
+        }[method]
+        self.prof_widget.setTitle(
+            f"Profile - {orientation_label} / {mode_label} / {method_label}", color="#2c3e50", size="12pt"
+        )
         self.prof_widget.setLabel("bottom", "Position" if x_mode == "relative" else "Absolute Position")
         self.prof_widget.setLabel("left", "Intensity")
 
         # Update statistics table
         self._populate_stats_table(stats_rows)
 
-        # Update button texts
-        if orientation == "h":
-            self.orientation_btn.setText("Horizontal")
-        else:
-            self.orientation_btn.setText("Vertical")
-
-        if x_mode == "relative":
-            self.xmode_btn.setText("Relative")
-        else:
-            self.xmode_btn.setText("Absolute")
-
     def _populate_stats_table(self, rows: list[dict]):
         """Populate stats table from computed statistics."""
-        from PySide6.QtWidgets import QTableWidgetItem
-        from PySide6.QtGui import QPixmap, QColor
         from PySide6.QtCore import Qt
+        from PySide6.QtGui import QColor, QPixmap
+        from PySide6.QtWidgets import QTableWidgetItem
 
         dlg = self
         color_map = {}
@@ -399,18 +426,46 @@ class ProfileTab(QWidget):
             mi.setTextAlignment(Qt.AlignCenter)
             si = QTableWidgetItem(f"{r['std']:.4f}")
             si.setTextAlignment(Qt.AlignCenter)
-            mdi = QTableWidgetItem(f"{int(r['median'])}" if r["is_int"] else f"{r['median']:.4f}")
+            mdi = QTableWidgetItem(f"{r['median']:.4f}")
             mdi.setTextAlignment(Qt.AlignCenter)
-            mini = QTableWidgetItem(f"{int(r['min'])}" if r["is_int"] else f"{r['min']:.4f}")
+            mini = QTableWidgetItem(f"{r['min']:.4f}")
             mini.setTextAlignment(Qt.AlignCenter)
-            maxi = QTableWidgetItem(f"{int(r['max'])}" if r["is_int"] else f"{r['max']:.4f}")
+            maxi = QTableWidgetItem(f"{r['max']:.4f}")
             maxi.setTextAlignment(Qt.AlignCenter)
+            fanoi = QTableWidgetItem(f"{r['fano']:.4f}")
+            fanoi.setTextAlignment(Qt.AlignCenter)
             self.prof_stats_table.setItem(row_idx, 1, mi)
             self.prof_stats_table.setItem(row_idx, 2, si)
             self.prof_stats_table.setItem(row_idx, 3, mdi)
             self.prof_stats_table.setItem(row_idx, 4, mini)
             self.prof_stats_table.setItem(row_idx, 5, maxi)
+            self.prof_stats_table.setItem(row_idx, 6, fanoi)
             for col in range(1, 6):
                 item = self.prof_stats_table.item(row_idx, col)
                 if item is not None:
                     item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+
+    def _on_mouse_over(self, pos):
+        plot_item = self.prof_widget.getPlotItem()
+
+        if plot_item.sceneBoundingRect().contains(pos):
+            mouse_point = plot_item.vb.mapSceneToView(pos)
+            x_val, y_val = mouse_point.x(), mouse_point.y()
+
+            # Logモード判定&逆変換
+            vb_state = plot_item.vb.getState()
+            is_log_x = vb_state.get("logMode", [False, False])[0]
+            is_log_y = vb_state.get("logMode", [False, False])[1]
+
+            # X軸の逆変換
+            if is_log_x:
+                x_val = 10**x_val
+
+            # Y軸の逆変換
+            if is_log_y:
+                y_val = 10**y_val
+            self.status_changed.emit(f"X: {x_val:.2f}, Y: {y_val:.2f}")
+
+        else:
+            # 範囲外の場合は空文字を送信
+            self.status_changed.emit("")

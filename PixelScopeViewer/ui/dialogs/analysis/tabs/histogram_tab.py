@@ -1,25 +1,26 @@
-from typing import Callable, Optional
+from collections.abc import Callable
 
+import numpy as np
+import pyqtgraph as pg
+from pyqtgraph import PlotWidget
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QColor, QPixmap
 from PySide6.QtWidgets import (
-    QWidget,
-    QHBoxLayout,
-    QVBoxLayout,
-    QPushButton,
-    QTableWidget,
-    QHeaderView,
-    QGroupBox,
-    QScrollArea,
     QCheckBox,
+    QComboBox,
+    QDoubleSpinBox,
+    QGroupBox,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QPushButton,
+    QScrollArea,
+    QSpinBox,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
 )
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QPixmap, QColor
-
-try:
-    import pyqtgraph as pg
-    from pyqtgraph import PlotWidget
-except Exception:  # pragma: no cover - optional dependency
-    pg = None
-    PlotWidget = None
 
 
 class HistogramTab(QWidget):
@@ -35,18 +36,25 @@ class HistogramTab(QWidget):
         Callback to connect PlotItem control signals for persistence; receives PlotItem.
     """
 
+    # ステータスバーに表示したい文字列を送るシグナルを定義
+    status_changed = Signal(str)
+
     def __init__(
         self,
         pyqtgraph_available: bool,
-        on_save_viewbox_state: Optional[Callable[[object], None]] = None,
-        on_connect_plot_controls: Optional[Callable[[object], None]] = None,
-        on_channel_changed: Optional[Callable[[list], None]] = None,
+        on_save_viewbox_state: Callable[[object], None] | None = None,
+        on_connect_plot_controls: Callable[[object], None] | None = None,
+        on_channel_changed: Callable[[list], None] | None = None,
+        on_spinbox_changed: Callable[[list], None] | None = None,
+        on_spinbox_bar_alpha_changed: Callable[[list], None] | None = None,
         parent=None,
     ):
         super().__init__(parent)
 
         self.hist_widget = None
         self.on_channel_changed = on_channel_changed
+        self.on_spinbox_changed = on_spinbox_changed
+        self.on_spinbox_bar_alpha_changed = on_spinbox_bar_alpha_changed
         self.channel_checkboxes: list[QCheckBox] = []
         self.MAX_CHANNELS = 8
 
@@ -85,9 +93,12 @@ class HistogramTab(QWidget):
                 pass
             left.addWidget(self.hist_widget, 3)
 
+            # マウスオーバーしたら、ステータスバーにマウス位置の値を表示
+            self.hist_widget.scene().sigMouseMoved.connect(self._on_mouse_over)
+
         # Stats table
         self.stats_table = QTableWidget()
-        stats_headers = ["ch", "Mean", "Std", "Median", "Min", "Max"]
+        stats_headers = ["ch", "Mean", "Std", "Median", "Min", "Max", "Fano"]
         self.stats_table.setColumnCount(len(stats_headers))
         self.stats_table.setHorizontalHeaderLabels(stats_headers)
         self.stats_table.setRowCount(0)
@@ -119,8 +130,7 @@ class HistogramTab(QWidget):
         right.setSpacing(8)
 
         channels_group = QGroupBox("Channels")
-        channels_group.setStyleSheet(
-            """
+        channels_group.setStyleSheet("""
             QGroupBox {
                 font-weight: bold;
                 border: 2px solid #cccccc;
@@ -133,8 +143,7 @@ class HistogramTab(QWidget):
                 left: 10px;
                 padding: 0 5px 0 5px;
             }
-            """
-        )
+            """)
         channels_layout = QVBoxLayout(channels_group)
         channels_layout.setContentsMargins(8, 5, 8, 8)
 
@@ -163,6 +172,44 @@ class HistogramTab(QWidget):
         channels_layout.addWidget(scroll)
         right.addWidget(channels_group)
 
+        config_group = QGroupBox("Histgram config")
+        config_group.setStyleSheet(channels_group.styleSheet())
+        config_layout = QVBoxLayout(config_group)
+        config_layout.setContentsMargins(8, 5, 8, 8)
+        self.config_mode_btn = QPushButton("Histogram")
+        self.config_mode_btn.setMaximumWidth(100)
+        config_layout.addWidget(self.config_mode_btn)
+        self.chart_kind_combo = QComboBox()
+        self.chart_kind_combo.addItems(["Line", "Bar"])
+        self.chart_kind_combo.setMinimumWidth(100)
+        config_layout.addWidget(self.chart_kind_combo)
+        label = QLabel("color alpha:")
+        config_layout.addWidget(label)
+        self.bar_alpha_spin_box_init = 120
+        self.bar_alpha_spin_box = QSpinBox()
+        self.bar_alpha_spin_box.setRange(0, 255)  # 入力できる最小値・最大値
+        self.bar_alpha_spin_box.setSingleStep(10)  # 矢印を押したときの増減幅
+        self.bar_alpha_spin_box.setValue(self.bar_alpha_spin_box_init)  # 初期値
+        self.bar_alpha_spin_box.valueChanged.connect(self._on_spinbox_bar_alpha_changed)
+        config_layout.addWidget(self.bar_alpha_spin_box)
+        bis_step_layout = QHBoxLayout()
+        label = QLabel("bin step:")
+        self.config_reset_btn = QPushButton("Reset")
+        self.config_reset_btn.setMaximumWidth(60)
+        bis_step_layout.addWidget(label)
+        bis_step_layout.addWidget(self.config_reset_btn)
+        config_layout.addLayout(bis_step_layout)
+        self.bin_step_spin_box_init = 1.0
+        self.bin_step_spin_box = QDoubleSpinBox()
+        self.bin_step_spin_box.setRange(0.001, 100.0)  # 入力できる最小値・最大値
+        self.bin_step_spin_box.setSingleStep(0.1)  # 矢印を押したときの増減幅
+        self.bin_step_spin_box.setDecimals(3)  # 小数点以下の桁数
+        self.bin_step_spin_box.setValue(self.bin_step_spin_box_init)  # 初期値
+        self.bin_step_spin_box.valueChanged.connect(self._on_spinbox_changed)
+        config_layout.addWidget(self.bin_step_spin_box)
+        self.setLayout(config_layout)
+        right.addWidget(config_group)
+
         export_group = QGroupBox("Export")
         export_group.setStyleSheet(channels_group.styleSheet())
         export_layout = QVBoxLayout(export_group)
@@ -173,6 +220,9 @@ class HistogramTab(QWidget):
         self.copy_stats_btn = QPushButton("Copy stats")
         self.copy_stats_btn.setMinimumWidth(100)
         export_layout.addWidget(self.copy_stats_btn)
+        self.get_all_plane_data = QCheckBox("Target: All plane")
+        self.get_all_plane_data.setMinimumWidth(100)
+        export_layout.addWidget(self.get_all_plane_data)
         right.addWidget(export_group)
 
         right.addStretch(1)
@@ -184,7 +234,13 @@ class HistogramTab(QWidget):
             checks = [cb.isChecked() for cb in self.channel_checkboxes if cb.isVisible()]
             self.on_channel_changed(checks)
 
-    def update_channel_checkboxes(self, nch: int, checks: list[bool], channel_colors: list = None):
+    def _on_spinbox_changed(self, value):
+        self.on_spinbox_changed(value)
+
+    def _on_spinbox_bar_alpha_changed(self, value):
+        self.on_spinbox_bar_alpha_changed(value)
+
+    def update_channel_checkboxes(self, nch: int, checks: list[bool], channel_colors: list | None = None):
         """Update channel checkboxes visibility, state, and colors.
 
         Parameters
@@ -225,10 +281,11 @@ class HistogramTab(QWidget):
         self,
         series: dict,
         stats_rows: list[dict],
-        plot_settings: dict,
         apply_log: bool = False,
         is_integer_type: bool = False,
-        channel_colors: list = None,
+        channel_colors: list | None = None,
+        chart_kind: str = "Line",
+        bar_alpha: int = 120,
     ):
         """Update histogram plot and statistics table with pre-computed data.
 
@@ -238,8 +295,6 @@ class HistogramTab(QWidget):
             Mapping of label -> (xs, ys) for histogram data
         stats_rows: list[dict]
             List of dicts with keys: ch, mean, std, median, min, max, is_int
-        plot_settings: dict
-            Plot configuration (grid, log, etc.)
         apply_log: bool
             If True, apply log10(y+1) transform to histogram counts
         is_integer_type: bool
@@ -272,46 +327,68 @@ class HistogramTab(QWidget):
                 dlg = None
 
         # Helper to resolve color per label
-        def _color_for_label(label: str) -> str:
-            # Overlay mapping first (for tiling comparison)
+        def _color_for_label(label: str, alpha: int = 255) -> QColor:
+            # 1. Overlay mapping
             rgb = overlay_map.get(label)
             if rgb:
-                return f"rgb({rgb[0]},{rgb[1]},{rgb[2]})"
-            # Intensity always black
+                return QColor(rgb[0], rgb[1], rgb[2], alpha)
+
+            # 2. Intensity
             if label == "I":
-                return "#000000"
-            # Try to extract channel index from patterns
+                return QColor(0, 0, 0, alpha)
+
+            # 3. Channel index 抽出
             ch_index = None
             if label.startswith("C") and label[1:].isdigit():
                 ch_index = int(label[1:])
             else:
-                # Patterns: 'Tile N Ck' or 'T{N}_C{k}'
                 parts = label.replace("_", " ").split()
                 for p in parts:
                     if p.startswith("C") and p[1:].isdigit():
                         ch_index = int(p[1:])
                         break
+
+            # 4. Color 決定（文字列または QColor オブジェクト）
+            color_val = None
             if ch_index is not None and channel_colors and 0 <= ch_index < len(channel_colors):
-                c = channel_colors[ch_index]
-                return c.name() if hasattr(c, "name") else "#7f8c8d"
-            # Fallback palette for deterministic multi-channel
-            fallback = ["#ff0000", "#00c800", "#0066ff", "#7f7f7f"]
-            if ch_index is not None and ch_index < len(fallback):
-                return fallback[ch_index]
-            return "#7f8c8d"
+                color_val = channel_colors[ch_index]
+
+            if color_val is None:
+                fallback = ["#ff0000", "#00c800", "#0066ff", "#7f7f7f"]
+                if ch_index is not None and ch_index < len(fallback):
+                    color_val = fallback[ch_index]
+                else:
+                    color_val = "#7f8c8d"
+
+            # QColor に変換して alpha を設定
+            qcolor = QColor(color_val)
+            # 表示カラーがグレースケールの時はグラフ線色を黒にする
+            if qcolor.red() == qcolor.green() == qcolor.blue():
+                qcolor.setRgb(0, 0, 0)
+            qcolor.setAlpha(alpha)
+
+            return qcolor
 
         for _, (label, (xs, ys)) in enumerate(series.items()):
-            pen = pg.mkPen(color=_color_for_label(label), width=2) if pg else None
-            yplot = ys
+            yplot = np.array(ys, dtype=float)
             if apply_log:
-                import numpy as np
+                # 0のデータを0.1に置換（log10(0.1) = -1 として最下部に張り付く）
+                yplot[yplot == 0] = 0.1
+                self.hist_widget.setLimits(yMin=-1)
 
-                with np.errstate(divide="ignore"):
-                    yplot = np.log10(ys.astype(float) + 1.0)
-            self.hist_widget.plot(xs, yplot, pen=pen, name=label if label != "I" else "Intensity")
+            if chart_kind == "Line":
+                pen = pg.mkPen(color=_color_for_label(label, alpha=255), width=2)
+                self.hist_widget.plot(xs, yplot, pen=pen, name=label if label != "I" else "Intensity")
+
+            if chart_kind == "Bar":
+                pen = pg.mkPen(color=_color_for_label(label, alpha=bar_alpha), width=2)
+                item = pg.BarGraphItem(
+                    x=xs, height=yplot, width=self.bin_step_spin_box.value(), brush=pen.color(), pen=None, name=label
+                )
+                self.hist_widget.addItem(item)
 
         # Set title
-        self.hist_widget.setTitle("Intensity Histogram", color="#2c3e50", size="12pt")
+        self.hist_widget.setTitle(f"Intensity {self.config_mode_btn.text()}", color="#2c3e50", size="12pt")
 
         # Configure x-axis for integer types
         if is_integer_type and pg is not None:
@@ -319,37 +396,6 @@ class HistogramTab(QWidget):
                 axis = self.hist_widget.getAxis("bottom")
                 # Force integer ticks for integer data types
                 axis.setStyle(tickTextOffset=10)
-                # Use a custom tick spacing that ensures integer values
-                import numpy as np
-
-                if series:
-                    first_key = next(iter(series))
-                    xs_sample = series[first_key][0]
-                    x_min, x_max = xs_sample.min(), xs_sample.max()
-                    x_range = x_max - x_min
-                    # Choose appropriate tick spacing based on range
-                    if x_range <= 16:
-                        tick_spacing = 1
-                    elif x_range <= 64:
-                        tick_spacing = 4
-                    elif x_range <= 256:
-                        tick_spacing = 16
-                    elif x_range <= 1024:
-                        tick_spacing = 64
-                    else:
-                        tick_spacing = 256
-
-                    # Generate integer tick positions
-                    tick_start = int(np.ceil(x_min / tick_spacing)) * tick_spacing
-                    tick_positions = []
-                    current_tick = tick_start
-                    while current_tick <= x_max:
-                        tick_positions.append(current_tick)
-                        current_tick += tick_spacing
-
-                    if tick_positions:
-                        ticks = [[(pos, str(int(pos))) for pos in tick_positions]]
-                        axis.setTicks(ticks)
             except Exception:
                 pass  # If axis configuration fails, just use default
 
@@ -358,10 +404,6 @@ class HistogramTab(QWidget):
 
     def _populate_stats_table(self, rows: list[dict]):
         """Populate stats table from computed statistics."""
-        from PySide6.QtWidgets import QTableWidgetItem
-        from PySide6.QtGui import QPixmap, QColor
-        from PySide6.QtCore import Qt
-
         # Locate parent dialog (has overlay_color_map or channel_color_map) safely
         dlg = self
         color_map = {}
@@ -447,12 +489,40 @@ class HistogramTab(QWidget):
             mini.setTextAlignment(Qt.AlignCenter)
             maxi = QTableWidgetItem(f"{int(r['max'])}" if r["is_int"] else f"{r['max']:.4f}")
             maxi.setTextAlignment(Qt.AlignCenter)
+            fanoi = QTableWidgetItem(f"{int(r['fano'])}" if r["is_int"] else f"{r['fano']:.4f}")
+            fanoi.setTextAlignment(Qt.AlignCenter)
             self.stats_table.setItem(row_idx, 1, mi)
             self.stats_table.setItem(row_idx, 2, si)
             self.stats_table.setItem(row_idx, 3, mdi)
             self.stats_table.setItem(row_idx, 4, mini)
             self.stats_table.setItem(row_idx, 5, maxi)
+            self.stats_table.setItem(row_idx, 6, fanoi)
             for col in range(1, 6):
                 item = self.stats_table.item(row_idx, col)
                 if item is not None:
                     item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+
+    def _on_mouse_over(self, pos):
+        plot_item = self.hist_widget.getPlotItem()
+
+        if plot_item.sceneBoundingRect().contains(pos):
+            mouse_point = plot_item.vb.mapSceneToView(pos)
+            x_val, y_val = mouse_point.x(), mouse_point.y()
+
+            # Logモード判定&逆変換
+            vb_state = plot_item.vb.getState()
+            is_log_x = vb_state.get("logMode", [False, False])[0]
+            is_log_y = vb_state.get("logMode", [False, False])[1]
+
+            # X軸の逆変換
+            if is_log_x:
+                x_val = 10**x_val
+
+            # Y軸の逆変換
+            if is_log_y:
+                y_val = 10**y_val
+            self.status_changed.emit(f"X: {x_val:.2f}, Y: {y_val:.2f}")
+
+        else:
+            # 範囲外の場合は空文字を送信
+            self.status_changed.emit("")

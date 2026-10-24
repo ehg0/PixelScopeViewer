@@ -1,36 +1,34 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, List
 
-from PySide6.QtCore import Qt, QModelIndex, QEvent
-from PySide6.QtGui import QBrush, QColor
+from PySide6.QtCore import QEvent, QModelIndex, Qt
 from PySide6.QtWidgets import (
-    QDialog,
-    QVBoxLayout,
-    QHBoxLayout,
-    QTableView,
     QAbstractItemView,
-    QPushButton,
-    QLineEdit,
-    QComboBox,
-    QFileDialog,
-    QMessageBox,
-    QTabWidget,
-    QWidget,
     QCheckBox,
-    QMenuBar,
+    QComboBox,
+    QDialog,
+    QFileDialog,
+    QHBoxLayout,
+    QLineEdit,
     QMenu,
+    QMenuBar,
+    QMessageBox,
+    QPushButton,
     QScrollArea,
+    QTableView,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
 )
 
 from ...utils.features_manager import FeaturesManager
 from .widgets import (
-    PlainTextDelegate,
-    FeaturesTableModel,
-    SimpleDictTableModel,
     AnnotationsTableModel,
+    FeaturesTableModel,
     LoadedOnlyProxyModel,
+    PlainTextDelegate,
+    SimpleDictTableModel,
 )
 
 
@@ -289,7 +287,7 @@ class FeaturesDialog(QDialog):
         if not available:
             QMessageBox.information(self, "列表示", "表示切替可能な列がありません。")
             return
-        from PySide6.QtWidgets import QDialog, QVBoxLayout, QCheckBox, QDialogButtonBox, QPushButton
+        from PySide6.QtWidgets import QCheckBox, QDialog, QDialogButtonBox, QPushButton, QVBoxLayout
 
         dlg = QDialog(self)
         dlg.setWindowTitle("列表示設定")
@@ -342,7 +340,7 @@ class FeaturesDialog(QDialog):
         btns.accepted.connect(on_ok)
         btns.rejected.connect(dlg.reject)
 
-        # 中央配置のために水平レイアウトで左右にストレッチを入れる
+        # Add strectch for central alignment
         h_btns = QHBoxLayout()
         h_btns.addStretch(1)
         h_btns.addWidget(btns)
@@ -442,7 +440,7 @@ class FeaturesDialog(QDialog):
         i = self.tabs.currentIndex()
         return [self.proxy_images, self.model_categories.proxy, self.model_annotations.proxy][i]
 
-    def _current_columns(self) -> List[str]:
+    def _current_columns(self) -> list[str]:
         i = self.tabs.currentIndex()
         if i == 0:
             return self.manager.get_columns()
@@ -485,8 +483,6 @@ class FeaturesDialog(QDialog):
             if self.isMinimized():
                 # Save current position before minimize
                 FeaturesDialog._position_before_minimize = self.pos()
-            elif event.oldState() & Qt.WindowMinimized:
-                # Restore position after showNormal()
-                if FeaturesDialog._position_before_minimize is not None:
-                    self.move(FeaturesDialog._position_before_minimize)
+            elif event.oldState() & Qt.WindowMinimized & FeaturesDialog._position_before_minimize is not None:
+                self.move(FeaturesDialog._position_before_minimize)
         super().changeEvent(event)

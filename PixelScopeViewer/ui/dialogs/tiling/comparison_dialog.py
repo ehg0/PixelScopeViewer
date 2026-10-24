@@ -6,15 +6,33 @@ This module provides a dialog for comparing all tiles side-by-side with:
 - Metadata comparison table
 """
 
-from typing import List, Dict, Optional, Tuple
+from pathlib import Path
+
 import numpy as np
+from PySide6.QtGui import QBrush, QColor, QPixmap
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QPushButton,
+    QScrollArea,
+    QTableWidgetItem,
+    QWidget,
+)
 
-from PySide6.QtWidgets import QDialog, QVBoxLayout, QTabWidget, QMessageBox
-from PySide6.QtCore import QRect
-
-from ..analysis.dialog import AnalysisDialog
 from PixelScopeViewer.core.image_io import get_image_metadata
-from ...utils import get_default_channel_colors
+
+from ..analysis.core import determine_hist_bins
+from ..analysis.core.compute import ecdf_series, get_profile_offset, histogram_series, histogram_stats, profile_series
+from ..analysis.dialog import AnalysisDialog
+
+try:
+    import pyqtgraph as pg
+
+    PYQTGRAPH_AVAILABLE = True
+except ImportError:
+    PYQTGRAPH_AVAILABLE = False
 
 
 class TilingComparisonDialog(AnalysisDialog):
@@ -28,7 +46,7 @@ class TilingComparisonDialog(AnalysisDialog):
         tiles_data: List of dicts with keys: 'array', 'rect', 'path', 'index', 'color'
     """
 
-    def __init__(self, parent=None, tiles_data: Optional[List[Dict]] = None):
+    def __init__(self, parent=None, tiles_data: list[dict] | None = None):
         """Initialize comparison dialog.
 
         Args:
@@ -135,14 +153,10 @@ class TilingComparisonDialog(AnalysisDialog):
         return {lbl: self.overlay_color_map[lbl] for lbl in labels}
 
     def _make_pen(self, rgb: tuple[int, int, int], *, width: int = 2, alpha: int = 255):
-        try:
-            import pyqtgraph as pg
-        except ImportError:
-            return None
         r, g, b = rgb
         return pg.mkPen(color=(r, g, b, alpha), width=width)
 
-    def update_tiles_data(self, tiles_data: List[Dict]):
+    def update_tiles_data(self, tiles_data: list[dict]):
         """Update with new tiles data.
 
         Args:
@@ -176,7 +190,7 @@ class TilingComparisonDialog(AnalysisDialog):
 
             if path:
                 try:
-                    metadata = get_image_metadata(path) or {}
+                    metadata = get_image_metadata(path, arr) or {}
                 except Exception:
                     pass
 
@@ -201,16 +215,12 @@ class TilingComparisonDialog(AnalysisDialog):
         # Build comparison table
         self._build_comparison_table(all_metadata)
 
-    def _build_comparison_table(self, all_metadata: List[Dict]):
+    def _build_comparison_table(self, all_metadata: list[dict]):
         """Build comparison table from all tiles' metadata.
 
         Args:
             all_metadata: List of dicts with 'index', 'path', 'metadata'
         """
-        from PySide6.QtWidgets import QTableWidgetItem
-        from PySide6.QtGui import QBrush, QColor
-        from pathlib import Path
-
         # Collect all unique keys
         all_keys = set()
         for tile_meta in all_metadata:
@@ -242,6 +252,7 @@ class TilingComparisonDialog(AnalysisDialog):
 
         self.metadata_table.setHorizontalHeaderLabels(headers)
         self.metadata_table.setRowCount(num_rows)
+        self.metadata_table.setMouseTracking(True)
 
         # Highlight color for differences
         diff_color = QColor(255, 255, 200)  # Light yellow
@@ -259,7 +270,7 @@ class TilingComparisonDialog(AnalysisDialog):
                 values.append(str(value) if value else "")
 
             # Check if all values are the same
-            unique_values = set(v for v in values if v)  # Exclude empty strings
+            unique_values = {v for v in values if v}  # Exclude empty strings
             has_difference = len(unique_values) > 1
 
             # Highlight any difference (no exceptions)
@@ -273,12 +284,11 @@ class TilingComparisonDialog(AnalysisDialog):
                 if should_highlight and value:
                     value_item.setBackground(QBrush(diff_color))
 
+                value_item.setToolTip(str(value))
                 self.metadata_table.setItem(row_idx, col_idx + 1, value_item)
 
         # Adjust column widths
         header = self.metadata_table.horizontalHeader()
-        from PySide6.QtWidgets import QHeaderView
-
         header.setSectionResizeMode(0, QHeaderView.ResizeToContents)  # Property column
         for i in range(1, 1 + num_tiles):
             header.setSectionResizeMode(i, QHeaderView.Stretch)  # Tile columns
@@ -290,24 +300,6 @@ class TilingComparisonDialog(AnalysisDialog):
 
         if not self.tiles_data:
             return
-
-        # Import necessary functions for histogram and profile computation
-        from ..analysis.core.compute import (
-            determine_hist_bins,
-            histogram_series,
-            histogram_stats,
-            profile_series,
-            get_profile_offset,
-        )
-        import numpy as np
-
-        try:
-            import pyqtgraph as pg
-
-            PYQTGRAPH_AVAILABLE = True
-        except ImportError:
-            PYQTGRAPH_AVAILABLE = False
-
         if not PYQTGRAPH_AVAILABLE:
             return
 
@@ -372,28 +364,8 @@ class TilingComparisonDialog(AnalysisDialog):
 
     def _update_histogram_overlay(self, valid_tiles):
         """Update histogram tab with overlaid data from all tiles."""
-        from ..analysis.core.compute import determine_hist_bins, histogram_series, histogram_stats
-        import numpy as np
-
-        try:
-            import pyqtgraph as pg
-        except ImportError:
-            return
-
-        # Determine global histogram bin edges (to unify xs across tiles)
         if not valid_tiles:
             return
-        first_arr = valid_tiles[0]["array"]
-        is_float = np.issubdtype(first_arr.dtype, np.floating)
-        # Global min/max across all tiles
-        global_min = min(arr_tile["array"].min() for arr_tile in valid_tiles)
-        global_max = max(arr_tile["array"].max() for arr_tile in valid_tiles)
-        if is_float:
-            bin_count = 256
-        else:
-            bin_count = max(1, int(global_max - global_min) + 1)
-        # Construct common bin edges
-        common_edges = np.linspace(global_min, global_max, bin_count + 1)
 
         # Collect all histogram data with unified bins
         all_hist_series = {}  # tile_idx -> {label -> (xs, ys)}
@@ -404,7 +376,11 @@ class TilingComparisonDialog(AnalysisDialog):
             tile_idx = tile["index"]
             visibility = self.overlay_channel_visibility.get(tile_idx)
 
-            hist_series = histogram_series(arr, bins=common_edges)
+            if self.hist_config_mode == "Histogram":
+                bins = determine_hist_bins(arr, self.spinbox_value)
+                hist_series = histogram_series(arr, bins=bins)
+            elif self.hist_config_mode == "ECDF":
+                hist_series = ecdf_series(arr)
             stats = histogram_stats(arr, self.channel_checks)
 
             tile_hist_series = {}
@@ -420,9 +396,8 @@ class TilingComparisonDialog(AnalysisDialog):
                                 ch_visible = visibility[cindex]
                         except Exception:
                             ch_visible = True
-                    elif label == "I":
-                        if len(visibility) > 0:
-                            ch_visible = visibility[0]
+                    elif label == "I" and len(visibility) > 0:
+                        ch_visible = visibility[0]
                 if ch_visible:
                     new_label = f"Tile {tile_idx + 1} {channel_code}"
                     tile_hist_series[new_label] = (xs, ys)
@@ -448,10 +423,38 @@ class TilingComparisonDialog(AnalysisDialog):
                     all_stats.append(stat_copy)
 
         # Merge all series for plotting
+        all_xs = []
+        for tile_idx, series in all_hist_series.items():
+            for xs, _ in series.values():
+                xs = np.asarray(xs)
+                if len(xs) > 1:
+                    dx = xs[1] - xs[0]
+                else:
+                    dx = 1.0
+                # add ±1 step
+                xs_extended = np.concatenate([xs, xs - dx, xs + dx])
+                all_xs.append(xs_extended)
+        if len(all_xs) == 0:
+            x_common = np.array([])
+        else:
+            x_common = np.unique(np.concatenate(all_xs))
+
         merged_series = {}
         for tile_idx, series in all_hist_series.items():
             for label, data in series.items():
-                merged_series[label] = data
+                xs, ys = data
+                if self.hist_config_mode == "ECDF":
+                    # ECDFの場合: np.interp で歯抜け部分を前後の値（累計確率）で埋める
+                    if len(xs) > 0:
+                        ys_new = np.interp(x_common, xs, ys, left=0.0, right=1.0)
+                    else:
+                        ys_new = np.zeros_like(x_common, dtype=float)
+                else:
+                    ys_new = np.zeros_like(x_common, dtype=ys.dtype)
+                    indices = np.searchsorted(x_common, xs)
+                    valid = (indices >= 0) & (indices < len(x_common))
+                    ys_new[indices[valid]] = ys[valid]
+                merged_series[label] = (x_common, ys_new)
 
         # Assign colors from palette (stable)
         ordered_labels = list(merged_series.keys())
@@ -465,18 +468,30 @@ class TilingComparisonDialog(AnalysisDialog):
             self.hist_plot_items.clear()
             if merged_series:
                 for label, (xs, ys) in merged_series.items():
-                    rgb = palette_map.get(label, (127, 127, 127))
-                    yplot = ys
+                    yplot = np.array(ys, dtype=float)
                     if apply_log:
-                        with np.errstate(divide="ignore"):
-                            yplot = np.log10(ys.astype(float) + 1.0)
-                    pen = self._make_pen(rgb, width=2, alpha=255)
-                    item = self.hist_tab.hist_widget.plot(xs, yplot, pen=pen, name=label)
+                        # 0のデータを0.1に置換（log10(0.1) = -1 として最下部に張り付く）
+                        yplot[yplot == 0] = 0.1
+                        self.hist_tab.hist_widget.setLimits(yMin=-1)
+
+                    rgb = palette_map.get(label, (127, 127, 127))
+                    if self.hist_chart_kind == "Line":
+                        pen = self._make_pen(rgb, width=2, alpha=255)
+                        item = self.hist_tab.hist_widget.plot(xs, yplot, pen=pen, name=label)
+
+                    if self.hist_chart_kind == "Bar":
+                        pen = self._make_pen(rgb, width=2, alpha=self.spinbox_bar_alpha_value)
+                        item = pg.BarGraphItem(
+                            x=xs, height=yplot, width=self.spinbox_value, brush=pen.color(), pen=None, name=label
+                        )
+                        self.hist_tab.hist_widget.addItem(item)
                     self.hist_plot_items[label] = item
-                self.hist_tab.hist_widget.setTitle("Histogram Overlay (All Tiles)", color="#2c3e50", size="12pt")
+                self.hist_tab.hist_widget.setTitle(
+                    f"{self.hist_config_mode} Overlay (All Tiles)", color="#2c3e50", size="12pt"
+                )
             else:
                 self.hist_tab.hist_widget.setTitle(
-                    "Histogram Overlay (No channels visible)", color="#7f8c8d", size="11pt"
+                    f"{self.hist_config_mode} Overlay (No channels visible)", color="#7f8c8d", size="11pt"
                 )
 
         # Update stats table
@@ -487,14 +502,6 @@ class TilingComparisonDialog(AnalysisDialog):
 
     def _update_profile_overlay(self, valid_tiles):
         """Update profile tab with overlaid data from all tiles."""
-        from ..analysis.core.compute import profile_series, get_profile_offset
-        import numpy as np
-
-        try:
-            import pyqtgraph as pg
-        except ImportError:
-            return
-
         # Collect all profile data
         all_prof_series = {}  # tile_idx -> {label -> (xs, ys)}
         all_profile_stats = []  # stats rows
@@ -505,7 +512,7 @@ class TilingComparisonDialog(AnalysisDialog):
             roi_rect = tile.get("rect")
             visibility = self.overlay_channel_visibility.get(tile_idx)
 
-            pseries = profile_series(arr, orientation=self.profile_orientation)
+            pseries = profile_series(arr, orientation=self.profile_orientation, method=self.profile_compute_method)
 
             tile_prof_series = {}
             for label, prof in pseries.items():
@@ -524,9 +531,8 @@ class TilingComparisonDialog(AnalysisDialog):
                                 ch_visible = visibility[cindex]
                         except Exception:
                             ch_visible = True
-                    elif label == "I":
-                        if len(visibility) > 0:
-                            ch_visible = visibility[0]
+                    elif label == "I" and len(visibility) > 0:
+                        ch_visible = visibility[0]
 
                 if ch_visible:
                     # Keep original label ('I' or 'Ck')
@@ -536,12 +542,13 @@ class TilingComparisonDialog(AnalysisDialog):
                     is_int = np.issubdtype(prof.dtype, np.integer)
                     all_profile_stats.append(
                         {
-                            "ch": f"T{tile_idx + 1}_C{0 if label=='I' else int(label[1:])}",
+                            "ch": f"T{tile_idx + 1}_C{0 if label == 'I' else int(label[1:])}",
                             "mean": float(prof.mean()) if prof.size else 0.0,
                             "std": float(prof.std()) if prof.size else 0.0,
                             "median": float(np.median(prof)) if prof.size else 0.0,
                             "min": float(prof.min()) if prof.size else 0.0,
                             "max": float(prof.max()) if prof.size else 0.0,
+                            "fano": float(prof.std() ** 2 / prof.mean()) if prof.size else 0.0,
                             "is_int": bool(is_int),
                             "curve_label": new_label,
                         }
@@ -562,7 +569,16 @@ class TilingComparisonDialog(AnalysisDialog):
         if hasattr(self, "prof_widget") and self.prof_widget:
             self.prof_widget.clear()
             self.profile_plot_items.clear()
-            orientation_text = "Horizontal" if self.profile_orientation == "h" else "Vertical"
+            orientation_label = {"h": "Horizontal", "v": "Vertical"}[self.profile_orientation]
+            mode_label = "Absolute" if self.x_mode == "absolute" else "Relative"
+            method_label = {
+                "mean": "Mean",
+                "std": "Std",
+                "max": "Max",
+                "min": "Min",
+                "p2p": "Peak-to-Peak",
+                "median": "Median",
+            }[self.profile_compute_method]
             if merged_series:
                 for label, (xs, ys) in merged_series.items():
                     rgb = prof_palette_map.get(label, (127, 127, 127))
@@ -570,11 +586,15 @@ class TilingComparisonDialog(AnalysisDialog):
                     item = self.prof_widget.plot(xs, ys, pen=pen, name=label)
                     self.profile_plot_items[label] = item
                 self.prof_widget.setTitle(
-                    f"{orientation_text} Profile Overlay (All Tiles)", color="#2c3e50", size="12pt"
+                    f"Profile Overlay (All Tiles) - {orientation_label} / {mode_label} / {method_label}",
+                    color="#2c3e50",
+                    size="12pt",
                 )
             else:
                 self.prof_widget.setTitle(
-                    f"{orientation_text} Profile Overlay (No channels visible)", color="#7f8c8d", size="11pt"
+                    f"Profile Overlay (No channels visible)  - {orientation_label} / {mode_label} / {method_label}",
+                    color="#7f8c8d",
+                    size="11pt",
                 )
 
         # Update profile stats table
@@ -598,22 +618,10 @@ class TilingComparisonDialog(AnalysisDialog):
     def _setup_overlay_channel_checkboxes(self):
         """Replace channel checkboxes UI in tabs with overlay tile checkboxes.
 
-        Ensures the fixed button row (全選択/全解除) is placed above the
+        Ensures the fixed button row (Select All / Deselect All) is placed above the
         scroll area (non-scrollable), and the tile/channel checkboxes are
         placed inside the scroll area.
         """
-        from PySide6.QtWidgets import (
-            QVBoxLayout,
-            QHBoxLayout,
-            QCheckBox,
-            QLabel,
-            QPushButton,
-            QWidget,
-            QScrollArea,
-        )
-        from PySide6.QtGui import QPixmap, QColor
-        from PySide6.QtCore import Qt
-
         if hasattr(self, "hist_tab"):
             self._replace_tab_channel_ui(self.hist_tab)
 
@@ -622,18 +630,6 @@ class TilingComparisonDialog(AnalysisDialog):
 
     def _replace_tab_channel_ui(self, tab):
         """Replace channel checkbox UI in a tab with overlay tile checkboxes."""
-        from PySide6.QtWidgets import (
-            QVBoxLayout,
-            QHBoxLayout,
-            QCheckBox,
-            QLabel,
-            QPushButton,
-            QWidget,
-            QScrollArea,
-        )
-        from PySide6.QtGui import QPixmap, QColor
-        from PySide6.QtCore import Qt
-
         # Find scroll area directly from tab to avoid dangling references
         scroll_area = tab.findChild(QScrollArea)
         if scroll_area is None:
@@ -714,16 +710,12 @@ class TilingComparisonDialog(AnalysisDialog):
 
         select_btn = btn_row_widget.findChild(QPushButton, btn_row_name + "_select")
         clear_btn = btn_row_widget.findChild(QPushButton, btn_row_name + "_clear")
-        if select_btn is not None and clear_btn is not None:
-            # Connect only once; handler discovers current checkboxes dynamically
-            if not btn_row_widget.property("wired"):
-                select_btn.clicked.connect(lambda: self._apply_all_in_tab(tab, True))
-                clear_btn.clicked.connect(lambda: self._apply_all_in_tab(tab, False))
-                btn_row_widget.setProperty("wired", True)
+        if select_btn is not None and clear_btn is not None and not btn_row_widget.property("wired"):
+            select_btn.clicked.connect(lambda: self._apply_all_in_tab(tab, True))
+            clear_btn.clicked.connect(lambda: self._apply_all_in_tab(tab, False))
+            btn_row_widget.setProperty("wired", True)
 
     def _apply_all_in_tab(self, tab, value: bool):
-        from PySide6.QtWidgets import QScrollArea, QCheckBox
-
         scroll_area = tab.findChild(QScrollArea)
         if scroll_area is None:
             return

@@ -1,7 +1,10 @@
 """Utility functions for brightness calculations and conversions."""
 
 import math
+
 import numpy as np
+
+from PixelScopeViewer.core.constants import get_dtype_defaults
 
 
 def determine_dtype_defaults(image_array=None, image_path=None):
@@ -17,92 +20,15 @@ def determine_dtype_defaults(image_array=None, image_path=None):
             - is_float_type: bool
             - initial_offset: float
             - initial_gain: float
-            - initial_saturation: float
+            - initial_upper_level: float
             - offset_range: tuple (min, max)
-            - gain_range: tuple (min, max)
-            - saturation_range: tuple (min, max)
+            - upper_level_range: tuple (min, max)
     """
-    result = {
-        "dtype_key": "uint8",
-        "is_float_type": False,
-        "initial_offset": 0,
-        "initial_gain": 1.0,
-        "initial_saturation": 255,
-        "offset_range": (-255, 255),
-        "gain_range": (0.1, 10.0),
-        "saturation_range": (1, 255),
-    }
+    if image_array is None:
+        return get_dtype_defaults("uint8")
 
-    # Check for .bin file special case
-    if image_path and image_path.lower().endswith(".bin"):
-        result["dtype_key"] = "uint16"
-        result["initial_saturation"] = 1023
-        result["saturation_range"] = (1, 65535)
-        result["offset_range"] = (-32767, 32767)
-
-    # Override with actual image dtype if available
-    if image_array is not None:
-        dtype = image_array.dtype
-        if np.issubdtype(dtype, np.floating):
-            result["dtype_key"] = "float"
-            result["is_float_type"] = True
-            result["initial_saturation"] = 1.0
-            result["saturation_range"] = (0.001, 10.0)
-            result["offset_range"] = (-1.0, 1.0)
-        elif np.issubdtype(dtype, np.integer):
-            info = np.iinfo(dtype)
-            max_val = info.max
-            if max_val > 255:
-                result["dtype_key"] = "uint16"
-                result["initial_saturation"] = 1023
-                result["saturation_range"] = (1, 65535)
-                result["offset_range"] = (-32767, 32767)
-
-    return result
-
-
-def get_dtype_defaults(dtype_key):
-    """Get default parameters for a specific dtype key.
-
-    Args:
-        dtype_key: "uint8", "uint16", or "float"
-
-    Returns:
-        dict: Dictionary with same structure as determine_dtype_defaults
-    """
-    defaults = {
-        "float": {
-            "dtype_key": "float",
-            "is_float_type": True,
-            "initial_offset": 0.0,
-            "initial_gain": 1.0,
-            "initial_saturation": 1.0,
-            "offset_range": (-1.0, 1.0),
-            "gain_range": (0.1, 10.0),
-            "saturation_range": (0.001, 10.0),
-        },
-        "uint8": {
-            "dtype_key": "uint8",
-            "is_float_type": False,
-            "initial_offset": 0,
-            "initial_gain": 1.0,
-            "initial_saturation": 255,
-            "offset_range": (-255, 255),
-            "gain_range": (0.1, 10.0),
-            "saturation_range": (1, 255),
-        },
-        "uint16": {
-            "dtype_key": "uint16",
-            "is_float_type": False,
-            "initial_offset": 0,
-            "initial_gain": 1.0,
-            "initial_saturation": 1023,
-            "offset_range": (-1023, 1023),
-            "gain_range": (0.1, 10.0),
-            "saturation_range": (1, 4095),
-        },
-    }
-    return defaults.get(dtype_key, defaults["uint8"])
+    dtype = "float" if np.issubdtype(image_array.dtype, np.floating) else "uint8"
+    return get_dtype_defaults(dtype)
 
 
 def clamp_value(value, min_val, max_val):
@@ -116,7 +42,7 @@ def slider_to_value(slider_value, is_float, multiplier=10):
     Args:
         slider_value: Integer slider position
         is_float: Whether the value should be treated as float
-        multiplier: Multiplier for float values (default 10 for offset, 1000 for saturation)
+        multiplier: Multiplier for float values (default 10 for offset, 1000 for upper_level)
 
     Returns:
         Actual value (float or int)

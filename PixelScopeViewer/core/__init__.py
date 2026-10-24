@@ -1,14 +1,13 @@
 """Core utilities (UI-independent functionality)."""
 
-from .image_io import numpy_to_qimage, load_image, is_image_file, get_image_metadata
-from .metadata_utils import is_binary_tag, is_printable_text, decode_bytes
+from .image_io import get_image_metadata, is_image_file, load_image, numpy_to_qimage
+from .metadata_utils import extract_exif, extract_png_metadata
 
 __all__ = [
-    "numpy_to_qimage",
-    "load_image",
-    "is_image_file",
+    "extract_exif",
+    "extract_png_metadata",
     "get_image_metadata",
-    "is_binary_tag",
-    "is_printable_text",
-    "decode_bytes",
+    "is_image_file",
+    "load_image",
+    "numpy_to_qimage",
 ]

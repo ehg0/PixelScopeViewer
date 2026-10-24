@@ -165,3 +165,11 @@ cython_debug/
 sample/golden_gate_hills_4k.exr
 memo.md
 sample/sample*
+
+custom_loaders/**
+!custom_loaders/**/
+!custom_loaders/_*.py
+!custom_loaders/README*.md
+!custom_loaders/assets/**
+custom_loaders/__pycache__
+custom_loaders/assets/__pycache__/

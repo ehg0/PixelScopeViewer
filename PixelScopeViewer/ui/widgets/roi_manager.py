@@ -1,34 +1,17 @@
-"""ROI management mixin for image widgets.
-
-This module provides ROI creation, moving, and resizing functionality.
-"""
+"""マウスによる ROI の作成・移動・リサイズ。"""
 
 from PySide6.QtCore import QPoint, QRect, Qt
 from PySide6.QtGui import QColor, QPainter, QPen
 
 
 class RoiManagerMixin:
-    """Mixin for ROI rectangle management.
+    """マウス操作で ROI を扱う mixin。
 
-    This mixin adds:
-    - Left-drag: Create new ROI rectangle (pixel-aligned)
-    - Right-drag: Move existing ROI
-    - Left-drag on edges/corners: Resize ROI
-
-    Features:
-    - 8 grab points (4 corners + 4 edges) for resizing
-    - Cursor shape feedback during hover
-    - Pixel-aligned ROI
-
-    Required attributes from base class:
-    - showing, viewer, roi_rect, scale
-    - _orig_pixmap, _qimage
-    - _widget_to_image_point, _image_to_widget_x, _image_to_widget_y
-    - _widget_rect_to_image
+    左 drag で作成、右 drag で移動、辺・角の左 drag でリサイズする。
+    ROI は常に画像の pixel 境界に吸着する。
     """
 
     def __init_roi_manager__(self):
-        """Initialize selection manager state."""
         self.roi_rect: QRect | None = None
         self.dragging = False
         self._moving = False
@@ -40,14 +23,10 @@ class RoiManagerMixin:
         self._move_orig_img_rect = None
         self._resize_start_img = None
         self._resize_orig_img_rect = None
-        self._edge_grab_distance = 8  # pixels from edge to trigger resize
+        self._edge_grab_distance = 8  # リサイズ判定に使う辺からの距離（pixel）
 
     def _update_selection_rect_in_widget_coords(self, img_rect: QRect):
-        """Convert image rectangle to widget coordinates and update selection_rect.
-
-        Args:
-            img_rect: Rectangle in image coordinates
-        """
+        """画像座標の矩形を widget 座標に変換して roi_rect に設定する。"""
         left = self._image_to_widget_x(img_rect.left())
         top = self._image_to_widget_y(img_rect.top())
         right_ex = self._image_to_widget_x(img_rect.left() + img_rect.width())
@@ -57,53 +36,43 @@ class RoiManagerMixin:
         self.roi_rect = QRect(left, top, w, h)
 
     def _handle_resize_operation(self, cur_img):
-        """Handle selection resizing operation.
-
-        Args:
-            cur_img: Current mouse position in image coordinates
-        """
+        """画像座標のマウス位置 cur_img に合わせて ROI をリサイズする。"""
         if not (self._resize_start_img and self._resize_orig_img_rect):
             return
 
         orig = self._resize_orig_img_rect
         edge = self._resize_edge
 
-        # Start with original rectangle
         new_left = orig.left()
         new_top = orig.top()
         new_width = orig.width()
         new_height = orig.height()
 
-        # Handle horizontal resize (left/right edges and corners)
-        if edge in ("left", "tl", "bl"):  # Left edge or left corners
+        # 水平方向（左右の辺と角）
+        if edge in ("left", "tl", "bl"):
             new_left_candidate = max(0, min(cur_img[0], orig.left() + orig.width() - 1))
             new_width = orig.left() + orig.width() - new_left_candidate
             new_left = new_left_candidate
-        elif edge in ("right", "tr", "br"):  # Right edge or right corners
+        elif edge in ("right", "tr", "br"):
             new_right_candidate = max(orig.left(), min(cur_img[0], self._qimage.width() - 1))
             new_width = new_right_candidate - orig.left() + 1
 
-        # Handle vertical resize (top/bottom edges and corners)
-        if edge in ("top", "tl", "tr"):  # Top edge or top corners
+        # 垂直方向（上下の辺と角）
+        if edge in ("top", "tl", "tr"):
             new_top_candidate = max(0, min(cur_img[1], orig.top() + orig.height() - 1))
             new_height = orig.top() + orig.height() - new_top_candidate
             new_top = new_top_candidate
-        elif edge in ("bottom", "bl", "br"):  # Bottom edge or bottom corners
+        elif edge in ("bottom", "bl", "br"):
             new_bottom_candidate = max(orig.top(), min(cur_img[1], self._qimage.height() - 1))
             new_height = new_bottom_candidate - orig.top() + 1
 
-        # Ensure minimum size and update
         new_width = max(1, new_width)
         new_height = max(1, new_height)
         new_rect = QRect(new_left, new_top, new_width, new_height)
         self._update_selection_rect_in_widget_coords(new_rect)
 
     def _handle_move_operation(self, cur_img):
-        """Handle selection moving operation.
-
-        Args:
-            cur_img: Current mouse position in image coordinates
-        """
+        """画像座標のマウス位置 cur_img に合わせて ROI を移動する。"""
         if not (self._move_start_img and self._move_orig_img_rect):
             return
 
@@ -117,11 +86,7 @@ class RoiManagerMixin:
         self._update_selection_rect_in_widget_coords(new_rect)
 
     def _handle_create_operation(self, cur_img):
-        """Handle new selection creation operation.
-
-        Args:
-            cur_img: Current mouse position in image coordinates
-        """
+        """drag 開始点から画像座標のマウス位置 cur_img までの ROI を作成する。"""
         if not self._start_img:
             return
 
@@ -133,7 +98,6 @@ class RoiManagerMixin:
         self._update_selection_rect_in_widget_coords(new_rect)
 
     def mousePressEvent(self, ev):
-        """Handle mouse press for selection operations."""
         if not self.showing:
             return
 
@@ -142,18 +106,16 @@ class RoiManagerMixin:
 
         if ev.button() == Qt.LeftButton:
             if edge:
-                # Start resizing
                 self._resizing = True
                 self._resize_edge = edge
                 self._resize_start_img = self._widget_to_image_point(self.start_point)
                 self._resize_orig_img_rect = self.get_roi_in_image_coords()
                 self.dragging = True
             else:
-                # Start selection creation
                 self._moving = False
                 self._resizing = False
                 self._start_img = self._widget_to_image_point(self.start_point)
-                # Create minimal visible rect immediately
+                # クリック直後から 1 pixel の ROI を表示する
                 if self._start_img is not None:
                     sx = self._image_to_widget_x(self._start_img[0])
                     sy = self._image_to_widget_y(self._start_img[1])
@@ -168,8 +130,7 @@ class RoiManagerMixin:
             self.dragging = True
 
     def mouseMoveEvent(self, ev):
-        """Handle mouse move for selection operations."""
-        # Update cursor when hovering over selection edges
+        # ROI の辺に hover したら cursor を変える
         if self.showing and not self.dragging and self.roi_rect:
             edge = self._get_resize_edge(ev.position().toPoint())
             self._update_cursor_for_edge(edge)
@@ -180,7 +141,6 @@ class RoiManagerMixin:
             if cur_img is None:
                 return
 
-            # Handle different operation types
             if self._resizing:
                 self._handle_resize_operation(cur_img)
             elif self._moving:
@@ -191,7 +151,7 @@ class RoiManagerMixin:
             self.update()
             self._notify_roi_changed()
 
-        # Notify parent of mouse move
+        # 親に画像範囲内へ clamp したマウス位置を通知する
         if hasattr(self.parent(), "on_mouse_move"):
             if self.showing and not self._orig_pixmap.isNull():
                 disp_w = int(self._orig_pixmap.width() * self.scale)
@@ -203,13 +163,11 @@ class RoiManagerMixin:
                 self.parent().on_mouse_move(ev.position().toPoint())
 
     def mouseReleaseEvent(self, ev):
-        """Handle mouse release for selection operations."""
         if not self.showing:
             return
 
         if ev.button() == Qt.LeftButton:
             if self._resizing:
-                # Finish resizing
                 self._resizing = False
                 self._resize_edge = None
                 self._resize_start_img = None
@@ -218,7 +176,6 @@ class RoiManagerMixin:
                 self.update()
                 self._notify_roi_changed()
             else:
-                # Finish creating new selection
                 self.dragging = False
                 end_img = self._widget_to_image_point(ev.position().toPoint())
                 if self._start_img is not None and end_img is not None:
@@ -226,7 +183,6 @@ class RoiManagerMixin:
                 self.update()
                 self._notify_roi_changed()
         elif ev.button() == Qt.RightButton and self._moving:
-            # Finish moving
             self._moving = False
             self._move_start_img = None
             self._move_orig_img_rect = None
@@ -235,28 +191,20 @@ class RoiManagerMixin:
             self._notify_roi_changed()
 
     def paint_roi(self, painter: QPainter):
-        """Paint the selection rectangle.
-
-        Args:
-            painter: QPainter to use for painting
-        """
+        """ROI の枠を描画する。"""
         if self.roi_rect and not self.roi_rect.isNull():
-            pen = QPen(QColor(51, 255, 102, 255), 1)  # Blue color for ROI border
+            pen = QPen(QColor(51, 255, 102, 255), 1)
             painter.setPen(pen)
             painter.drawRect(self.roi_rect)
 
     def get_roi_in_image_coords(self) -> QRect | None:
-        """Get the current selection rectangle in image coordinates.
-
-        Returns:
-            QRect in image pixel coordinates, or None if no selection.
-        """
+        """ROI を画像座標で返す。ROI がない場合は None。"""
         if not self.roi_rect or self.roi_rect.isNull():
             return None
         return self._widget_rect_to_image(self.roi_rect)
 
     def set_roi_full(self):
-        """Set selection to full image."""
+        """画像全体を ROI にする。"""
         if not self.showing:
             return
         disp_w = int(self._orig_pixmap.width() * self.scale) if not self._orig_pixmap.isNull() else 0
@@ -265,13 +213,10 @@ class RoiManagerMixin:
         self.update()
 
     def _get_resize_edge(self, pos: QPoint) -> str | None:
-        """Determine which edge of the selection is near the cursor.
-
-        Args:
-            pos: Cursor position in widget coordinates
+        """cursor 付近にある ROI の辺・角を返す。
 
         Returns:
-            Edge identifier: 'tl', 'tr', 'bl', 'br', 'left', 'right', 'top', 'bottom', or None
+            'tl', 'tr', 'bl', 'br', 'left', 'right', 'top', 'bottom' のいずれか。該当しない場合は None。
         """
         if not self.roi_rect or self.roi_rect.isNull():
             return None
@@ -279,25 +224,21 @@ class RoiManagerMixin:
         rect = self.roi_rect
         dist = self._edge_grab_distance
 
-        # For small selections, reduce the grab distance to ensure there's
-        # always an interior region for right-click move operations.
-        # Use half the minimum dimension, capped at the configured grab distance.
+        # 小さな ROI でも右 drag で移動できる内側の領域が残るよう判定距離を縮める
         min_dimension = min(rect.width(), rect.height())
         if min_dimension < dist * 2:
-            # Ensure at least 1 pixel interior for very small selections
             dist = max(1, min_dimension // 3)
 
-        # Check corners first (higher priority)
+        # 角を優先して判定する
         if abs(pos.x() - rect.left()) <= dist and abs(pos.y() - rect.top()) <= dist:
-            return "tl"  # top-left
+            return "tl"
         if abs(pos.x() - rect.right()) <= dist and abs(pos.y() - rect.top()) <= dist:
-            return "tr"  # top-right
+            return "tr"
         if abs(pos.x() - rect.left()) <= dist and abs(pos.y() - rect.bottom()) <= dist:
-            return "bl"  # bottom-left
+            return "bl"
         if abs(pos.x() - rect.right()) <= dist and abs(pos.y() - rect.bottom()) <= dist:
-            return "br"  # bottom-right
+            return "br"
 
-        # Check edges
         if abs(pos.x() - rect.left()) <= dist and rect.top() <= pos.y() <= rect.bottom():
             return "left"
         if abs(pos.x() - rect.right()) <= dist and rect.top() <= pos.y() <= rect.bottom():
@@ -310,11 +251,6 @@ class RoiManagerMixin:
         return None
 
     def _update_cursor_for_edge(self, edge: str | None):
-        """Update cursor shape based on which edge is being hovered/grabbed.
-
-        Args:
-            edge: Edge identifier from _get_resize_edge()
-        """
         if edge == "tl" or edge == "br":
             self.setCursor(Qt.SizeFDiagCursor)
         elif edge == "tr" or edge == "bl":
@@ -327,6 +263,5 @@ class RoiManagerMixin:
             self.setCursor(Qt.ArrowCursor)
 
     def _notify_roi_changed(self):
-        """Notify viewer of selection change during drag operations."""
         if self.viewer and self.roi_rect and not self.roi_rect.isNull():
             self.viewer.on_roi_changed(self.roi_rect)

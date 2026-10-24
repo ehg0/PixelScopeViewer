@@ -1,4 +1,4 @@
-"""ROI info widget showing and editing ROI information."""
+"""ROI の情報を表示・編集する widget。"""
 
 import contextlib
 
@@ -17,72 +17,62 @@ from PySide6.QtWidgets import (
 
 
 class ROIInfoWidget(QGroupBox):
-    """ROI info widget showing and editing ROI information.
-
-    Shows x start, y start, x end, y end, width, height, pixel count.
-    Editable fields update the ROI in real-time.
-    """
+    """ROI の座標・サイズを表示し、編集内容を即座に ROI へ反映する widget。"""
 
     def __init__(self, viewer):
-        super().__init__()  # No title, title is in dock
+        super().__init__()  # title は dock 側で表示する
         self.viewer = viewer
-        self._updating = False  # guard for re-entrant updates
+        self._updating = False  # 再入防止の flag
 
         self.table = QTableWidget()
         self.table.setColumnCount(2)
         self.table.setHorizontalHeaderLabels(["Property", "Value"])
         self.table.horizontalHeader().setStretchLastSection(True)
-        self.table.horizontalHeader().setVisible(False)  # Hide header
+        self.table.horizontalHeader().setVisible(False)
         self.table.setRowCount(8)
-        # Compact table and editors
         font = self.table.font()
         with contextlib.suppress(Exception):
             font.setPointSize(max(font.pointSize() - 1, 9))
         self.table.setFont(font)
-        self.table.verticalHeader().setDefaultSectionSize(18)  # Smaller row height
+        self.table.verticalHeader().setDefaultSectionSize(18)
         self.table.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.table.verticalHeader().setVisible(False)  # Hide row header
+        self.table.verticalHeader().setVisible(False)
 
-        # Set properties
         properties = ["X Start", "Y Start", "X End", "Y End", "Width", "Height", "Diagonal", "Pixel Count"]
         for i, prop in enumerate(properties):
             item = QTableWidgetItem(prop)
             item.setFlags(item.flags() & ~Qt.ItemIsEditable)
             self.table.setItem(i, 0, item)
 
-        # Create spin boxes for editable fields
+        # Diagonal と Pixel Count 以外は spin box で編集可能にする
         self.spin_boxes = {}
-        editable_rows = [0, 1, 2, 3, 4, 5]  # All except diagonal and pixel count
+        editable_rows = [0, 1, 2, 3, 4, 5]
 
         for row in editable_rows:
             spin_box = QSpinBox()
             spin_box.setMinimum(0)
-            spin_box.setMaximum(100000)  # Large enough
-            spin_box.setSingleStep(1)  # Increment/decrement by 1
+            spin_box.setMaximum(100000)
+            spin_box.setSingleStep(1)
             spin_box.valueChanged.connect(lambda value, r=row: self.on_spin_changed(r, value))
             spin_box.setFont(font)
             self.spin_boxes[row] = spin_box
 
-            # Create widget to hold spin box
             widget = QWidget()
             layout = QHBoxLayout(widget)
             layout.addWidget(spin_box)
             layout.setContentsMargins(0, 0, 0, 0)
             self.table.setCellWidget(row, 1, widget)
 
-        # Enable context menu for copying
         self.table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._show_context_menu)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)  # Remove margins to pack tightly
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.table)
-        layout.addStretch()  # Add stretch to push table to top
+        layout.addStretch()
 
-        # Fix table height to avoid vertical scrolling
         self._fit_table_height()
 
-        # Connect to viewer signals
         self.viewer.roi_changed.connect(self.update_info)
         self.viewer.image_changed.connect(self.update_info)
 
@@ -100,8 +90,8 @@ class ROIInfoWidget(QGroupBox):
             pass
 
     def on_spin_changed(self, row, value):
-        """Handle spin box value changes."""
-        # Ignore programmatic updates
+        """spin box の変更を画像範囲内に収めて ROI へ反映する。"""
+        # プログラムからの更新は無視する
         if self._updating:
             return
         if self.viewer.current_index is None:
@@ -110,26 +100,24 @@ class ROIInfoWidget(QGroupBox):
         img = self.viewer.images[self.viewer.current_index]["array"]
         img_h, img_w = img.shape[:2]
 
-        # Get current ROI
         current_rect = self.viewer.current_roi_rect
         if current_rect is None:
             return
 
         x, y, w, h = current_rect.x(), current_rect.y(), current_rect.width(), current_rect.height()
 
-        # Update based on which field changed
         if row == 0:  # X Start
-            x = max(0, min(value, img_w - w))  # Ensure x + w <= img_w
+            x = max(0, min(value, img_w - w))
             self.spin_boxes[0].blockSignals(True)
             self.spin_boxes[0].setValue(x)
             self.spin_boxes[0].blockSignals(False)
         elif row == 1:  # Y Start
-            y = max(0, min(value, img_h - h))  # Ensure y + h <= img_h
+            y = max(0, min(value, img_h - h))
             self.spin_boxes[1].blockSignals(True)
             self.spin_boxes[1].setValue(y)
             self.spin_boxes[1].blockSignals(False)
         elif row == 2:  # X End
-            x_end = max(x, min(value, img_w - 1))  # Ensure x_end >= x and <= img_w - 1
+            x_end = max(x, min(value, img_w - 1))
             w = x_end - x + 1
             self.spin_boxes[2].blockSignals(True)
             self.spin_boxes[2].setValue(x_end)
@@ -138,7 +126,7 @@ class ROIInfoWidget(QGroupBox):
             self.spin_boxes[4].setValue(w)
             self.spin_boxes[4].blockSignals(False)
         elif row == 3:  # Y End
-            y_end = max(y, min(value, img_h - 1))  # Ensure y_end >= y and <= img_h - 1
+            y_end = max(y, min(value, img_h - 1))
             h = y_end - y + 1
             self.spin_boxes[3].blockSignals(True)
             self.spin_boxes[3].setValue(y_end)
@@ -147,7 +135,7 @@ class ROIInfoWidget(QGroupBox):
             self.spin_boxes[5].setValue(h)
             self.spin_boxes[5].blockSignals(False)
         elif row == 4:  # Width
-            w = max(1, min(value, img_w - x))  # Ensure w >= 1 and x + w <= img_w
+            w = max(1, min(value, img_w - x))
             self.spin_boxes[4].blockSignals(True)
             self.spin_boxes[4].setValue(w)
             self.spin_boxes[4].blockSignals(False)
@@ -156,7 +144,7 @@ class ROIInfoWidget(QGroupBox):
             self.spin_boxes[2].setValue(x_end)
             self.spin_boxes[2].blockSignals(False)
         elif row == 5:  # Height
-            h = max(1, min(value, img_h - y))  # Ensure h >= 1 and y + h <= img_h
+            h = max(1, min(value, img_h - y))
             self.spin_boxes[5].blockSignals(True)
             self.spin_boxes[5].setValue(h)
             self.spin_boxes[5].blockSignals(False)
@@ -165,13 +153,13 @@ class ROIInfoWidget(QGroupBox):
             self.spin_boxes[3].setValue(y_end)
             self.spin_boxes[3].blockSignals(False)
 
-        # Update ROI using image coordinates to avoid rounding issues at various scales
+        # 倍率による丸め誤差を避けるため画像座標で ROI を設定する
         new_rect_img = QRect(x, y, w, h)
         self.viewer.set_roi_from_image_rect(new_rect_img)
 
     def update_info(self):
-        """Update the ROI information."""
-        # Prevent valueChanged loops caused by setMaximum/setValue clamping
+        """ROI の情報を更新する。"""
+        # setMaximum/setValue の clamp による valueChanged の連鎖を防ぐ
         self._updating = True
         try:
             if self.viewer.current_index is None or not self.viewer.images:
@@ -199,7 +187,7 @@ class ROIInfoWidget(QGroupBox):
             x_end = current_rect.right()
             y_end = current_rect.bottom()
 
-            # Set ranges based on image size
+            # 画像サイズに合わせて入力範囲を設定する
             self.spin_boxes[0].setMinimum(0)  # X Start
             self.spin_boxes[0].setMaximum(img_w - 1)
             self.spin_boxes[1].setMinimum(0)  # Y Start
@@ -213,20 +201,17 @@ class ROIInfoWidget(QGroupBox):
             self.spin_boxes[5].setMinimum(1)  # Height
             self.spin_boxes[5].setMaximum(img_h)
 
-            # Update spin boxes
             values = [x, y, x_end, y_end, w, h]
             for i, value in enumerate(values):
                 self.spin_boxes[i].blockSignals(True)
                 self.spin_boxes[i].setValue(value)
                 self.spin_boxes[i].blockSignals(False)
 
-            # Update diagonal (read-only)
             diagonal = (w**2 + h**2) ** 0.5
             diagonal_item = QTableWidgetItem(f"{diagonal:.2f}")
             diagonal_item.setFlags(diagonal_item.flags() & ~Qt.ItemIsEditable)
             self.table.setItem(6, 1, diagonal_item)
 
-            # Update pixel count (read-only)
             pixel_count = w * h if 0 <= x < img_w and 0 <= y < img_h else 0
             pixel_count_item = QTableWidgetItem(f"{pixel_count:,}")
             pixel_count_item.setFlags(pixel_count_item.flags() & ~Qt.ItemIsEditable)
@@ -235,7 +220,6 @@ class ROIInfoWidget(QGroupBox):
             self._updating = False
 
     def _show_context_menu(self, pos):
-        """Show context menu with copy option."""
         menu = QMenu()
         copy_action = menu.addAction("コピー")
         action = menu.exec_(self.table.mapToGlobal(pos))
@@ -243,7 +227,7 @@ class ROIInfoWidget(QGroupBox):
             self._copy_selection()
 
     def _copy_selection(self):
-        """Copy selected cells to clipboard in comma-separated format."""
+        """選択中のセルをカンマ区切りで clipboard にコピーする。"""
         selection = self.table.selectedRanges()
         if not selection:
             return
@@ -253,10 +237,10 @@ class ROIInfoWidget(QGroupBox):
             for row in range(sel_range.topRow(), sel_range.bottomRow() + 1):
                 cols = []
                 for col in range(sel_range.leftColumn(), sel_range.rightColumn() + 1):
-                    # For rows with spin boxes, get the spin box value
+                    # spin box の行は spin box の値を使う
                     if row in self.spin_boxes:
                         widget = self.table.cellWidget(row, col)
-                        if widget and col == 1:  # Value column with spin box
+                        if widget and col == 1:
                             cols.append(str(self.spin_boxes[row].value()))
                         else:
                             item = self.table.item(row, col)

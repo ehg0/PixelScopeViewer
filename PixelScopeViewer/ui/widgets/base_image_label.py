@@ -1,7 +1,4 @@
-"""Base image display widget with coordinate conversion utilities.
-
-This module provides the foundation for image display with zoom support.
-"""
+"""zoom と座標変換に対応した画像表示 widget の基底クラス。"""
 
 from PySide6.QtCore import QPoint, QRect, Qt
 from PySide6.QtGui import QImage, QPainter, QPixmap
@@ -9,20 +6,7 @@ from PySide6.QtWidgets import QLabel
 
 
 class BaseImageLabel(QLabel):
-    """Base class for image display with zoom and coordinate conversion.
-
-    This class handles:
-    - Image display with scaling
-    - Coordinate conversion between widget and image coordinates
-    - Basic painting
-
-    Attributes:
-        viewer: Parent ImageViewer instance
-        scale: Current zoom scale factor
-        _orig_pixmap: Original pixmap (before scaling)
-        _qimage: Source QImage
-        showing: Whether an image is currently displayed
-    """
+    """zoom 表示と widget/画像座標の変換を行う QLabel。"""
 
     def __init__(self, viewer, parent=None):
         super().__init__(parent)
@@ -37,12 +21,7 @@ class BaseImageLabel(QLabel):
         self.showing = False
 
     def set_image(self, qimg: QImage, scale: float = 1.0):
-        """Set the image to display with optional scaling.
-
-        Args:
-            qimg: QImage to display
-            scale: Zoom scale factor (1.0 = original size)
-        """
+        """画像を指定の zoom 倍率で表示する。"""
         self._qimage = qimg
         self.scale = scale
         if qimg.isNull():
@@ -58,7 +37,6 @@ class BaseImageLabel(QLabel):
         self.update()
 
     def clear(self):
-        """Clear the displayed image."""
         self._orig_pixmap = QPixmap()
         self._qimage = None
         self.setFixedSize(0, 0)
@@ -66,7 +44,6 @@ class BaseImageLabel(QLabel):
         self.update()
 
     def paintEvent(self, event):
-        """Paint the image."""
         painter = QPainter(self)
         if not self._orig_pixmap.isNull():
             painter.save()
@@ -74,22 +51,15 @@ class BaseImageLabel(QLabel):
             painter.drawPixmap(0, 0, self._orig_pixmap)
             painter.restore()
 
-    # --- Coordinate conversion utilities ---
+    # --- 座標変換 ---
     def _display_scale_factor(self) -> float | None:
-        """Return displayed pixels per source image pixel."""
+        """画像 1 pixel あたりの表示 pixel 数を返す。画像がない場合は None。"""
         if self._qimage is None or self._qimage.isNull() or not self.scale or self.scale <= 0:
             return None
         return float(self.scale)
 
     def _widget_to_image_point(self, pt: QPoint) -> tuple[int, int] | None:
-        """Convert widget coordinates to image pixel coordinates.
-
-        Args:
-            pt: Point in widget coordinates
-
-        Returns:
-            (x, y) in image coordinates, or None if no image
-        """
+        """widget 座標を画像の pixel 座標に変換する。画像がない場合は None。"""
         factor = self._display_scale_factor()
         if factor is None or self._qimage is None:
             return None
@@ -98,24 +68,15 @@ class BaseImageLabel(QLabel):
         return (ix, iy)
 
     def _image_to_widget_x(self, ix: int) -> int:
-        """Convert image x-coordinate to widget x-coordinate."""
         factor = self._display_scale_factor() or 1.0
         return int(round(ix * factor))
 
     def _image_to_widget_y(self, iy: int) -> int:
-        """Convert image y-coordinate to widget y-coordinate."""
         factor = self._display_scale_factor() or 1.0
         return int(round(iy * factor))
 
     def _image_rect_to_widget(self, img_rect: QRect) -> QRect:
-        """Convert image rectangle to widget rectangle.
-
-        Args:
-            img_rect: Rectangle in image coordinates
-
-        Returns:
-            Rectangle in widget coordinates
-        """
+        """画像座標の矩形を widget 座標に変換する。"""
         left = self._image_to_widget_x(img_rect.left())
         top = self._image_to_widget_y(img_rect.top())
         right_ex = self._image_to_widget_x(img_rect.left() + img_rect.width())
@@ -125,14 +86,7 @@ class BaseImageLabel(QLabel):
         return QRect(left, top, w, h)
 
     def _widget_rect_to_image(self, widget_rect: QRect) -> QRect | None:
-        """Convert widget rectangle to image rectangle.
-
-        Args:
-            widget_rect: Rectangle in widget coordinates
-
-        Returns:
-            Rectangle in image coordinates, or None if no image
-        """
+        """widget 座標の矩形を画像座標に変換する。画像がない場合は None。"""
         if self._qimage is None or self._qimage.isNull():
             return None
 
@@ -141,7 +95,6 @@ class BaseImageLabel(QLabel):
         disp_w = int(self._orig_pixmap.width() * self.scale)
         disp_h = int(self._orig_pixmap.height() * self.scale)
 
-        # Check for zero dimensions - simplified
         if not all([disp_w, disp_h, src_w, src_h]):
             return None
 

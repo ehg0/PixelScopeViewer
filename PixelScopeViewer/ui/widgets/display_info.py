@@ -1,4 +1,4 @@
-"""Display info widget showing current viewport information."""
+"""表示領域の情報を表示する widget。"""
 
 import contextlib
 
@@ -8,54 +8,46 @@ from PySide6.QtWidgets import QGroupBox, QMenu, QTableWidget, QTableWidgetItem, 
 
 
 class DisplayInfoWidget(QGroupBox):
-    """Display info widget showing current viewport coordinates and size.
-
-    Shows x start, y start, x end, y end, width, height of the current viewport
-    in image coordinates.
-    """
+    """現在の表示領域の画像座標・サイズを表示する widget。"""
 
     def __init__(self, viewer):
-        super().__init__()  # No title, title is in dock
+        super().__init__()  # title は dock 側で表示する
         self.viewer = viewer
 
         self.table = QTableWidget()
         self.table.setColumnCount(2)
         self.table.setHorizontalHeaderLabels(["Property", "Value"])
         self.table.horizontalHeader().setStretchLastSection(True)
-        self.table.horizontalHeader().setVisible(False)  # Hide header
+        self.table.horizontalHeader().setVisible(False)
         self.table.setRowCount(8)
-        # Compact table: smaller font/rows and no vertical scrollbar
+        # 小さめの font と行高にして縦 scroll を出さない
         font = self.table.font()
         with contextlib.suppress(Exception):
             font.setPointSize(max(font.pointSize() - 1, 9))
         self.table.setFont(font)
-        self.table.verticalHeader().setDefaultSectionSize(18)  # Smaller row height
+        self.table.verticalHeader().setDefaultSectionSize(18)
         self.table.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.table.verticalHeader().setVisible(False)  # Hide row header
+        self.table.verticalHeader().setVisible(False)
 
-        # Set properties
         properties = ["X Start", "Y Start", "X End", "Y End", "Width", "Height", "Diagonal", "Pixel Count"]
         for i, prop in enumerate(properties):
             item = QTableWidgetItem(prop)
             item.setFlags(item.flags() & ~Qt.ItemIsEditable)
             self.table.setItem(i, 0, item)
 
-        # Enable context menu for copying
         self.table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._show_context_menu)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)  # Remove margins to pack tightly
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.table)
-        layout.addStretch()  # Add stretch to push table to top
+        layout.addStretch()
 
-        # Fix table height to avoid vertical scrolling
         self._fit_table_height()
 
-        # Connect to viewer signals
         self.viewer.scale_changed.connect(self.update_info)
         self.viewer.image_changed.connect(self.update_info)
-        # Update when scrolled or viewport resized
+        # scroll や viewport の resize でも更新する
         sa = self.viewer.scroll_area
         sa.horizontalScrollBar().valueChanged.connect(self.update_info)
         sa.verticalScrollBar().valueChanged.connect(self.update_info)
@@ -83,27 +75,25 @@ class DisplayInfoWidget(QGroupBox):
         return super().eventFilter(obj, event)
 
     def update_info(self):
-        """Update the display information."""
+        """表示領域の情報を更新する。"""
         if self.viewer.current_index is None or not self.viewer.images:
             for i in range(8):
                 self.table.setItem(i, 1, QTableWidgetItem(""))
             return
 
-        # Get current viewport in image coordinates
         scroll_area = self.viewer.scroll_area
         viewport_width = scroll_area.viewport().width()
         viewport_height = scroll_area.viewport().height()
         h_scroll = scroll_area.horizontalScrollBar().value()
         v_scroll = scroll_area.verticalScrollBar().value()
 
-        # Convert to image coordinates
+        # 画像座標に変換する
         scale = self.viewer.scale
         x_start = int(h_scroll / scale)
         y_start = int(v_scroll / scale)
         x_end = int((h_scroll + viewport_width) / scale)
         y_end = int((v_scroll + viewport_height) / scale)
 
-        # Get image size and clamp coordinates
         img = self.viewer.images[self.viewer.current_index]["array"]
         img_h, img_w = img.shape[:2]
         x_end = min(x_end, img_w - 1)
@@ -130,7 +120,6 @@ class DisplayInfoWidget(QGroupBox):
             self.table.setItem(i, 1, item)
 
     def _show_context_menu(self, pos):
-        """Show context menu with copy option."""
         menu = QMenu()
         copy_action = menu.addAction("コピー")
         action = menu.exec_(self.table.mapToGlobal(pos))
@@ -138,7 +127,7 @@ class DisplayInfoWidget(QGroupBox):
             self._copy_selection()
 
     def _copy_selection(self):
-        """Copy selected cells to clipboard in comma-separated format."""
+        """選択中のセルをカンマ区切りで clipboard にコピーする。"""
         selection = self.table.selectedRanges()
         if not selection:
             return

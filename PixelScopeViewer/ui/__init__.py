@@ -1,4 +1,4 @@
-"""UI components package."""
+"""UI component。"""
 
 from .dialogs import AnalysisDialog, BrightnessDialog, DiffDialog, HelpDialog
 from .utils import get_default_channel_colors

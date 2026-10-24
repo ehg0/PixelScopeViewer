@@ -1,14 +1,4 @@
-"""Image I/O utilities for loading and converting images.
-
-This module provides functions for:
-- Converting NumPy arrays to QImage for Qt display
-- Loading images from files (OpenCV, OpenImageIO, NumPy)
-- Validating image file extensions
-- Extracting comprehensive image metadata
-- Custom image loader registration (plugin system)
-
-All functions handle edge cases gracefully and are UI-independent.
-"""
+"""画像の読み込み・変換・metadata 取得。"""
 
 import struct
 from collections.abc import Callable
@@ -23,37 +13,17 @@ from .metadata_utils import extract_exif, extract_png_metadata
 
 
 class ImageLoaderRegistry:
-    """Registry for custom image loaders (plugin system).
-
-    This singleton class allows users to register custom loaders for
-    image formats not natively supported by PixelScopeViewer.
-
-    Custom loaders are tried before standard loaders, allowing users to
-    override default behavior for specific extensions or handle completely
-    new formats.
-
-    Example:
-        >>> def my_custom_loader(path: str) -> Optional[np.ndarray]:
-        ...     if path.endswith('.myformat'):
-        ...         # Custom loading logic
-        ...         return np.load(path)
-        ...     return None  # Cannot handle this file
-        ...
-        >>> registry = ImageLoaderRegistry.get_instance()
-        >>> registry.register(my_custom_loader, extensions=['.myformat'], priority=10)
-    """
+    """custom image loader を管理する singleton の registry。"""
 
     _instance = None
 
     @classmethod
     def get_instance(cls) -> "ImageLoaderRegistry":
-        """Get the singleton instance of the registry."""
         if cls._instance is None:
             cls._instance = cls()
         return cls._instance
 
     def __init__(self):
-        """Initialize the registry. Use get_instance() instead of direct instantiation."""
         self.custom_loaders = []
 
     def register(
@@ -62,29 +32,12 @@ class ImageLoaderRegistry:
         extensions: list[str] | None = None,
         priority: int = 0,
     ):
-        """Register a custom image loader.
+        """custom image loader を登録する。
 
         Args:
-            loader_func: Function that takes a file path (str) and returns
-                        a NumPy array, or None if it cannot handle the file.
-                        Signature: (path: str) -> Optional[np.ndarray]
-            extensions: List of file extensions this loader handles, e.g., ['.dat', '.custom'].
-                       Use ['*'] or None to handle all extensions (wildcard).
-            priority: Priority of this loader. Standard loaders have priority 0.
-                     - priority > 0: Override standard loaders (e.g., custom .npy handler)
-                     - priority = 0: Add new format support (default, does not override)
-                     - priority < 0: Fallback loader (tried after all others fail)
-
-        Examples:
-                     - priority = 1: Override .npy loading with custom logic
-                     - priority = 0: Add support for .dat files (default)
-                     - priority = -100: Wildcard fallback for any unknown format
-
-        Note:
-            - Loaders are tried in priority order (high to low)
-            - Standard loaders (.npy, .exr, .png, etc.) have implicit priority 0
-            - If a loader returns None, the next loader is tried
-            - To override standard .npy loading, use priority >= 1
+            loader_func: ファイルパスを受け取り画像配列を返す関数。対応できない場合は None を返す。
+            extensions: 対象の拡張子（例: [".dat"]）。None または ["*"] で全拡張子を対象にする。
+            priority: 優先度。標準 loader は 0。正の値は標準 loader より先、負の値は全 loader 失敗後に試す。
         """
         if extensions is None:
             extensions = ["*"]
@@ -100,16 +53,14 @@ class ImageLoaderRegistry:
             }
         )
 
-        # Sort by priority (high to low)
+        # 優先度の高い順に並べる
         self.custom_loaders.sort(key=lambda x: x["priority"], reverse=True)
 
     def get_supported_extensions(self) -> tuple[list[str], bool]:
-        """Get all supported extensions from custom loaders.
+        """custom loader が対応する拡張子を返す。
 
         Returns:
-            (extensions, has_wildcard): Tuple of extension list and wildcard flag.
-                extensions: List of registered extensions (e.g., ['.dat', '.custom'])
-                has_wildcard: True if any wildcard loader is registered
+            拡張子のリストと、wildcard loader が登録されているかの tuple。
         """
         exts = set()
         has_wildcard = False
@@ -124,47 +75,28 @@ class ImageLoaderRegistry:
 
 
 def numpy_to_qimage(arr: np.ndarray) -> QImage:
-    """Convert a NumPy image array to a Qt QImage suitable for display.
+    """画像配列を表示用の 8bit QImage に変換する。
 
-    This utility accepts common image array shapes and returns a copied
-    QImage instance (detached from the original NumPy buffer) so the
-    caller does not need to keep the NumPy array alive.
-
-    Supported input shapes:
-      - (H, W) -> 8-bit grayscale
-      - (H, W, 3) -> RGB (8-bit per channel)
-      - (H, W, 4) -> RGBA (8-bit per channel)
-      - Any other channel count -> converted to grayscale by averaging
-
-    Args:
-        arr: Numeric array-like image. Values outside [0,255] are clipped.
-
-    Returns:
-        QImage: A freshly allocated QImage instance. If ``arr`` is ``None``
-        an empty QImage is returned.
+    float は [0, 1] を [0, 255] に scale し、範囲外は clip する。
+    3ch は RGB、4ch は RGBA、それ以外の channel 数は平均して grayscale にする。
 
     Raises:
-        ValueError: If ``arr`` has less than 2 dimensions.
-
-    Example:
-        >>> qimg = numpy_to_qimage(np.zeros((100, 200), dtype=np.uint8))
+        ValueError: 配列の次元が 2 または 3 でない場合。
     """
     if arr is None:
         return QImage()
     a = np.asarray(arr)
-    # Scale float images from [0,1] to [0,255]
     if np.issubdtype(a.dtype, np.floating):
         a = a * 255.0
     if a.ndim == 2:
         disp = np.clip(a, 0, 255).astype(np.uint8)
         h, w = disp.shape
-        # Ensure array is C-contiguous for QImage
+        # QImage には C-contiguous な配列が必要
         disp = np.ascontiguousarray(disp)
         return QImage(disp.data, w, h, w, QImage.Format_Grayscale8)
     elif a.ndim == 3:
         h, w, c = a.shape
         disp = np.clip(a, 0, 255).astype(np.uint8)
-        # Ensure array is C-contiguous for QImage
         disp = np.ascontiguousarray(disp)
         if c == 3:
             return QImage(disp.data, w, h, 3 * w, QImage.Format_RGB888)
@@ -179,27 +111,20 @@ def numpy_to_qimage(arr: np.ndarray) -> QImage:
 
 
 def cv2_imread_unicode(path: str):
+    """日本語を含むパスでも読めるよう、cv2.imdecode で画像を読み込む。"""
     data = np.fromfile(path, dtype=np.uint8)
     return cv2.imdecode(data, cv2.IMREAD_UNCHANGED)
 
 
 def read_bin(filename: Path, has_header: bool = True) -> np.ndarray:
-    """Load 16-bit little-endian image data from a binary file.
-
-    If a 4-byte header is present, it is interpreted as two unsigned
-    16-bit integers (width, height) in little-endian order.
+    """16bit little-endian の binary ファイルを読み込む。
 
     Args:
-        filename: Path to the binary image file.
-        has_header: Whether the file includes a 4-byte (W, H) header.
-            Defaults to ``True``.
+        filename: 読み込むファイルパス。
+        has_header: 先頭 4byte に (width, height) の header があるか。
 
     Returns:
-        array: NumPy array of the image data (dtype: ``uint16``).
-
-    Raises:
-        FileNotFoundError: If the file does not exist.
-        ValueError: If header dimensions do not match the data size.
+        uint16 の画像配列。header がない場合は 1 次元配列。
     """
     with open(filename, "rb") as f:
         if has_header:
@@ -214,50 +139,25 @@ def read_bin(filename: Path, has_header: bool = True) -> np.ndarray:
 
 
 def load_image(path: str | Path) -> np.ndarray:
-    """Load an image file into a NumPy array.
+    """画像ファイルを読み込む。
 
-    Custom loaders registered via ImageLoaderRegistry are tried based on priority:
-    - Priority > 0: Tried before standard loaders (can override default behavior)
-    - Priority = 0: Tried after standard loaders (default for custom loaders)
-    - Priority < 0: Tried as fallback after all other attempts fail
-
-    Standard loaders have implicit priority of 0, so:
-    - To override .npy loading: use priority >= 1
-    - To add new formats without overriding: use priority = 0 (default)
-    - For fallback/wildcard loaders: use priority < 0
-
-    Supported inputs:
-      - Custom formats: handled by registered custom loaders
-      - .exr, .hdr: read with OpenImageIO; returns the image array with its
-        original data type (often float32) and channel count from the file.
-      - .npy: loaded via numpy.load and returned as-is.
-      - other extensions: read with OpenCV; returns a NumPy array (typically
-        uint8). Color images read by OpenCV are converted to RGB or RGBA
-        (OpenCV's BGR/BGRA → RGB/RGBA). Grayscale images are returned as 2-D arrays.
-
-    Args:
-        path: Path to the image file (str or pathlib.Path).
-
-    Returns:
-        np.ndarray: Image data. dtype and channel order depend on the format
-        (EXR/HDR may be float; LDR images are converted to RGB/RGBA uint8).
+    custom loader は priority > 0 → 標準 loader → priority == 0 → priority < 0 の順に試す。
+    EXR/HDR は OpenImageIO で元の dtype のまま、npy/bin はそのまま、
+    その他は OpenCV で読み込み RGB/RGBA に変換して返す。
 
     Raises:
-        RuntimeError: If OpenCV fails to open an LDR image.
-        Exceptions from OpenImageIO or numpy.load may propagate for EXR/HDR/NPY.
+        RuntimeError: 画像を開けない、または対応する loader がない場合。
     """
     path_str = str(path)
     ext = Path(path_str).suffix.lower()
 
-    # Get custom loaders
     registry = ImageLoaderRegistry.get_instance()
 
-    # Try high-priority custom loaders first (priority > 0)
+    # priority > 0 の custom loader
     for loader_info in registry.custom_loaders:
         if loader_info["priority"] <= 0:
-            break  # Loaders are sorted by priority, so we can stop here
+            break  # priority 順に並んでいるのでここで打ち切れる
 
-        # Check if this loader handles this extension
         if loader_info["is_wildcard"] or ext in loader_info["extensions"]:
             try:
                 result = loader_info["func"](path_str)
@@ -267,8 +167,7 @@ def load_image(path: str | Path) -> np.ndarray:
                 print(f"Error: {e}")
                 continue
 
-    # Standard loaders (implicit priority = 0)
-    # Read EXR / HDR files by OpenImageIO
+    # 標準 loader（priority == 0 相当）
     if ext in [".exr", ".hdr"]:
         img = oiio.ImageInput.open(str(path))
         arr = img.read_image()
@@ -281,20 +180,18 @@ def load_image(path: str | Path) -> np.ndarray:
         arr = read_bin(path)
         return arr
     elif ext in [".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".gif", ".webp"]:
-        # Read LDR image by OpenCV
         img = cv2_imread_unicode(path_str)
         if img is None:
             raise RuntimeError(f"Cannot open image: {path_str}")
 
-        # Convert BGRA to RGBA
+        # OpenCV の BGR(A) を RGB(A) に変換する
         if img.ndim == 3 and img.shape[2] == 4:
             img = cv2.cvtColor(img, cv2.COLOR_BGRA2RGBA)
-        # Convert BGR to RGB
         elif img.ndim == 3 and img.shape[2] == 3:
             img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         return img
 
-    # Try normal-priority custom loaders (priority = 0)
+    # priority == 0 の custom loader
     for loader_info in registry.custom_loaders:
         if loader_info["priority"] != 0:
             continue
@@ -308,7 +205,7 @@ def load_image(path: str | Path) -> np.ndarray:
                 print(f"Error: {e}")
                 continue
 
-    # Try low-priority/fallback custom loaders (priority < 0)
+    # priority < 0 の fallback loader
     for loader_info in registry.custom_loaders:
         if loader_info["priority"] >= 0:
             continue
@@ -322,75 +219,43 @@ def load_image(path: str | Path) -> np.ndarray:
                 print(f"Error: {e}")
                 continue
 
-    # No loader succeeded
     raise RuntimeError(f"Cannot open image: {path_str} (unsupported format)")
 
 
 def is_image_file(path: str | Path) -> bool:
-    """Return True if the given path has a supported image file suffix.
-
-    This is a lightweight check that relies solely on the filename suffix
-    (case-insensitive). It does not attempt to open the file.
-
-    Custom loaders registered with ImageLoaderRegistry are also considered.
-
-    Args:
-        path: File path (string or Path-like).
-
-    Returns:
-        bool: True when suffix is supported (either standard or custom).
-    """
+    """拡張子から読み込み可能な画像ファイルかを判定する（custom loader の拡張子を含む）。"""
     path_obj = Path(path)
     ext = path_obj.suffix.lower()
 
-    # Standard extensions
     standard_exts = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".exr", ".npy", ".bin", ".hdr", ".gif", ".webp"}
     if ext in standard_exts:
         return True
 
-    # Check custom loaders
     registry = ImageLoaderRegistry.get_instance()
     custom_exts, has_wildcard = registry.get_supported_extensions()
 
-    # If wildcard loader exists, accept all files
     if has_wildcard:
         return True
 
-    # Check if extension is registered
     return ext in custom_exts
 
 
 def get_image_metadata(path: str | Path, arr: np.ndarray = None) -> dict:
-    """Return a dictionary of image metadata.
-
-    The function extracts basic image properties (format, size, dtype) and,
-    when available, comprehensive EXIF tags using the ``exifread`` library.
+    """画像の metadata を取得する。
 
     Args:
-        path: Filesystem path (str/Path) to the image file
-        arr: Numeric array-like image
+        path: 画像ファイルのパス。
+        arr: 読み込み済みの画像配列。EXR 以外で size や dtype の取得に使う。
 
     Returns:
-        dict: Mapping of metadata keys to values. Basic keys include
-        ``Filepath``, ``Format``, ``Size``, ``Mode`` and ``DataType``. If
-        ``exifread`` is available and a path is provided, EXIF tags are
-        included with spaces replaced by underscores in tag names.
-
-    Behavior:
-        - If the ``exifread`` package is not installed, the returned
-          dictionary will include a ``Warning`` key advising installation.
-
-    Example:
-        >>> md = get_image_metadata('photo.jpg')
-        >>> print(md['Format'], md.get('EXIF_DateTimeDigitized'))
+        Filepath, FileSize, Format, Size, Channels, DataType などに加え、
+        EXIF と PNG chunk の情報を含む dict。
     """
     metadata = {}
 
-    # Extract basic information based on file type
     if path:
         path_obj = Path(path)
 
-        # Add file size for all file types
         try:
             metadata["Filepath"] = str(path_obj.resolve())
             file_size = path_obj.stat().st_size
@@ -415,7 +280,6 @@ def get_image_metadata(path: str | Path, arr: np.ndarray = None) -> dict:
                 metadata["Size"] = f"{spec.width} x {spec.height}"
                 metadata["Channels"] = spec.nchannels
                 metadata["DataType"] = str(spec.format).split()[-1]
-                # Add additional metadata from spec
                 if spec.get_string_attribute("compression"):
                     metadata["Compression"] = spec.get_string_attribute("compression")
                 if spec.get_string_attribute("Software"):
@@ -430,7 +294,6 @@ def get_image_metadata(path: str | Path, arr: np.ndarray = None) -> dict:
                 metadata["Size"] = f"{w} x {h}"
                 metadata["DataType"] = str(arr.dtype)
 
-                # Channels / Mode inference
                 if arr.ndim == 2:
                     metadata["Channels"] = 1
                     metadata["Mode"] = "GRAY"

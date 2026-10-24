@@ -1,18 +1,4 @@
-"""Application entry point.
-
-This module provides the main() function that initializes the Qt application
-and displays the ImageViewer window.
-
-Usage:
-    python main.py
-
-    # Or as a module:
-    python -m PixelScopeViewer.app
-
-    # Or from Python:
-    from PixelScopeViewer import main
-    main()
-"""
+"""アプリケーションのエントリポイント。"""
 
 import sys
 from pathlib import Path
@@ -26,25 +12,23 @@ RESTART_EXIT_CODE = 1001
 
 
 def main(argv=None):
-    """Run the image viewer application.
+    """画像ビューアを起動する。
 
     Args:
-        argv: Command-line arguments (defaults to sys.argv)
+        argv: コマンドライン引数。None の場合は sys.argv を使う。
 
     Returns:
-        Exit code from QApplication.exec()
+        QApplication.exec() の終了コード。
     """
     if argv is None:
         argv = sys.argv
 
-    # Load custom image loaders before creating the application
+    # QApplication 生成前に custom loader を登録する
     try:
-        # Add project root to path to find custom_loaders
         project_root = Path(__file__).parent.parent
         if str(project_root) not in sys.path:
             sys.path.insert(0, str(project_root))
 
-        # Import and load custom loaders
         from custom_loaders import load_custom_loaders
 
         load_custom_loaders()
@@ -53,18 +37,18 @@ def main(argv=None):
 
     app = QApplication(argv)
 
-    # Set application icon (prefer ICO for better Windows taskbar support)
+    # Windows の taskbar で正しく表示されるよう ICO を使う
     icon_ico = Path(__file__).parent / "resources" / "app_icon.ico"
     app.setWindowIcon(QIcon(str(icon_ico)))
 
-    # Windows: Set AppUserModelID for custom taskbar icon
+    # Windows: taskbar に独自 icon を出すため AppUserModelID を設定する
     try:
         import ctypes
 
         myappid = "com.pixelscopeviewer.app.0.1.0"
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
     except Exception:
-        pass  # Not Windows or failed
+        pass  # Windows 以外、または設定失敗
 
     w = ImageViewer()
     w.show()

@@ -10,6 +10,8 @@ ignore = [
     "D100", "D101", "D102", "D103", "D104", "D105", "D106", "D107",
     # 日本語の summary は「。」で終わるため
     "D415",
+    # 日本語の summary は dtype などの英語の用語から始まることがあるため
+    "D403",
 ]
 
 [tool.ruff.lint.flake8-bugbear]

@@ -3,17 +3,16 @@
 import numpy as np
 
 from PixelScopeViewer.core.constants import MAX_ZOOM_SCALE, MIN_ZOOM_SCALE
+from PixelScopeViewer.ui.tiling.state import TilingState
 
 
 class ZoomManager:
     """全 tile 共通の zoom 倍率を管理する。"""
 
-    def __init__(self, tiles: list, get_active_tile_index_func):
+    def __init__(self, tiles: list, get_active_tile_index_func, state: TilingState):
         self.tiles = tiles
         self.get_active_tile_index = get_active_tile_index_func
-        self.scale = 1.0
-        self._is_fit_zoom = False
-        self._previous_zoom = 1.0
+        self.state = state
 
     def adjust_zoom(self, factor: float, tile_index: int | None = None, mouse_pos=None):
         """全 tile の zoom 倍率に factor を掛ける。
@@ -50,22 +49,22 @@ class ZoomManager:
         scroll_y = vsb.value() if vsb else 0
 
         # 基準点の画像座標
-        image_x = (scroll_x + viewport_x) / self.scale
-        image_y = (scroll_y + viewport_y) / self.scale
+        image_x = (scroll_x + viewport_x) / self.state.scale
+        image_y = (scroll_y + viewport_y) / self.state.scale
 
         # メインビューアと同じ範囲に制限する
-        self.scale *= factor
-        self.scale = max(MIN_ZOOM_SCALE, min(self.scale, MAX_ZOOM_SCALE))
+        self.state.scale *= factor
+        self.state.scale = max(MIN_ZOOM_SCALE, min(self.state.scale, MAX_ZOOM_SCALE))
 
         # 手動で zoom したら fit 状態を解除する
-        self._is_fit_zoom = False
+        self.state.is_fit_zoom = False
 
         for tile in self.tiles:
-            tile.set_zoom(self.scale)
+            tile.set_zoom(self.state.scale)
 
         # 基準点が同じ viewport 上の位置に来る scroll 位置
-        new_scroll_x = image_x * self.scale - viewport_x
-        new_scroll_y = image_y * self.scale - viewport_y
+        new_scroll_x = image_x * self.state.scale - viewport_x
+        new_scroll_y = image_y * self.state.scale - viewport_y
 
         # 同期のずれを避けるため、呼び出し側で全 tile に適用する
         return new_scroll_x, new_scroll_y
@@ -79,11 +78,11 @@ class ZoomManager:
         if not self.tiles:
             return
 
-        if self._is_fit_zoom:
-            self.scale = self._previous_zoom if hasattr(self, "_previous_zoom") else 1.0
-            self._is_fit_zoom = False
+        if self.state.is_fit_zoom:
+            self.state.scale = self.state.previous_zoom
+            self.state.is_fit_zoom = False
         else:
-            self._previous_zoom = self.scale
+            self.state.previous_zoom = self.state.scale
 
             active_tile = (
                 self.tiles[self.get_active_tile_index()]
@@ -106,14 +105,14 @@ class ZoomManager:
                 fit_scale = min(scale_w, scale_h, 1.0)
                 fit_scale = max(MIN_ZOOM_SCALE, min(MAX_ZOOM_SCALE, fit_scale))
                 power = round(np.log2(fit_scale))
-                self.scale = 2.0**power
+                self.state.scale = 2.0**power
             else:
-                self.scale = 1.0
+                self.state.scale = 1.0
 
-            self._is_fit_zoom = True
+            self.state.is_fit_zoom = True
 
         for tile in self.tiles:
-            tile.set_zoom(self.scale)
+            tile.set_zoom(self.state.scale)
 
         active_idx = self.get_active_tile_index()
         if 0 <= active_idx < len(self.tiles):
@@ -126,4 +125,4 @@ class ZoomManager:
                 sync_scroll_func(active_idx, "v", vsb.value())
 
     def get_scale(self) -> float:
-        return self.scale
+        return self.state.scale

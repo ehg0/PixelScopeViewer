@@ -3,17 +3,18 @@
 from PySide6.QtWidgets import QGridLayout
 
 from PixelScopeViewer.core.brightness import determine_dtype_group
+from PixelScopeViewer.ui.tiling.state import TilingState
 
 
 class TileManager:
     """tile widget の生成・active 状態・並べ替えを管理する。"""
 
-    def __init__(self, grid_layout: QGridLayout):
+    def __init__(self, grid_layout: QGridLayout, state: TilingState):
         self.grid_layout = grid_layout
+        self.state = state
         self.tiles: list = []
         self.tile_dtype_groups: list[str] = []
         self.displayed_image_data: list[dict] = []
-        self.active_tile_index = 0
 
     def rebuild_tiles(
         self,
@@ -77,14 +78,14 @@ class TileManager:
         if tile_index < 0 or tile_index >= len(self.tiles):
             return
 
-        if 0 <= self.active_tile_index < len(self.tiles):
-            self.tiles[self.active_tile_index].set_active(False)
+        if 0 <= self.state.active_tile_index < len(self.tiles):
+            self.tiles[self.state.active_tile_index].set_active(False)
 
-        self.active_tile_index = tile_index
+        self.state.active_tile_index = tile_index
         self.tiles[tile_index].set_active(True)
 
     def get_active_tile_index(self) -> int:
-        return self.active_tile_index
+        return self.state.active_tile_index
 
     def get_tiles(self) -> list:
         return self.tiles

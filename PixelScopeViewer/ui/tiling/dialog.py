@@ -28,6 +28,7 @@ from PixelScopeViewer.ui.tiling.managers import (
     ZoomManager,
 )
 from PixelScopeViewer.ui.tiling.selection_dialog import TileSelectionDialog
+from PixelScopeViewer.ui.tiling.state import TilingState
 from PixelScopeViewer.ui.tiling.tile_widget import TileWidget
 
 
@@ -68,8 +69,7 @@ class TilingDialog(QDialog):
             self.reject()
             return
 
-        self.grid_size = grid_size
-        self.selected_indices = selected_indices
+        self.state = TilingState(grid_size=grid_size, selected_indices=selected_indices)
 
         # GC されないよう shortcut の参照を保持する
         self.shortcuts = []
@@ -79,7 +79,7 @@ class TilingDialog(QDialog):
         # UI（grid_layout）→ tile → manager の順に作成する
         self._build_ui()
 
-        self.tile_manager = TileManager(self.grid_layout)
+        self.tile_manager = TileManager(self.grid_layout, self.state)
         self.brightness_manager = None
         self.scroll_manager = None
         self.zoom_manager = None
@@ -166,16 +166,18 @@ class TilingDialog(QDialog):
         tiles = self.tile_manager.get_tiles()
         tile_dtype_groups = self.tile_manager.get_tile_dtype_groups()
 
-        self.brightness_manager = BrightnessManager(tiles, tile_dtype_groups)
+        self.brightness_manager = BrightnessManager(tiles, tile_dtype_groups, self.state)
         self.scroll_manager = ScrollManager(tiles)
-        self.zoom_manager = ZoomManager(tiles, self.tile_manager.get_active_tile_index)
-        self.roi_manager = ROIManager(tiles, self.tile_manager.get_active_tile_index, self.common_roi_changed)
+        self.zoom_manager = ZoomManager(tiles, self.tile_manager.get_active_tile_index, self.state)
+        self.roi_manager = ROIManager(
+            tiles, self.tile_manager.get_active_tile_index, self.common_roi_changed, self.state
+        )
 
     def _rebuild_tiles(self):
         self.tile_manager.rebuild_tiles(
             self.all_images,
-            self.selected_indices,
-            self.grid_size,
+            self.state.selected_indices,
+            self.state.grid_size,
             self,
             TileWidget,
             self.set_active_tile,
@@ -404,8 +406,8 @@ class TilingDialog(QDialog):
         if self.tile_manager:
             self.tile_manager.set_active_tile(tile_index)
 
-            if self.roi_manager and self.roi_manager.common_roi_rect:
-                self.roi_manager.sync_roi_to_all_tiles(self.roi_manager.common_roi_rect)
+            if self.roi_manager and self.state.common_roi:
+                self.roi_manager.sync_roi_to_all_tiles(self.state.common_roi)
 
             if self._analysis_dialog and self._analysis_dialog.isVisible():
                 image_array, roi_rect, file_path = self.get_active_tile_image_and_rect()
@@ -504,7 +506,7 @@ class TilingDialog(QDialog):
 
         roi_rect = None
         if self.roi_manager:
-            roi_rect = self.roi_manager.common_roi_rect
+            roi_rect = self.state.common_roi
 
         file_path = None
         if hasattr(active_tile, "image_data") and active_tile.image_data:
@@ -526,7 +528,7 @@ class TilingDialog(QDialog):
 
         roi_rect = None
         if self.roi_manager:
-            roi_rect = self.roi_manager.common_roi_rect
+            roi_rect = self.state.common_roi
 
         for i, tile in enumerate(tiles):
             image_array = tile.get_base_array()
@@ -683,7 +685,7 @@ class TilingDialog(QDialog):
     def copy_all_tiles_roi_as_grid(self):
         """全 tile の ROI の表示画像を grid に並べて clipboard にコピーする。"""
         if self.roi_manager:
-            self.roi_manager.copy_all_tiles_roi_as_grid(self.grid_size)
+            self.roi_manager.copy_all_tiles_roi_as_grid(self.state.grid_size)
 
     def update_status_bar(self):
         if self.current_mouse_coords:

@@ -5,6 +5,7 @@ from PySide6.QtCore import QRect, Signal
 from PySide6.QtGui import QGuiApplication
 
 from PixelScopeViewer.ui.common.qt_image import numpy_to_qimage
+from PixelScopeViewer.ui.tiling.state import TilingState
 
 
 class ROIManager:
@@ -16,21 +17,21 @@ class ROIManager:
         common_roi_changed_signal: ROI の変更時に emit する signal。
     """
 
-    def __init__(self, tiles: list, get_active_tile_index_func, common_roi_changed_signal: Signal):
+    def __init__(self, tiles: list, get_active_tile_index_func, common_roi_changed_signal: Signal, state: TilingState):
         self.tiles = tiles
         self.get_active_tile_index = get_active_tile_index_func
         self.common_roi_changed = common_roi_changed_signal
-        self.common_roi_rect: QRect | None = None
+        self.state = state
 
     def on_tile_roi_changed_list(self, roi_rect):
         """[x, y, w, h] 形式（または None）の ROI を共通 ROI にする。"""
         if roi_rect:
-            self.common_roi_rect = QRect(roi_rect[0], roi_rect[1], roi_rect[2], roi_rect[3])
+            self.state.common_roi = QRect(roi_rect[0], roi_rect[1], roi_rect[2], roi_rect[3])
         else:
-            self.common_roi_rect = None
+            self.state.common_roi = None
 
-        if self.common_roi_rect:
-            self.common_roi_changed.emit(self.common_roi_rect)
+        if self.state.common_roi:
+            self.common_roi_changed.emit(self.state.common_roi)
 
     def sync_roi_to_all_tiles(self, roi_rect: QRect):
         for i, tile in enumerate(self.tiles):
@@ -47,11 +48,11 @@ class ROIManager:
         h, w = arr.shape[:2]
 
         full_roi = QRect(0, 0, w, h)
-        self.common_roi_rect = full_roi
+        self.state.common_roi = full_roi
         self.common_roi_changed.emit(full_roi)
 
     def clear_roi(self):
-        self.common_roi_rect = None
+        self.state.common_roi = None
         self.common_roi_changed.emit(QRect())
 
     def copy_active_tile_roi(self):
@@ -60,7 +61,7 @@ class ROIManager:
             return
 
         active_tile = self.tiles[self.get_active_tile_index()]
-        roi_rect = self.common_roi_rect
+        roi_rect = self.state.common_roi
 
         arr = active_tile.get_displayed_array()
 
@@ -90,7 +91,7 @@ class ROIManager:
         if not self.tiles:
             return
 
-        roi_rect = self.common_roi_rect
+        roi_rect = self.state.common_roi
         if not roi_rect or roi_rect.isEmpty():
             return
 
@@ -172,8 +173,8 @@ class ROIManager:
 
     def get_roi_status(self) -> str:
         """status bar に表示する ROI の文字列を返す。"""
-        if self.common_roi_rect and not self.common_roi_rect.isEmpty():
-            r = self.common_roi_rect
+        if self.state.common_roi and not self.state.common_roi.isEmpty():
+            r = self.state.common_roi
             x0, y0 = r.x(), r.y()
             x1, y1 = x0 + r.width() - 1, y0 + r.height() - 1
             return f" | ({x0}, {y0}) - ({x1}, {y1}), w: {r.width()}, h: {r.height()}"

@@ -28,6 +28,13 @@ from PixelScopeViewer.ui.analysis.tabs.channel_list import ChannelListWidget
 from PixelScopeViewer.ui.common import defaults, theme
 
 
+def _format_stat(value, is_int: bool) -> str:
+    """統計量を表示用の文字列にする。整数 dtype は整数で表示し、NaN（平均 0 の fano など）はそのまま表示する。"""
+    if is_int and np.isfinite(value):
+        return f"{int(value)}"
+    return f"{value:.4f}"
+
+
 class HistogramTab(QWidget):
     """histogram の plot、統計量の table、設定 control を持つ tab。
 
@@ -415,13 +422,13 @@ class HistogramTab(QWidget):
             mi.setTextAlignment(Qt.AlignCenter)
             si = QTableWidgetItem(f"{r['std']:.4f}")
             si.setTextAlignment(Qt.AlignCenter)
-            mdi = QTableWidgetItem(f"{int(r['median'])}" if r["is_int"] else f"{r['median']:.4f}")
+            mdi = QTableWidgetItem(_format_stat(r["median"], r["is_int"]))
             mdi.setTextAlignment(Qt.AlignCenter)
-            mini = QTableWidgetItem(f"{int(r['min'])}" if r["is_int"] else f"{r['min']:.4f}")
+            mini = QTableWidgetItem(_format_stat(r["min"], r["is_int"]))
             mini.setTextAlignment(Qt.AlignCenter)
-            maxi = QTableWidgetItem(f"{int(r['max'])}" if r["is_int"] else f"{r['max']:.4f}")
+            maxi = QTableWidgetItem(_format_stat(r["max"], r["is_int"]))
             maxi.setTextAlignment(Qt.AlignCenter)
-            fanoi = QTableWidgetItem(f"{int(r['fano'])}" if r["is_int"] else f"{r['fano']:.4f}")
+            fanoi = QTableWidgetItem(_format_stat(r["fano"], r["is_int"]))
             fanoi.setTextAlignment(Qt.AlignCenter)
             self.stats_table.setItem(row_idx, 1, mi)
             self.stats_table.setItem(row_idx, 2, si)

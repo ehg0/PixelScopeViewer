@@ -1,4 +1,4 @@
-"""Logic and utilities for brightness tab."""
+"""brightness tab の UI 構築と計算処理。"""
 
 from .brightness_builder import BrightnessUIBuilder
 from .brightness_utils import (

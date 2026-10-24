@@ -1,4 +1,4 @@
-"""Utility functions for brightness calculations and conversions."""
+"""brightness の値の変換と表示用の整形。"""
 
 import math
 
@@ -8,21 +8,10 @@ from PixelScopeViewer.core.constants import get_dtype_defaults
 
 
 def determine_dtype_defaults(image_array=None, image_path=None):
-    """Determine default brightness parameters based on image type.
-
-    Args:
-        image_array: numpy array of the image (optional)
-        image_path: path to the image file (optional)
+    """画像の dtype に応じた brightness の初期設定を返す。
 
     Returns:
-        dict: Dictionary containing:
-            - dtype_key: "uint8", "uint16", or "float"
-            - is_float_type: bool
-            - initial_offset: float
-            - initial_gain: float
-            - initial_upper_level: float
-            - offset_range: tuple (min, max)
-            - upper_level_range: tuple (min, max)
+        float の画像は "float"、それ以外は "uint8" の get_dtype_defaults の戻り値。
     """
     if image_array is None:
         return get_dtype_defaults("uint8")
@@ -32,53 +21,25 @@ def determine_dtype_defaults(image_array=None, image_path=None):
 
 
 def clamp_value(value, min_val, max_val):
-    """Clamp a value to a range."""
     return max(min_val, min(max_val, value))
 
 
 def slider_to_value(slider_value, is_float, multiplier=10):
-    """Convert slider value to actual value.
-
-    Args:
-        slider_value: Integer slider position
-        is_float: Whether the value should be treated as float
-        multiplier: Multiplier for float values (default 10 for offset, 1000 for upper_level)
-
-    Returns:
-        Actual value (float or int)
-    """
+    """slider の位置を値に変換する。float の場合は multiplier で割る。"""
     if is_float:
         return slider_value / multiplier
     return slider_value
 
 
 def value_to_slider(value, is_float, multiplier=10):
-    """Convert actual value to slider value.
-
-    Args:
-        value: Actual value
-        is_float: Whether the value is float type
-        multiplier: Multiplier for float values
-
-    Returns:
-        Integer slider position
-    """
+    """値を slider の位置に変換する。float の場合は multiplier を掛ける。"""
     if is_float:
         return int(value * multiplier)
     return int(value)
 
 
 def round_to_power_of_2(value, log2_min=-7, log2_max=10):
-    """Round a value to the nearest power of 2 within range.
-
-    Args:
-        value: Value to round
-        log2_min: Minimum log2 value
-        log2_max: Maximum log2 value
-
-    Returns:
-        Nearest power of 2
-    """
+    """2^log2_min 〜 2^log2_max の範囲で、最も近い 2 の累乗に丸める。"""
     if value <= 0:
         return 1.0
 
@@ -89,29 +50,13 @@ def round_to_power_of_2(value, log2_min=-7, log2_max=10):
 
 
 def format_value_label(value, is_float):
-    """Format a value for display in label.
-
-    Args:
-        value: Value to format
-        is_float: Whether to format as float
-
-    Returns:
-        Formatted string
-    """
     if is_float:
         return f"{value:.5f}"
     return f"{int(value)}"
 
 
 def format_gain_label(gain):
-    """Format gain value for display.
-
-    Args:
-        gain: Gain value
-
-    Returns:
-        Formatted string with appropriate decimal places
-    """
+    """gain を表示用に整形する。値が小さいほど小数桁を増やす。"""
     if gain < 0.01:
         return f"{gain:.6f}"
     elif gain < 0.1:

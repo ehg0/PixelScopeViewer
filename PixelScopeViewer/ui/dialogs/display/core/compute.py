@@ -1,44 +1,26 @@
-"""Brightness computation functions (Qt-independent).
-
-This module provides pure functions for applying brightness adjustments
-to image arrays.
-"""
+"""brightness の計算（Qt 非依存）。"""
 
 import numpy as np
 
 
 def apply_brightness_adjustment(arr: np.ndarray, offset: float, gain: float, upper_level: float) -> np.ndarray:
-    """Apply brightness adjustment to an image array.
+    """画像配列に brightness 調整を適用する。
 
-    Formula:
-        yout = gain * (yin - offset) / (upper_level - offset) * 255
+    変換式: gain * (x - offset) / (upper_level - offset) * 255
 
-    Parameters
-    ----------
-    arr : np.ndarray
-        Input image array (accepts any dtype)
-    offset : float
-        Intensity baseline shift (can be negative)
-    gain : float
-        Intensity amplification factor (positive only)
-    upper_level : float
-        Maximum intensity reference (positive only)
+    Args:
+        arr: 画像配列（dtype は任意）。
+        offset: 黒レベル（負の値も可）。
+        gain: 増幅率。
+        upper_level: 白レベル。
 
     Returns:
-    -------
-    np.ndarray
-        Adjusted array clipped to [0, 255] and converted to uint8
-
-    Notes:
-    -----
-    If upper_level is 0, returns the original array to avoid division by zero.
+        [0, 255] に clip した uint8 の配列。upper_level が 0 の場合は arr をそのまま返す。
     """
-    # Avoid division by zero
+    # 0 除算を避ける
     if upper_level == 0:
         return arr
 
-    # Apply formula with proper type conversion
     adjusted = gain * (arr.astype(np.float32) - offset) / (upper_level - offset) * 255
 
-    # Clip to valid range and convert back to uint8
     return np.clip(adjusted, 0, 255).astype(np.uint8)

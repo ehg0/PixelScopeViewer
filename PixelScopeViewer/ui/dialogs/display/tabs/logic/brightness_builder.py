@@ -1,4 +1,4 @@
-"""UI builder for BrightnessTab - handles all widget creation and layout."""
+"""BrightnessTab の widget 生成と layout。"""
 
 import math
 
@@ -18,7 +18,7 @@ from ..components import PowerOfTwoSpinBox
 
 
 class BrightnessUIBuilder:
-    """Responsible for building all UI components for BrightnessTab."""
+    """BrightnessTab の UI 部品を生成して layout に追加する。"""
 
     SLIDER_STYLESHEET = """
         QSlider::groove:horizontal { background: #ddd; height: 6px; border-radius: 3px; }
@@ -29,22 +29,11 @@ class BrightnessUIBuilder:
     SPINBOX_STYLESHEET = "QSpinBox, QDoubleSpinBox { padding: 10px; font-size: 10pt; }"
 
     def __init__(self, parent_widget):
-        """Initialize the UI builder.
-
-        Args:
-            parent_widget: The parent widget to build UI on
-        """
         self.parent = parent_widget
         self.widgets = {}
 
     def build_dtype_selector(self, layout, current_dtype, on_dtype_changed_callback):
-        """Build the dtype selector combo box.
-
-        Args:
-            layout: QVBoxLayout to add to
-            current_dtype: Current dtype string
-            on_dtype_changed_callback: Callback for dtype changes
-        """
+        """dtype の combo box を作成する。"""
         dtype_layout = QHBoxLayout()
         dtype_label = QLabel("データ型 (Data Type)")
         dtype_label.setStyleSheet("font-weight: bold; font-size: 10pt;")
@@ -65,9 +54,11 @@ class BrightnessUIBuilder:
         return dtype_combo
 
     def build_autoscale(self, layout, on_autoscale_cb_callback, set_as_default_callback):
-        # group = QGroupBox("Auto Scale (Range: min-max)")
-        # group.setStyleSheet("""QGroupBox {font-weight: bold;font-size: 10pt;}""")
-        # _layout = QHBoxLayout(group)
+        """auto scale と ROI 使用の checkbox、既定値に設定する button を作成する。
+
+        Returns:
+            (auto scale の checkbox, ROI 使用の checkbox, 既定値に設定する button)。
+        """
         _layout = QHBoxLayout()
 
         autoscale_cb = QCheckBox("Auto Scale (min-max)")
@@ -84,7 +75,6 @@ class BrightnessUIBuilder:
         _layout.addWidget(set_ad_default_bt)
         _layout.addStretch()
 
-        # layout.addWidget(group)
         layout.addLayout(_layout)
         layout.addSpacing(10)
 
@@ -99,18 +89,10 @@ class BrightnessUIBuilder:
         slider_callback,
         spinbox_callback,
     ):
-        """Build offset label, slider and spinbox controls.
-
-        Args:
-            layout: QVBoxLayout to add to
-            initial_value: Initial offset value
-            offset_range: Tuple (min, max)
-            is_float: Whether values are float type
-            slider_callback: Callback for slider changes
-            spinbox_callback: Callback for spinbox changes
+        """offset の slider と spin box を作成する。
 
         Returns:
-            tuple: (slider, spinbox)
+            (slider, spin box)。
         """
         control_layout = QHBoxLayout()
         control_layout.setSpacing(10)
@@ -165,27 +147,16 @@ class BrightnessUIBuilder:
         slider_callback,
         spinbox_callback,
     ):
-        """Build gain label, slider and spinbox controls.
-
-        Args:
-            layout: QVBoxLayout to add to
-            initial_value: Initial gain value
-            log2_min: Minimum log2 value for slider
-            log2_max: Maximum log2 value for slider
-            spinbox_min: Minimum spinbox value
-            spinbox_max: Maximum spinbox value
-            slider_callback: Callback for slider changes
-            spinbox_callback: Callback for spinbox changes
+        """gain の slider（log2 scale）と spin box（2 の累乗で増減）を作成する。
 
         Returns:
-            tuple: (slider, spinbox)
+            (slider, spin box)。
         """
         control_layout = QHBoxLayout()
         caption = QLabel("Gain")
         caption.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         control_layout.addWidget(caption)
 
-        # Slider uses log2 scale
         slider = StepSlider(Qt.Horizontal)
         slider.setRange(log2_min, log2_max)
         slider.setSingleStep(1)
@@ -199,7 +170,6 @@ class BrightnessUIBuilder:
         slider.blockSignals(False)
         slider.valueChanged.connect(slider_callback)
 
-        # Spinbox with power-of-2 stepping
         spinbox = PowerOfTwoSpinBox(log2_min=log2_min, log2_max=log2_max)
         spinbox.setDecimals(7)
         spinbox.setSingleStep(1)
@@ -231,18 +201,10 @@ class BrightnessUIBuilder:
         slider_callback,
         spinbox_callback,
     ):
-        """Build upper_level label, slider and spinbox controls.
-
-        Args:
-            layout: QVBoxLayout to add to
-            initial_value: Initial upper_level value
-            upper_level_range: Tuple (min, max)
-            is_float: Whether values are float type
-            slider_callback: Callback for slider changes
-            spinbox_callback: Callback for spinbox changes
+        """upper level の slider と spin box を作成する。
 
         Returns:
-            tuple: (slider, spinbox)
+            (slider, spin box)。
         """
         control_layout = QHBoxLayout()
         caption = QLabel("Upper_level")
@@ -287,14 +249,10 @@ class BrightnessUIBuilder:
         return slider, spinbox
 
     def build_formula_and_reset(self, layout, reset_callback):
-        """Build formula label and reset button.
-
-        Args:
-            layout: QVBoxLayout to add to
-            reset_callback: Callback for reset button
+        """変換式の label と reset button を作成する。
 
         Returns:
-            QPushButton: The reset button
+            reset button。
         """
         formula_label = QLabel("-> yout = gain × (yin - offset) / (upper_level - offset) × 255")
         formula_label.setStyleSheet("font-style: italic; font-size: 10pt")

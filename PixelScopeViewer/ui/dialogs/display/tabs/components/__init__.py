@@ -1,4 +1,4 @@
-"""Reusable UI components for display tabs."""
+"""表示設定 tab の部品 widget。"""
 
 from .power_of_two_spinbox import PowerOfTwoSpinBox
 

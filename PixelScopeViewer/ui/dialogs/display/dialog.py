@@ -1,15 +1,4 @@
-"""Brightness and channel adjustment dialog for controlling display intensity and channel visibility.
-
-This module provides a dialog for adjusting image display brightness with:
-- Offset: Shifts intensity baseline (can be negative)
-- Gain: Amplifies intensity changes (positive only)
-- Upper_level: Sets the maximum intensity reference (positive only)
-
-Formula: yout = gain * (yin - offset) / (upper_level - offset) * 255
-
-The dialog adapts to image data type and provides both sliders and spinboxes
-for precise control. Also includes channel visibility selection.
-"""
+"""表示設定 dialog（brightness と channel の色・表示 ON/OFF）。"""
 
 import contextlib
 
@@ -26,25 +15,28 @@ from .tabs import BrightnessTab, ChannelTab
 
 
 class BrightnessDialog(QDialog):
-    """Dialog for adjusting display brightness parameters and channel visibility.
+    """brightness と channel の色・表示 ON/OFF を設定する modeless dialog。
 
-    Signals:
-        brightness_changed: Emitted when brightness parameters change (offset, gain, upper_level)
-        channels_changed: Emitted when channel visibility changes
-
-    The dialog automatically detects image data type and sets appropriate
-    parameter ranges and initial values.
+    Args:
+        parent: 親 widget（通常は ImageViewer）。
+        image_array: 画像配列。
+        image_path: 画像ファイルのパス。
+        initial_brightness: (offset, gain, upper_level) の初期値。
+        initial_channels: channel ごとの表示 ON/OFF。
+        initial_colors: channel ごとの QColor。
+        initial_mode_1ch: 1ch 画像の表示モード。
+        initial_mode_2ch: 2ch 画像の表示モード。
     """
 
     brightness_changed = Signal(float, float, float)  # offset, gain, upper_level
-    channels_changed = Signal(list)  # list of bools for channel visibility
-    channel_colors_changed = Signal(list)  # list of colors for channels
+    channels_changed = Signal(list)  # channel ごとの表示 ON/OFF
+    channel_colors_changed = Signal(list)  # channel ごとの QColor
     mode_1ch_changed = Signal(str)
     mode_2ch_changed = Signal(str)
 
-    # Persist window geometry across openings so it doesn't jump based on cursor/OS heuristics
+    # 開き直したときに位置が変わらないよう geometry を class で保持する
     _saved_geometry = None
-    # Store position before minimize to restore after showNormal()
+    # 最小化からの復元時に元の位置へ戻すため保持する
     _position_before_minimize = None
 
     def __init__(
@@ -58,23 +50,13 @@ class BrightnessDialog(QDialog):
         initial_mode_1ch: str = MODE_1CH_GRAYSCALE,
         initial_mode_2ch: str = MODE_2CH_FLOW_HSV,
     ):
-        """Initialize brightness and channel adjustment dialog.
-
-        Args:
-            parent: Parent widget
-            image_array: NumPy array of current image
-            image_path: Path to current image file
-            initial_brightness: Tuple of (offset, gain, upper_level)
-            initial_channels: List of bools for channel visibility
-            initial_colors: List of QColor objects for channel colors
-        """
         super().__init__(parent)
         self.viewer = parent
         self.setWindowTitle("表示設定")
         self.resize(500, 450)
         self.setStyleSheet("QDialog { background-color: #fafafa; }")
 
-        # Set window flags to allow minimizing and prevent staying on top
+        # 最小化を許可し、最前面に固定しない
         flags = Qt.Window | Qt.WindowMinimizeButtonHint | Qt.WindowCloseButtonHint
         self.setWindowFlags(flags)
         self.setAttribute(Qt.WA_DeleteOnClose)
@@ -82,10 +64,8 @@ class BrightnessDialog(QDialog):
         self.image_array = image_array
         self.image_path = image_path
 
-        # Create tab widget
         self.tabs = QTabWidget()
 
-        # Channel tab
         self.channel_tab = ChannelTab(
             self,
             image_array,
@@ -97,13 +77,11 @@ class BrightnessDialog(QDialog):
         )
         self.tabs.addTab(self.channel_tab, "チャンネル色設定")
 
-        # Brightness tab
         self.brightness_tab = BrightnessTab(self, image_array, image_path)
         self.tabs.addTab(self.brightness_tab, "輝度調整")
 
-        # Connect signals
         self.brightness_tab.brightness_changed.connect(self.brightness_changed)
-        # Also forward brightness to channel tab for colorbar captions
+        # colorbar の label 用に channel tab にも brightness を通知する
         self.brightness_tab.brightness_changed.connect(self.channel_tab.on_brightness_for_colorbar)
         self.channel_tab.channels_changed.connect(self.channels_changed)
         self.channel_tab.channels_changed.connect(self.brightness_tab._apply_autoscale)
@@ -111,23 +89,18 @@ class BrightnessDialog(QDialog):
         self.channel_tab.mode_1ch_changed.connect(self.mode_1ch_changed)
         self.channel_tab.mode_2ch_changed.connect(self.mode_2ch_changed)
 
-        # Layout
         layout = QVBoxLayout(self)
         layout.addWidget(self.tabs)
 
-        # Note: OK/Cancel buttons are intentionally omitted for a modeless, live-updating dialog
-
-        # Restore last window geometry if available to avoid cursor-dependent positioning
+        # 前回の geometry を復元する
         try:
             if BrightnessDialog._saved_geometry:
                 self.restoreGeometry(BrightnessDialog._saved_geometry)
         except Exception:
             pass
 
-        # Set initial values
         if initial_brightness:
             self.set_brightness(*initial_brightness)
-            # Seed colorbar captions with initial brightness
             with contextlib.suppress(Exception):
                 self.channel_tab.on_brightness_for_colorbar(*initial_brightness)
         if initial_channels:
@@ -136,29 +109,19 @@ class BrightnessDialog(QDialog):
             self.set_channel_colors(initial_colors)
 
     def set_brightness(self, offset, gain, upper_level):
-        """Set brightness parameters."""
         self.brightness_tab.offset_spinbox.setValue(offset)
         self.brightness_tab.gain_spinbox.setValue(gain)
         self.brightness_tab.upper_level_spinbox.setValue(upper_level)
 
     def set_gain(self, gain_value: float):
-        """Programmatically set gain value via the Brightness tab.
-
-        This provides a stable API for parent viewer code to adjust the gain
-        (e.g., when handling keyboard shortcuts like '<' and '>').
-        """
         try:
             if hasattr(self, "brightness_tab") and hasattr(self.brightness_tab, "set_gain"):
                 self.brightness_tab.set_gain(gain_value)
         except Exception:
-            # Fail silently to avoid interrupting UI flow
             pass
 
     def reset_parameters(self):
-        """Reset parameters via the Brightness tab and emit change.
-
-        Wrapper to keep viewer code simple regardless of internal tab structure.
-        """
+        """brightness を初期値に戻し、brightness_changed を emit する。"""
         try:
             if hasattr(self, "brightness_tab") and hasattr(self.brightness_tab, "reset_parameters"):
                 self.brightness_tab.reset_parameters()
@@ -166,19 +129,16 @@ class BrightnessDialog(QDialog):
             pass
 
     def set_channels(self, channels):
-        """Set channel visibility."""
         self.channel_tab.set_channel_states(channels)
 
     def get_brightness(self):
-        """Get current brightness parameters."""
+        """(offset, gain, upper_level) を返す。"""
         return self.brightness_tab.get_parameters()
 
     def get_channel_colors(self):
-        """Get current channel colors."""
         return self.channel_tab.get_channel_colors()
 
     def set_channel_colors(self, colors):
-        """Set channel colors."""
         self.channel_tab.set_channel_colors(colors)
 
     def update_for_new_image(
@@ -191,11 +151,10 @@ class BrightnessDialog(QDialog):
         initial_mode_1ch: str | None = None,
         initial_mode_2ch: str | None = None,
     ):
-        """Update dialog for new image."""
+        """表示を新しい画像に合わせて更新する。モードが None の場合は現在のモードを保つ。"""
         self.image_array = image_array
         self.image_path = image_path
         self.brightness_tab.update_for_new_image(image_array, image_path, keep_settings)
-        # Keep current modes if not provided
         if initial_mode_1ch is not None:
             self.channel_tab._mode1 = initial_mode_1ch
         if initial_mode_2ch is not None:
@@ -203,36 +162,32 @@ class BrightnessDialog(QDialog):
         self.channel_tab.update_for_new_image(image_array, channel_checks, channel_colors)
 
     def changeEvent(self, event):
-        """Handle window state changes to preserve position during minimize/restore."""
+        # 最小化前の位置を保存し、復元時に戻す
         if event.type() == QEvent.WindowStateChange:
             if self.isMinimized():
-                # Save current position before minimize
                 BrightnessDialog._position_before_minimize = self.pos()
             elif event.oldState() & Qt.WindowMinimized and BrightnessDialog._position_before_minimize is not None:
                 self.move(BrightnessDialog._position_before_minimize)
         super().changeEvent(event)
 
     def moveEvent(self, event):
-        # Save geometry whenever the dialog is moved
         with contextlib.suppress(Exception):
             BrightnessDialog._saved_geometry = self.saveGeometry()
         super().moveEvent(event)
 
     def resizeEvent(self, event):
-        # Save geometry whenever the dialog is resized
         with contextlib.suppress(Exception):
             BrightnessDialog._saved_geometry = self.saveGeometry()
         super().resizeEvent(event)
 
     def keyPressEvent(self, event):
-        """Handle ESC key: clear spinbox focus if editing, otherwise prevent dialog close."""
+        # Esc で dialog を閉じず、spin box の focus を外すだけにする
         if event.key() == Qt.Key_Escape:
             fw = self.focusWidget()
             if isinstance(fw, QAbstractSpinBox):
                 fw.clearFocus()
                 event.accept()
             else:
-                # Don't close dialog on ESC
                 event.ignore()
             return
         super().keyPressEvent(event)

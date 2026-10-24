@@ -32,7 +32,7 @@ def main(argv=None):
         from custom_loaders import load_custom_loaders
 
         load_custom_loaders()
-    except Exception as e:
+    except Exception as e:  # custom loader は外部の plugin のため、失敗しても viewer は起動する
         print(f"Note: Custom loaders not loaded: {e}")
 
     app = QApplication(argv)
@@ -47,8 +47,8 @@ def main(argv=None):
 
         myappid = "com.pixelscopeviewer.app.0.1.0"
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
-    except Exception:
-        pass  # Windows 以外、または設定失敗
+    except (AttributeError, OSError):
+        pass  # Windows 以外（windll がない）、または設定失敗
 
     w = ImageViewer()
     w.show()

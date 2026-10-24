@@ -162,7 +162,7 @@ def _try_custom_loaders(
                 result = loader_info["func"](path_str)
                 if result is not None:
                     return result
-            except Exception as e:
+            except Exception as e:  # custom loader は外部の plugin のため、失敗しても次の loader を試す
                 print(f"Error: {e}")
     return None
 
@@ -212,52 +212,40 @@ def get_image_metadata(path: str | Path, arr: np.ndarray = None) -> dict:
         try:
             metadata["Filepath"] = str(path_obj.resolve())
             metadata["FileSize"] = format_file_size(path_obj.stat().st_size)
-        except Exception:
+        except OSError:
             pass
 
         ext = path_obj.suffix.lower()
         if ext == ".exr":
-            try:
-                img = oiio.ImageInput.open(str(path_obj))
+            # OpenImageIO は失敗時に例外ではなく None を返す
+            img = oiio.ImageInput.open(str(path_obj))
+            if img is None:
+                metadata["Error"] = oiio.geterror()
+            else:
                 spec = img.spec()
                 metadata["Format"] = "EXR"
                 metadata["Size"] = f"{spec.width} x {spec.height}"
                 metadata["Channels"] = spec.nchannels
                 metadata["DataType"] = str(spec.format).split()[-1]
-                if spec.get_string_attribute("compression"):
-                    metadata["Compression"] = spec.get_string_attribute("compression")
-                if spec.get_string_attribute("Software"):
-                    metadata["Software"] = spec.get_string_attribute("Software")
+                for attr, key in (("compression", "Compression"), ("Software", "Software")):
+                    if spec.get_string_attribute(attr):
+                        metadata[key] = spec.get_string_attribute(attr)
                 img.close()
-            except Exception as e:
-                metadata["Error"] = str(e)
         else:
-            try:
+            if arr is not None:
                 h, w = arr.shape[:2]
+                channels = 1 if arr.ndim == 2 else arr.shape[2]
                 metadata["Format"] = Path(path).suffix.lstrip(".").upper() or "Unknown"
                 metadata["Size"] = f"{w} x {h}"
                 metadata["DataType"] = str(arr.dtype)
-
-                if arr.ndim == 2:
-                    metadata["Channels"] = 1
-                    metadata["Mode"] = "GRAY"
-                else:
-                    channels = arr.shape[2]
-                    metadata["Channels"] = channels
-                    if channels == 3:
-                        metadata["Mode"] = "RGB"
-                    elif channels == 4:
-                        metadata["Mode"] = "RGBA"
-                    else:
-                        metadata["Mode"] = f"{channels}-channel"
-            except Exception as e:
-                metadata["Error (OpenCV)"] = str(e)
+                metadata["Channels"] = channels
+                metadata["Mode"] = {1: "GRAY", 3: "RGB", 4: "RGBA"}.get(channels, f"{channels}-channel")
 
             try:
                 exif_metadata = extract_exif(path_obj)
                 for k, v in exif_metadata.items():
                     metadata[k] = v
-            except Exception as e:
+            except Exception as e:  # 任意のファイルを解析するため、失敗は metadata に記録して続ける
                 metadata["Error (EXIF)"] = str(e)
 
             if ext == ".png":
@@ -265,7 +253,7 @@ def get_image_metadata(path: str | Path, arr: np.ndarray = None) -> dict:
                     png_metadata = extract_png_metadata(path_obj)
                     for k, v in png_metadata.items():
                         metadata[k] = v
-                except Exception as e:
+                except Exception as e:  # 任意のファイルを解析するため、失敗は metadata に記録して続ける
                     metadata["Error (PNG chunks)"] = str(e)
 
     return metadata

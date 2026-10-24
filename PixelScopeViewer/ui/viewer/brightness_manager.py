@@ -7,8 +7,8 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QMessageBox
 
+from PixelScopeViewer.core.brightness import BrightnessParams, determine_dtype_defaults, determine_dtype_group
 from PixelScopeViewer.core.brightness import apply_brightness_adjustment as apply_brightness_core
-from PixelScopeViewer.core.brightness import determine_dtype_defaults, determine_dtype_group
 from PixelScopeViewer.core.constants import GAIN_STEP
 from PixelScopeViewer.ui.common.qt_image import numpy_to_qimage
 from PixelScopeViewer.ui.display import BrightnessDialog
@@ -82,27 +82,18 @@ class BrightnessManager:
 
         # 表示中の dialog に show() を再実行すると位置が変わるため前面に出すだけにする
         if self.viewer.brightness_dialog.isVisible():
-            try:
-                if self.viewer.brightness_dialog.isMinimized():
-                    self.viewer.brightness_dialog.showNormal()
-                self.viewer.brightness_dialog.raise_()
-                self.viewer.brightness_dialog.activateWindow()
-            except Exception:
-                pass
+            if self.viewer.brightness_dialog.isMinimized():
+                self.viewer.brightness_dialog.showNormal()
+            self.viewer.brightness_dialog.raise_()
+            self.viewer.brightness_dialog.activateWindow()
             return
 
         # 非表示の場合は保存済みの geometry を復元して表示する
-        try:
-            if BrightnessDialog._saved_geometry:
-                self.viewer.brightness_dialog.restoreGeometry(BrightnessDialog._saved_geometry)
-        except Exception:
-            pass
+        if BrightnessDialog._saved_geometry:
+            self.viewer.brightness_dialog.restoreGeometry(BrightnessDialog._saved_geometry)
         self.viewer.brightness_dialog.show()
-        try:
-            self.viewer.brightness_dialog.raise_()
-            self.viewer.brightness_dialog.activateWindow()
-        except Exception:
-            pass
+        self.viewer.brightness_dialog.raise_()
+        self.viewer.brightness_dialog.activateWindow()
 
     def _default_upper_level_for_dtype(self, dtype, current):
         """dtype に合う upper level を返す。
@@ -110,19 +101,13 @@ class BrightnessManager:
         current が未設定か別 dtype の既定値（float なら 255、整数なら 1.0）の場合、
         float は 1.0、8bit は 255、それ以上は min(最大値, 4095) を返す。それ以外は current を返す。
         """
-        try:
-            if np.issubdtype(dtype, np.floating):
-                return 1.0 if (current is None or current == 255) else current
-            else:
-                if current is None or current == 1.0:
-                    try:
-                        max_val = np.iinfo(dtype).max
-                    except Exception:
-                        max_val = 255
-                    return 255 if max_val <= 255 else min(max_val, 4095)
-                return current
-        except Exception:
-            return current if current is not None else 255
+        if np.issubdtype(dtype, np.floating):
+            return 1.0 if current is None or current == 255 else current
+        if current is None or current == 1.0:
+            # bool など整数以外の dtype は 8bit として扱う
+            max_val = np.iinfo(dtype).max if np.issubdtype(dtype, np.integer) else 255
+            return 255 if max_val <= 255 else min(max_val, 4095)
+        return current
 
     def reset_brightness_settings(self):
         """brightness を dtype の既定値に戻す。dialog が開いていれば dialog 側で reset する。"""
@@ -133,19 +118,15 @@ class BrightnessManager:
             self.viewer.brightness_dialog.reset_parameters()
             handled_by_dialog = True
         else:
-            self.viewer.state.brightness.offset = 0
-            self.viewer.state.brightness.gain = 1.0
-            self.viewer.state.brightness.upper_level = 255
+            # 画像がない場合は uint8 の既定値にする
+            base_arr = None
             if self.viewer.state.current_index is not None:
-                try:
-                    img = self.viewer.images[self.viewer.state.current_index]
-                    base_arr = img.get("base_array", img.get("array"))
-                    dtype_defaults = determine_dtype_defaults(base_arr)
-                    self.viewer.state.brightness.offset = dtype_defaults.get("initial_offset", 0)
-                    self.viewer.state.brightness.gain = dtype_defaults.get("initial_gain", 1.0)
-                    self.viewer.state.brightness.upper_level = dtype_defaults.get("initial_upper_level", 255)
-                except Exception:
-                    pass
+                img = self.viewer.images[self.viewer.state.current_index]
+                base_arr = img.get("base_array", img["array"])
+            d = determine_dtype_defaults(base_arr)
+            self.viewer.state.brightness = BrightnessParams(
+                d["initial_offset"], d["initial_gain"], d["initial_upper_level"]
+            )
             self.viewer.status_updater.update_brightness_status()
 
         # 画像を切り替えても reset 後の値が保たれるよう保存する
@@ -212,13 +193,9 @@ class BrightnessManager:
     def _save_current_dtype_params(self) -> None:
         if self.viewer.state.current_index is None:
             return
-        try:
-            img = self.viewer.images[self.viewer.state.current_index]
-            arr = img.get("base_array", img.get("array"))
-            key = determine_dtype_group(arr)
-            self.viewer.state.brightness_by_dtype[key] = replace(self.viewer.state.brightness)
-        except Exception:
-            pass
+        img = self.viewer.images[self.viewer.state.current_index]
+        key = determine_dtype_group(img.get("base_array", img["array"]))
+        self.viewer.state.brightness_by_dtype[key] = replace(self.viewer.state.brightness)
 
     def adjust_gain_step(self, amount):
         """gain を 2 倍（amount > 0）または 1/2 倍（amount < 0）にする。"""

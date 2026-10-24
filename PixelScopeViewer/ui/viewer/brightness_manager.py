@@ -162,7 +162,7 @@ class BrightnessManager:
         base_arr = img.get("base_array", img.get("array"))
         if not applies(base_arr):
             return
-        thumb = numpy_to_qimage(self.viewer._prepare_thumbnail_array(base_arr))
+        thumb = numpy_to_qimage(self.viewer.prepare_thumbnail_array(base_arr))
         img["thumbnail_pixmap"] = QPixmap.fromImage(thumb).scaled(250, 250, Qt.KeepAspectRatio, Qt.SmoothTransformation)
         self.viewer.navigator_widget.update_thumbnail()
 

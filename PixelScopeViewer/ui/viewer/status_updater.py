@@ -3,20 +3,45 @@
 from pathlib import Path
 
 import numpy as np
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QStatusBar, QWidget
 
 from PixelScopeViewer.core.image_io import format_file_size
 
 
 class StatusUpdater:
-    """ImageViewer の状態を status bar と title bar に表示する。"""
+    """ImageViewer の status bar を作り、viewer の状態を status bar と title bar に表示する。
+
+    status bar は左にマウス位置の pixel 値と ROI、右に brightness と zoom 倍率を並べる。
+    """
 
     def __init__(self, viewer):
         self.viewer = viewer
+        self.pixel_label = QLabel()
+        self.roi_label = QLabel()
+        self.brightness_label = QLabel()
+        self.scale_label = QLabel()
+
+        status = QStatusBar()
+        viewer.setStatusBar(status)
+        status.setStyleSheet("font-size: 11pt;")
+        status.addWidget(self._group(self.pixel_label, QLabel("|"), self.roi_label))
+        status.addPermanentWidget(self._group(QLabel("|"), self.brightness_label, QLabel("|"), self.scale_label))
+
+    @staticmethod
+    def _group(*widgets) -> QWidget:
+        """widget を左右に余白を取って横に並べる。"""
+        container = QWidget()
+        layout = QHBoxLayout(container)
+        layout.setContentsMargins(15, 0, 15, 0)
+        layout.setSpacing(8)
+        for w in widgets:
+            layout.addWidget(w)
+        return container
 
     def update_mouse_status(self, pos):
         """マウス位置（widget 座標）の pixel 値を表示する。"""
         if self.viewer.state.current_index is None or not self.viewer.images:
-            self.viewer.status_pixel.setText("")
+            self.pixel_label.setText("")
             self.viewer.current_mouse_image_coords = None
             return
         img = self.viewer.images[self.viewer.state.current_index]
@@ -41,32 +66,32 @@ class StatusUpdater:
                 vals = [_format_scalar(x, arr.dtype) for x in np.ravel(v)]
                 val_str = "(" + ",".join(vals) + ")"
 
-            self.viewer.status_pixel.setText(f"x={ix} y={iy} val={val_str}")
+            self.pixel_label.setText(f"x={ix} y={iy} val={val_str}")
             # zoom の中心として使う
             self.viewer.current_mouse_image_coords = (ix, iy)
         else:
-            self.viewer.status_pixel.setText("")
+            self.pixel_label.setText("")
             self.viewer.current_mouse_image_coords = None
 
     def update_roi_status(self) -> None:
         """ROI の範囲を表示する。"""
         if self.viewer.state.current_index is None or not self.viewer.images:
-            self.viewer.status_roi_area.setText("")
+            self.roi_label.setText("")
             return
         if self.viewer.state.roi and not self.viewer.state.roi.isEmpty():
             r = self.viewer.state.roi
             x0, y0 = r.x(), r.y()
             x1, y1 = x0 + r.width() - 1, y0 + r.height() - 1
-            self.viewer.status_roi_area.setText(f"({x0}, {y0}) - ({x1}, {y1}), w: {r.width()}, h: {r.height()}")
+            self.roi_label.setText(f"({x0}, {y0}) - ({x1}, {y1}), w: {r.width()}, h: {r.height()}")
         else:
-            self.viewer.status_roi_area.setText("")
+            self.roi_label.setText("")
 
     def update_status(self):
         """title bar（ファイル名・サイズ・番号）と zoom 倍率、brightness を更新する。"""
         if self.viewer.state.current_index is None:
             self.viewer.setWindowTitle("PixelScopeViewer")
-            self.viewer.status_scale.setText(f"Scale: {self.viewer.state.scale:.2f}x")
-            self.viewer.status_brightness.setText("")
+            self.scale_label.setText(f"Scale: {self.viewer.state.scale:.2f}x")
+            self.brightness_label.setText("")
             return
         p = self.viewer.images[self.viewer.state.current_index]["path"]
 
@@ -97,7 +122,7 @@ class StatusUpdater:
         )
         self.viewer.setWindowTitle(title)
 
-        self.viewer.status_scale.setText(f"Scale: {self.viewer.state.scale:.2f}x")
+        self.scale_label.setText(f"Scale: {self.viewer.state.scale:.2f}x")
 
         self.update_brightness_status()
 
@@ -115,4 +140,4 @@ class StatusUpdater:
             gain_str = f"{b.gain:.1f}"
         else:
             gain_str = f"{b.gain:.2f}"
-        self.viewer.status_brightness.setText(f"Offset: {offset_str}, Gain: {gain_str}, Upper: {upper_str}")
+        self.brightness_label.setText(f"Offset: {offset_str}, Gain: {gain_str}, Upper: {upper_str}")

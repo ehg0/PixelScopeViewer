@@ -51,24 +51,42 @@ class AnnotationsDialog(ToolDialog):
         super().__init__(viewer)
         self.viewer = viewer
         self.manager = manager
-
-        # 最後に読み込んだファイルを title に表示する
-        title = "特徴量表示"
-        last_path = self.manager.get_last_loaded_path()
-        if last_path:
-            title = f"特徴量表示 - {last_path}"
-        self.setWindowTitle(title)
+        self.update_title()
         self.resize(*defaults.FEATURES_DIALOG_SIZE)
 
         layout = QVBoxLayout(self)
+        layout.setMenuBar(self._build_menu())
+        layout.addLayout(self._build_controls())
+        self._build_tabs()
+        layout.addWidget(self.tabs, 1)
 
+        self.filter_edit.textChanged.connect(self._on_filter_changed)
+        self.filter_column.currentIndexChanged.connect(self._on_filter_col_changed)
+        self.tabs.currentChanged.connect(self._on_tab_changed)
+        self.btn_add_col.clicked.connect(self._on_add_column)
+        self.btn_save.clicked.connect(self._on_save)
+        self.btn_toggle_cols.clicked.connect(self._on_toggle_columns)
+        self.chk_show_loaded_only.toggled.connect(self._on_loaded_only_toggled)
+        # 画像の変更時に強調表示と「読込済のみ」の絞り込みを更新する
+        self.viewer.image_changed.connect(self._on_viewer_images_changed)
+
+        self.refresh_filter_columns()
+        self._on_filter_col_changed()
+        self._on_tab_changed(0)
+
+        self._apply_initial_sorts()
+
+    # ----- UI 構築 -----
+    def _build_menu(self) -> QMenuBar:
         menubar = QMenuBar(self)
         file_menu = QMenu("ファイル", self)
         act_open_annotations = file_menu.addAction("特徴量ファイルを開く…")
         act_open_annotations.triggered.connect(self._on_open_annotations)
         menubar.addMenu(file_menu)
-        layout.setMenuBar(menubar)
+        return menubar
 
+    def _build_controls(self) -> QHBoxLayout:
+        """filter と、列追加・保存・列表示・読み込みの設定を並べた行を作る。"""
         ctrl = QHBoxLayout()
         self.filter_edit = QLineEdit()
         self.filter_edit.setPlaceholderText("フィルタ文字列を入力…")
@@ -89,8 +107,10 @@ class AnnotationsDialog(ToolDialog):
         ctrl.addWidget(self.btn_toggle_cols)
         ctrl.addWidget(self.btn_add_col)
         ctrl.addWidget(self.btn_save)
-        layout.addLayout(ctrl)
+        return ctrl
 
+    def _build_tabs(self):
+        """images（編集可）・categories・annotations（読み取り専用）の table を tab に並べる。"""
         self.tabs = QTabWidget(self)
 
         self.model_images = ImageAnnotationsTableModel(self.viewer, self.manager)
@@ -115,62 +135,36 @@ class AnnotationsDialog(ToolDialog):
         self.table_images.horizontalHeader().setVisible(True)
         cols = self.manager.get_columns()
         if "id" in cols:
-            id_idx = cols.index("id")
-            self.table_images.setColumnWidth(id_idx, 50)
+            self.table_images.setColumnWidth(cols.index("id"), 50)
         # 省略表示されたセルの tooltip を出す
         self.table_images.setMouseTracking(True)
-        w_images = QWidget(self)
-        v_images = QVBoxLayout(w_images)
-        v_images.setContentsMargins(0, 0, 0, 0)
-        v_images.addWidget(self.table_images)
-        self.tabs.addTab(w_images, "Images")
+        self._add_table_tab(self.table_images, "Images")
 
-        # categories と annotations は読み取り専用
         self.model_categories = SimpleDictTableModel(
             self.manager.get_categories_rows, self.manager.get_categories_columns, editable=False
         )
-        self.table_categories = QTableView(self)
-        self.table_categories.setModel(self.model_categories.as_proxy(self))
-        self.table_categories.setSortingEnabled(True)
-        self.table_categories.setAlternatingRowColors(True)
-        self.table_categories.verticalHeader().setVisible(False)
-        self.table_categories.setMouseTracking(True)
-        w_cat = QWidget(self)
-        v_cat = QVBoxLayout(w_cat)
-        v_cat.setContentsMargins(0, 0, 0, 0)
-        v_cat.addWidget(self.table_categories)
-        self.tabs.addTab(w_cat, "Categories")
+        self.table_categories = self._make_readonly_table(self.model_categories)
+        self._add_table_tab(self.table_categories, "Categories")
 
         self.model_annotations = AnnotationsTableModel(self.manager)
-        self.table_annotations = QTableView(self)
-        self.table_annotations.setModel(self.model_annotations.as_proxy(self))
-        self.table_annotations.setSortingEnabled(True)
-        self.table_annotations.setAlternatingRowColors(True)
-        self.table_annotations.verticalHeader().setVisible(False)
-        self.table_annotations.setMouseTracking(True)
-        w_ann = QWidget(self)
-        v_ann = QVBoxLayout(w_ann)
-        v_ann.setContentsMargins(0, 0, 0, 0)
-        v_ann.addWidget(self.table_annotations)
-        self.tabs.addTab(w_ann, "Annotations")
+        self.table_annotations = self._make_readonly_table(self.model_annotations)
+        self._add_table_tab(self.table_annotations, "Annotations")
 
-        layout.addWidget(self.tabs, 1)
+    def _make_readonly_table(self, model) -> QTableView:
+        table = QTableView(self)
+        table.setModel(model.as_proxy(self))
+        table.setSortingEnabled(True)
+        table.setAlternatingRowColors(True)
+        table.verticalHeader().setVisible(False)
+        table.setMouseTracking(True)
+        return table
 
-        self.filter_edit.textChanged.connect(self._on_filter_changed)
-        self.filter_column.currentIndexChanged.connect(self._on_filter_col_changed)
-        self.tabs.currentChanged.connect(self._on_tab_changed)
-        self.btn_add_col.clicked.connect(self._on_add_column)
-        self.btn_save.clicked.connect(self._on_save)
-        self.btn_toggle_cols.clicked.connect(self._on_toggle_columns)
-        self.chk_show_loaded_only.toggled.connect(self._on_loaded_only_toggled)
-        # 画像の変更時に強調表示と「読込済のみ」の絞り込みを更新する
-        self.viewer.image_changed.connect(self._on_viewer_images_changed)
-
-        self.refresh_filter_columns()
-        self._on_filter_col_changed()
-        self._on_tab_changed(0)
-
-        self._apply_initial_sorts()
+    def _add_table_tab(self, table: QTableView, title: str):
+        w = QWidget(self)
+        v = QVBoxLayout(w)
+        v.setContentsMargins(0, 0, 0, 0)
+        v.addWidget(table)
+        self.tabs.addTab(w, title)
 
     # ----- UI handlers -----
     def refresh_from_manager(self):
@@ -181,29 +175,24 @@ class AnnotationsDialog(ToolDialog):
         self.refresh_filter_columns()
         self.refresh_roles()
         self._apply_initial_sorts()
-        title = "特徴量表示"
+        self.update_title()
+
+    def update_title(self):
+        """最後に読み込んだファイルを title に表示する。"""
         last_path = self.manager.get_last_loaded_path()
-        if last_path:
-            title = f"特徴量表示 - {last_path}"
-        self.setWindowTitle(title)
+        self.setWindowTitle(f"特徴量表示 - {last_path}" if last_path else "特徴量表示")
 
     def _apply_initial_sorts(self):
         """各 table を key 列（images・categories は id、annotations は image_id）の昇順に並べる。"""
-        img_cols = self.manager.get_columns()
-        if img_cols:
-            img_key_col = img_cols.index("id") if "id" in img_cols else 0
-            self.table_images.sortByColumn(img_key_col, Qt.AscendingOrder)
-            self.table_images.horizontalHeader().setSortIndicator(img_key_col, Qt.AscendingOrder)
-        cat_cols = self.manager.get_categories_columns() or []
-        if cat_cols:
-            cat_key_col = cat_cols.index("id") if "id" in cat_cols else 0
-            self.table_categories.sortByColumn(cat_key_col, Qt.AscendingOrder)
-            self.table_categories.horizontalHeader().setSortIndicator(cat_key_col, Qt.AscendingOrder)
-        ann_cols = self.model_annotations.get_columns()
-        if ann_cols:
-            ann_key_col = ann_cols.index("image_id") if "image_id" in ann_cols else 0
-            self.table_annotations.sortByColumn(ann_key_col, Qt.AscendingOrder)
-            self.table_annotations.horizontalHeader().setSortIndicator(ann_key_col, Qt.AscendingOrder)
+        for table, cols, key in (
+            (self.table_images, self.manager.get_columns(), "id"),
+            (self.table_categories, self.manager.get_categories_columns() or [], "id"),
+            (self.table_annotations, self.model_annotations.get_columns(), "image_id"),
+        ):
+            if cols:
+                key_col = cols.index(key) if key in cols else 0
+                table.sortByColumn(key_col, Qt.AscendingOrder)
+                table.horizontalHeader().setSortIndicator(key_col, Qt.AscendingOrder)
 
     def refresh_filter_columns(self):
         cols = self._current_columns()
@@ -372,15 +361,16 @@ class AnnotationsDialog(ToolDialog):
                 break
 
         if match_idx is not None:
-            self.viewer.state.current_index = match_idx
-            self.viewer.show_current_image()
+            self.viewer.image_list.show_image(match_idx)
             return
 
         if not self.chk_load_unloaded.isChecked():
             return
-        # 読み込みの失敗は _add_images が error dialog で知らせる
-        n = self.viewer._add_images([str(p)])
-        self.viewer._finalize_image_addition(n)
+        # 読み込みの失敗は add_and_show が error dialog で知らせる
+        self.viewer.image_list.add_and_show([str(p)])
+
+    def _current_table(self) -> QTableView:
+        return (self.table_images, self.table_categories, self.table_annotations)[self.tabs.currentIndex()]
 
     def _current_proxy(self):
         i = self.tabs.currentIndex()
@@ -397,13 +387,7 @@ class AnnotationsDialog(ToolDialog):
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_Escape:
-            i = self.tabs.currentIndex()
-            if i == 0:
-                self.table_images.clearSelection()
-            elif i == 1:
-                self.table_categories.clearSelection()
-            else:
-                self.table_annotations.clearSelection()
+            self._current_table().clearSelection()
             event.accept()
         elif event.key() in (Qt.Key_Return, Qt.Key_Enter):
             # 選択行の画像を開く

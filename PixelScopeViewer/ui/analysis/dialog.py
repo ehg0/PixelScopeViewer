@@ -171,8 +171,9 @@ class AnalysisDialog(ToolDialog):
         """親の status bar の ROI 表示を window title に反映する。"""
         base_title = "解析ビュー"
 
-        if self.viewer and hasattr(self.viewer, "status_roi_area"):
-            roi_text = self.viewer.status_roi_area.text()
+        # 複数画像比較の window が親の場合は status_updater がないため、既定の title にする
+        if self.viewer and hasattr(self.viewer, "status_updater"):
+            roi_text = self.viewer.status_updater.roi_label.text()
             if roi_text:
                 self.setWindowTitle(f"{base_title} | ROI={roi_text}")
                 return

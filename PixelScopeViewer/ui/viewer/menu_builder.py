@@ -11,7 +11,9 @@ def create_menus(viewer):
     menubar = viewer.menuBar()
 
     file_menu = menubar.addMenu("ファイル")
-    file_menu.addAction(QAction("画像ファイルを開く...", viewer, shortcut="Ctrl+O", triggered=viewer.open_files))
+    file_menu.addAction(
+        QAction("画像ファイルを開く...", viewer, shortcut="Ctrl+O", triggered=viewer.image_list.open_files)
+    )
     file_menu.addSeparator()
     file_menu.addAction(QAction("画像全体をROI", viewer, shortcut="Ctrl+A", triggered=viewer.select_all))
     file_menu.addAction(
@@ -21,13 +23,13 @@ def create_menus(viewer):
 
     viewer.close_current_action = QAction("閉じる", viewer, shortcut="Ctrl+W")
     viewer.close_current_action.setShortcutContext(Qt.WindowShortcut)
-    viewer.close_current_action.triggered.connect(viewer.close_current_image)
+    viewer.close_current_action.triggered.connect(viewer.image_list.close_current)
     viewer.addAction(viewer.close_current_action)
     file_menu.addAction(viewer.close_current_action)
 
     viewer.close_all_action = QAction("すべて閉じる", viewer, shortcut="Ctrl+Shift+W")
     viewer.close_all_action.setShortcutContext(Qt.WindowShortcut)
-    viewer.close_all_action.triggered.connect(viewer.close_all_images)
+    viewer.close_all_action.triggered.connect(viewer.image_list.close_all)
     viewer.addAction(viewer.close_all_action)
     file_menu.addAction(viewer.close_all_action)
 
@@ -55,12 +57,12 @@ def create_menus(viewer):
 
     viewer.next_image_action = QAction("次の画像", viewer, shortcut="n")
     viewer.next_image_action.setShortcutContext(Qt.WindowShortcut)
-    viewer.next_image_action.triggered.connect(viewer.next_image)
+    viewer.next_image_action.triggered.connect(viewer.image_list.next_image)
     viewer.addAction(viewer.next_image_action)
 
     viewer.prev_image_action = QAction("前の画像", viewer, shortcut="b")
     viewer.prev_image_action.setShortcutContext(Qt.WindowShortcut)
-    viewer.prev_image_action.triggered.connect(viewer.prev_image)
+    viewer.prev_image_action.triggered.connect(viewer.image_list.prev_image)
     viewer.addAction(viewer.prev_image_action)
 
     viewer.zoom_in_action = QAction("拡大", viewer, shortcut="+")
@@ -79,7 +81,7 @@ def create_menus(viewer):
 
     # 画像 menu は画像移動の action を使うため、それらの作成後に作る
     viewer.img_menu = menubar.addMenu("画像")
-    viewer.update_image_list_menu()
+    viewer.image_list.update_menu()
 
     view_menu = menubar.addMenu("表示")
     view_menu.addAction(viewer.show_display_settings_action)
@@ -92,7 +94,7 @@ def create_menus(viewer):
     analysis.addSeparator()
     analysis.addAction(viewer.show_annotations_action)
     analysis.addSeparator()
-    analysis.addAction(QAction("差分画像表示", viewer, triggered=lambda: viewer.show_diff_dialog()))
+    analysis.addAction(QAction("差分画像表示", viewer, triggered=lambda: viewer.image_list.show_diff_dialog()))
     analysis.addAction(
         QAction("複数画像比較", viewer, shortcut="Shift+T", triggered=lambda: viewer.show_tiling_comparison_dialog())
     )

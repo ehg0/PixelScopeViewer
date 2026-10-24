@@ -48,10 +48,10 @@ def create_menus(viewer):
     viewer.show_display_settings_action.triggered.connect(lambda: viewer.show_brightness_dialog())
     viewer.addAction(viewer.show_display_settings_action)
 
-    viewer.show_features_action = QAction("特徴量表示", viewer, shortcut="T")
-    viewer.show_features_action.setShortcutContext(Qt.WindowShortcut)
-    viewer.show_features_action.triggered.connect(lambda: viewer.show_features_dialog())
-    viewer.addAction(viewer.show_features_action)
+    viewer.show_annotations_action = QAction("特徴量表示", viewer, shortcut="T")
+    viewer.show_annotations_action.setShortcutContext(Qt.WindowShortcut)
+    viewer.show_annotations_action.triggered.connect(lambda: viewer.show_annotations_dialog())
+    viewer.addAction(viewer.show_annotations_action)
 
     viewer.next_image_action = QAction("次の画像", viewer, shortcut="n")
     viewer.next_image_action.setShortcutContext(Qt.WindowShortcut)
@@ -86,7 +86,7 @@ def create_menus(viewer):
     analysis = menubar.addMenu("解析")
     analysis.addAction(viewer.show_analysis_action)
     analysis.addSeparator()
-    analysis.addAction(viewer.show_features_action)
+    analysis.addAction(viewer.show_annotations_action)
     analysis.addSeparator()
     analysis.addAction(QAction("差分画像表示", viewer, triggered=lambda: viewer.show_diff_dialog()))
     analysis.addAction(

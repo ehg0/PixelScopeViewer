@@ -10,10 +10,14 @@ from PySide6.QtWidgets import QMessageBox
 from PixelScopeViewer.core.brightness import apply_brightness_adjustment as apply_brightness_core
 from PixelScopeViewer.core.brightness import determine_dtype_defaults
 from PixelScopeViewer.core.constants import DTYPE_DEFAULTS, GAIN_STEP, get_dtype_defaults
+from PixelScopeViewer.ui.common.channel_display import (
+    MODE_1CH_GRAYSCALE,
+    MODE_1CH_JET,
+    MODE_2CH_COMPOSITE,
+    MODE_2CH_FLOW_HSV,
+)
 from PixelScopeViewer.ui.common.qt_image import numpy_to_qimage
-from PixelScopeViewer.ui.dialogs import BrightnessDialog
-from PixelScopeViewer.ui.dialogs.display import BrightnessDialog as _BD
-from PixelScopeViewer.ui.utils import MODE_1CH_GRAYSCALE, MODE_1CH_JET, MODE_2CH_COMPOSITE, MODE_2CH_FLOW_HSV
+from PixelScopeViewer.ui.display import BrightnessDialog
 
 
 class BrightnessManager:
@@ -104,8 +108,8 @@ class BrightnessManager:
 
         # 非表示の場合は保存済みの geometry を復元して表示する
         try:
-            if getattr(_BD, "_saved_geometry", None):
-                self.viewer.brightness_dialog.restoreGeometry(_BD._saved_geometry)
+            if getattr(BrightnessDialog, "_saved_geometry", None):
+                self.viewer.brightness_dialog.restoreGeometry(BrightnessDialog._saved_geometry)
         except Exception:
             pass
         self.viewer.brightness_dialog.show()

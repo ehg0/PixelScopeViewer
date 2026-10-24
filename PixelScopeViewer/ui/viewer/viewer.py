@@ -30,25 +30,23 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from PixelScopeViewer.core.colormap import apply_jet_colormap, flow_to_hsv_rgb
 from PixelScopeViewer.core.constants import STANDARD_IMAGE_EXTENSIONS, get_dtype_defaults
 from PixelScopeViewer.core.image_io import ImageLoaderRegistry, is_image_file, load_image
-from PixelScopeViewer.ui import defaults, theme
+from PixelScopeViewer.ui.analysis import AnalysisDialog
+from PixelScopeViewer.ui.annotations import AnnotationsDialog
+from PixelScopeViewer.ui.annotations.model import AnnotationStore
+from PixelScopeViewer.ui.common import defaults, theme
+from PixelScopeViewer.ui.common.channel_display import MODE_1CH_JET, MODE_2CH_FLOW_HSV, ChannelColorManager
 from PixelScopeViewer.ui.common.qt_image import numpy_to_qimage
-from PixelScopeViewer.ui.dialogs import AnalysisDialog, DiffDialog, FeaturesDialog, HelpDialog
-from PixelScopeViewer.ui.dialogs.tiling import TilingDialog
-from PixelScopeViewer.ui.utils import (
-    MODE_1CH_JET,
-    MODE_2CH_FLOW_HSV,
-    ChannelColorManager,
-    apply_jet_colormap,
-    flow_to_hsv_rgb,
-)
-from PixelScopeViewer.ui.utils.features_manager import FeaturesManager
+from PixelScopeViewer.ui.diff import DiffDialog
+from PixelScopeViewer.ui.tiling import TilingDialog
 from PixelScopeViewer.ui.viewer.brightness_manager import BrightnessManager
+from PixelScopeViewer.ui.viewer.help_dialog import HelpDialog
 from PixelScopeViewer.ui.viewer.menu_builder import create_menus
 from PixelScopeViewer.ui.viewer.status_updater import StatusUpdater
+from PixelScopeViewer.ui.viewer.widgets import DisplayInfoWidget, ImageLabel, NavigatorWidget, ROIInfoWidget
 from PixelScopeViewer.ui.viewer.zoom_manager import ZoomManager
-from PixelScopeViewer.ui.widgets import DisplayInfoWidget, ImageLabel, NavigatorWidget, ROIInfoWidget
 
 
 class ImageViewer(QMainWindow):
@@ -166,8 +164,8 @@ class ImageViewer(QMainWindow):
         self.brightness_manager = BrightnessManager(self)
         self.status_updater = StatusUpdater(self)
 
-        self.features_manager = FeaturesManager()
-        self._features_dialog = None
+        self.annotations = AnnotationStore()
+        self._annotations_dialog = None
 
         self.color_manager = ChannelColorManager()
 
@@ -286,20 +284,20 @@ class ImageViewer(QMainWindow):
     def dropEvent(self, e):
         files = [u.toLocalFile() for u in e.mimeData().urls()]
         image_files = [f for f in files if is_image_file(f)]
-        feature_files = [f for f in files if Path(f).suffix.lower() in (".json", ".csv")]
+        annotation_files = [f for f in files if Path(f).suffix.lower() in (".json", ".csv")]
 
         new_count = self._add_images(image_files)
         self._finalize_image_addition(new_count)
         self.activateWindow()
 
-        if feature_files:
+        if annotation_files:
             try:
-                self.features_manager.load_feature_files(feature_files)
+                self.annotations.load_annotation_files(annotation_files)
                 # 特徴量 dialog を開き（既に開いていれば前面に出し）内容を反映する
-                self.show_features_dialog()
-                if self._features_dialog is not None:
+                self.show_annotations_dialog()
+                if self._annotations_dialog is not None:
                     with contextlib.suppress(Exception):
-                        self._features_dialog.refresh_from_manager()
+                        self._annotations_dialog.refresh_from_manager()
             except Exception:
                 pass
 
@@ -476,30 +474,30 @@ class ImageViewer(QMainWindow):
     # 特徴量
     # ------------------------
 
-    def show_features_dialog(self):
-        if self._features_dialog is not None:
+    def show_annotations_dialog(self):
+        if self._annotations_dialog is not None:
             # 最後に読み込んだファイルを title に反映する
             title = "特徴量表示"
-            last_path = self.features_manager.get_last_loaded_path()
+            last_path = self.annotations.get_last_loaded_path()
             if last_path:
                 title = f"特徴量表示 - {last_path}"
-            self._features_dialog.setWindowTitle(title)
-            if self._features_dialog.isMinimized():
-                self._features_dialog.showNormal()
-            self._features_dialog.raise_()
-            self._features_dialog.activateWindow()
+            self._annotations_dialog.setWindowTitle(title)
+            if self._annotations_dialog.isMinimized():
+                self._annotations_dialog.showNormal()
+            self._annotations_dialog.raise_()
+            self._annotations_dialog.activateWindow()
             return
-        dlg = FeaturesDialog(self, self.features_manager)
+        dlg = AnnotationsDialog(self, self.annotations)
         dlg.show()
         dlg.raise_()
         dlg.activateWindow()
-        self._features_dialog = dlg
+        self._annotations_dialog = dlg
         self._child_dialogs.append(dlg)
 
         def on_closed():
             if dlg in self._child_dialogs:
                 self._child_dialogs.remove(dlg)
-            self._features_dialog = None
+            self._annotations_dialog = None
 
         dlg.finished.connect(on_closed)
 
@@ -989,8 +987,8 @@ class ImageViewer(QMainWindow):
             pass
 
         try:
-            if self._features_dialog and self._features_dialog.isVisible():
-                self._features_dialog.close()
+            if self._annotations_dialog and self._annotations_dialog.isVisible():
+                self._annotations_dialog.close()
         except RuntimeError:
             pass
 

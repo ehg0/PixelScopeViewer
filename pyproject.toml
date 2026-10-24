@@ -1,0 +1,16 @@
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+extend-exclude = ["custom_loaders", "sample"]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "UP", "B", "SIM", "D"]
+ignore = [
+    # 不要な docstring は書かない方針のため、docstring 欠落は許容する
+    "D100", "D101", "D102", "D103", "D104", "D105", "D106", "D107",
+    # 日本語の summary は「。」で終わるため
+    "D415",
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"

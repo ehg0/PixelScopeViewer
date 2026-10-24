@@ -285,18 +285,6 @@ class AnalysisDialog(QDialog):
             hist_series = histogram_series(arr, bins=bins)
         elif self.settings.hist_mode == "ECDF":
             hist_series = ecdf_series(arr)
-        # 表示 ON の channel のみ plot する
-        visible_hist_series = {}
-        for label, (xs, ys) in hist_series.items():
-            visible = True
-            if label.startswith("C"):
-                try:
-                    cindex = int(label[1:])
-                    visible = self.settings.channel_checks[cindex]
-                except Exception:
-                    visible = True
-            if visible:
-                visible_hist_series[label] = (xs, ys)
         self.last_hist_data = hist_series  # コピー用に全 channel を保持する
         hist_stats = histogram_stats(arr.astype(np.float64), self.settings.channel_checks)
         apply_log = self.settings.plot_settings.get("hist", {}).get("log", False)
@@ -306,26 +294,19 @@ class AnalysisDialog(QDialog):
         self._n_plot = n_plot
         channel_colors = self.channel_display.plot_colors(n_plot) if self.channel_display else []
 
-        try:
-            self.hist_tab.update_channel_checkboxes(nch, self.settings.channel_checks, channel_colors)
-            self.profile_tab.update_channel_checkboxes(nch, self.settings.channel_checks, channel_colors)
-        except Exception:
-            pass
+        self.hist_tab.update_channel_checkboxes(nch, self.settings.channel_checks, channel_colors)
+        self.profile_tab.update_channel_checkboxes(nch, self.settings.channel_checks, channel_colors)
 
-        # 統計量 table の色見本用。番号と C{index} の両方を key にし、1ch は Intensity（I）にも割り当てる
-        self.channel_color_map = {}
-        for cindex, color in enumerate(channel_colors):
-            rgb = color.getRgb()[:3]
-            self.channel_color_map[f"C{cindex}"] = rgb
-            self.channel_color_map[str(cindex)] = rgb
+        # 線と統計量 table の色見本に使う curve label（C{index}、1ch は I）から RGB への dict
+        self.channel_color_map = {f"C{i}": c.getRgb()[:3] for i, c in enumerate(channel_colors)}
         if n_plot == 1 and channel_colors:
             self.channel_color_map["I"] = channel_colors[0].getRgb()[:3]
         self.hist_tab.update_plot(
-            visible_hist_series,
+            self._visible_series(hist_series),
             hist_stats,
+            self.channel_color_map,
             apply_log=apply_log,
             is_integer_type=is_integer_type,
-            channel_colors=channel_colors,
             chart_kind=self.settings.hist_chart_kind,
             bar_alpha=self.settings.hist_bar_alpha,
         )
@@ -334,31 +315,12 @@ class AnalysisDialog(QDialog):
         pseries = profile_series(
             arr, orientation=self.settings.profile_orientation, method=self.settings.profile_method
         )
-        visible_prof_series = {}
-        for label, prof in pseries.items():
-            if self.settings.profile_x_mode == "absolute" and self.image_rect is not None:
-                offset = get_profile_offset(self.image_rect, self.settings.profile_orientation)
-                xs2 = np.arange(prof.size) + offset
-            else:
-                xs2 = np.arange(prof.size)
-            visible = True
-            if label.startswith("C"):
-                try:
-                    cindex = int(label[1:])
-                    visible = self.settings.channel_checks[cindex]
-                except Exception:
-                    visible = True
-            if visible:
-                visible_prof_series[label] = (xs2, prof)
+        # absolute 表示では x に ROI の開始座標を加える
+        offset = 0
+        if self.settings.profile_x_mode == "absolute" and self.image_rect is not None:
+            offset = get_profile_offset(self.image_rect, self.settings.profile_orientation)
         # コピー用に全 channel の profile を保持する
-        self.last_profile_data = {}
-        for label, prof in pseries.items():
-            if self.settings.profile_x_mode == "absolute" and self.image_rect is not None:
-                offset = get_profile_offset(self.image_rect, self.settings.profile_orientation)
-                xs2 = np.arange(prof.size) + offset
-            else:
-                xs2 = np.arange(prof.size)
-            self.last_profile_data[label] = (xs2, prof)
+        self.last_profile_data = {label: (np.arange(prof.size) + offset, prof) for label, prof in pseries.items()}
         prof_stats = profile_stats(
             arr,
             orientation=self.settings.profile_orientation,
@@ -366,12 +328,12 @@ class AnalysisDialog(QDialog):
             channel_checks=self.settings.channel_checks,
         )
         self.profile_tab.update_plot(
-            visible_prof_series,
+            self._visible_series(self.last_profile_data),
             prof_stats,
             self.settings.profile_orientation,
             self.settings.profile_x_mode,
             self.settings.profile_method,
-            channel_colors=channel_colors,
+            self.channel_color_map,
         )
 
         # 保存済みの ViewBox 状態がなければ、データに合わせて表示範囲を自動調整する
@@ -438,6 +400,15 @@ class AnalysisDialog(QDialog):
             self.settings.hist_mode = "Histogram"
             self.hist_tab.config_mode_btn.setText("Histogram")
         self.update_contents()
+
+    def _visible_series(self, series: dict) -> dict:
+        """表示 ON の channel（C{index}）の series だけを返す。1ch（I）は常に表示する。"""
+        checks = self.settings.channel_checks
+        return {
+            label: v
+            for label, v in series.items()
+            if not label.startswith("C") or int(label[1:]) >= len(checks) or checks[int(label[1:])]
+        }
 
     def _on_plot_color_clicked(self, idx: int):
         """色選択 dialog で選んだ色を、この channel 数のグラフの色として設定する。"""

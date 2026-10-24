@@ -403,7 +403,8 @@ class TilingAnalysisDialog(AnalysisDialog):
                     size="11pt",
                 )
 
-        self.hist_tab._populate_stats_table(all_stats)
+        self._assign_overlay_colors([r["curve_label"] for r in all_stats])
+        self.hist_tab.stats_table.set_rows(all_stats, self.overlay_color_map)
 
         # コピー用（表示中の系列のみ）
         self.last_hist_data = merged_series
@@ -503,7 +504,8 @@ class TilingAnalysisDialog(AnalysisDialog):
             )
 
         if hasattr(self, "profile_tab"):
-            self.profile_tab._populate_stats_table(all_profile_stats)
+            self._assign_overlay_colors([r["curve_label"] for r in all_profile_stats])
+            self.profile_tab.stats_table.set_rows(all_profile_stats, self.overlay_color_map)
 
         self.last_profile_data = merged_series
 

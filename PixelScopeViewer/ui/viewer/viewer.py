@@ -1,18 +1,4 @@
-"""Main image viewer application window.
-
-This module provides the ImageViewer class, which is the main window
-for displaying and navigating images with analysis tools.
-
-Features:
-- Multi-image loading and navigation
-- Zoom in/out with keyboard shortcuts and Ctrl+mouse wheel
-- Pixel-aligned ROI with keyboard editing
-- Bit-shift operations for raw/scientific images
-- Analysis dialogs (histogram, profile, info)
-- Difference image creation
-- Status bar showing pixel values and coordinates
-- Title bar showing current filename and image index
-"""
+"""メインの画像ビューア window。"""
 
 import contextlib
 from collections.abc import Iterable
@@ -56,43 +42,14 @@ from .zoom_manager import ZoomManager
 
 
 class ImageViewer(QMainWindow):
-    """Main application window for image viewing and analysis.
-
-    The ImageViewer provides a complete interface for:
-    - Loading and displaying images (single or multiple files)
-    - Navigating between images with keyboard shortcuts (n/b)
-    - Zooming with +/- keys and mouse wheel
-    - Creating and editing pixel-aligned ROIs
-    - Bit-shifting for viewing raw/scientific data (</> keys)
-    - Analysis tools (histogram, profile plots)
-    - Creating difference images
-
-    Keyboard Shortcuts:
-        - Ctrl+A: Select entire image as ROI
-        - Ctrl+C: Copy ROI to clipboard
-        - n: Next image
-        - b: Previous image
-        - +: Zoom in (2x)
-        - -: Zoom out (0.5x)
-        - <: Left bit shift (darker)
-        - >: Right bit shift (brighter)
-        - ESC: Clear ROI
-        - f: Toggle fit to window / original zoom (previous zoom level)
-
-    Mouse Controls:
-        - Ctrl + Mouse wheel: Zoom in/out (binary steps: 2x/0.5x, centered on status bar coordinates)
-        - Left-drag: Create new ROI rectangle
-        - Right-drag: Move existing ROI
-        - Left-drag on edges/corners: Resize ROI
+    """画像の表示・切り替え・ROI 操作と、各解析 dialog の起動を行うメイン window。
 
     Attributes:
-        images: List of loaded image dictionaries with keys:
-                'path', 'array', 'base_array'
-        current_index: Index of currently displayed image
-        scale: Current zoom scale factor
+        images: 読み込んだ画像の dict（path, array, base_array, thumbnail_pixmap）のリスト。
+        current_index: 表示中の画像の index。
+        scale: 現在の zoom 倍率。
     """
 
-    # Signals for widget updates
     scale_changed = Signal()
     image_changed = Signal()
     roi_changed = Signal()
@@ -107,27 +64,25 @@ class ImageViewer(QMainWindow):
         self.current_index = None
         self.scale = 1.0
 
-        # Track child dialogs for window state synchronization
+        # window 状態（最小化など）を同期する子 dialog
         self._child_dialogs = []
 
-        # Zoom toggle state
+        # fit zoom の切り替え状態
         self.fit_zoom_scale = None
         self.original_zoom_scale = 1.0
         self.original_center_coords = None
 
-        # Track current mouse position in image coordinates for zoom centering
+        # zoom の中心に使うマウス位置（画像座標）
         self.current_mouse_image_coords = None
 
-        # Brightness adjustment parameters
         self.brightness_offset = 0
         self.brightness_gain = 1.0
         self.brightness_upper_level = 255
 
-        # Channel selection parameters
         self.channel_checks = []
         self.channel_colors = []
 
-        # Cache for brightness-adjusted display array
+        # brightness 調整後の表示用配列の cache
         self._cached_display_array = None
         self._cached_display_params = None
 
@@ -144,33 +99,28 @@ class ImageViewer(QMainWindow):
         h_layout.addWidget(self.scroll_area)
         self.image_label.installEventFilter(self)
 
-        # Left docks
-        # Navigator dock
+        # 左側の dock
         self.navigator_dock = QDockWidget("Navigator")
         self.navigator_dock.setFeatures(QDockWidget.DockWidgetFloatable | QDockWidget.DockWidgetMovable)
         self.navigator_widget = NavigatorWidget(self)
         self.navigator_dock.setWidget(self.navigator_widget)
         self.addDockWidget(Qt.LeftDockWidgetArea, self.navigator_dock)
 
-        # Info dock with tabs
         self.info_dock = QDockWidget("Info")
         self.info_dock.setFeatures(QDockWidget.DockWidgetFloatable | QDockWidget.DockWidgetMovable)
 
-        # Create tab widget
         self.info_tabs = QTabWidget()
 
-        # Display info tab
         display_info_widget = DisplayInfoWidget(self)
         self.info_tabs.addTab(display_info_widget, "Display Area")
 
-        # ROI info tab
         roi_info_widget = ROIInfoWidget(self)
         self.info_tabs.addTab(roi_info_widget, "ROI Area")
 
         self.info_dock.setWidget(self.info_tabs)
         self.addDockWidget(Qt.LeftDockWidgetArea, self.info_dock)
 
-        # Status bar
+        # status bar
         self.status = QStatusBar()
         self.setStatusBar(self.status)
         self.statusBar().setStyleSheet("font-size: 11pt;")
@@ -199,26 +149,23 @@ class ImageViewer(QMainWindow):
         self.status.addPermanentWidget(right_container)
 
         self.help_dialog = HelpDialog(self)
-        self.brightness_dialog = None  # Will be created when needed
+        self.brightness_dialog = None  # 必要になったときに作成する
 
-        # Initialize managers
         self.zoom_manager = ZoomManager(self)
         self.brightness_manager = BrightnessManager(self)
         self.status_updater = StatusUpdater(self)
 
-        # Features manager / dialog
         self.features_manager = FeaturesManager()
         self._features_dialog = None
 
-        # Centralized channel color/mode manager
         self.color_manager = ChannelColorManager()
 
         create_menus(self)
         self.setAcceptDrops(True)
-        # keep references to modeless dialogs so they don't get GC'd
+        # modeless dialog が GC されないよう参照を保持する
         self._analysis_dialog = None
 
-    # Delegate zoom methods to zoom_manager
+    # zoom_manager への委譲
     def set_zoom(self, scale: float):
         self.zoom_manager.set_zoom(scale)
 
@@ -234,7 +181,7 @@ class ImageViewer(QMainWindow):
     def toggle_fit_zoom(self):
         self.zoom_manager.toggle_fit_zoom()
 
-    # Delegate brightness methods to brightness_manager
+    # brightness_manager への委譲
     def show_brightness_dialog(self):
         self.brightness_manager.show_brightness_dialog()
 
@@ -247,7 +194,7 @@ class ImageViewer(QMainWindow):
     def apply_brightness_adjustment(self, arr: np.ndarray) -> np.ndarray:
         return self.brightness_manager.apply_brightness_adjustment(arr)
 
-    # Delegate status update methods to status_updater
+    # status_updater への委譲
     def update_mouse_status(self, pos):
         self.status_updater.update_mouse_status(pos)
 
@@ -257,18 +204,21 @@ class ImageViewer(QMainWindow):
     def update_brightness_status(self):
         self.status_updater.update_brightness_status()
 
-    # Image loading and navigation
+    # 画像の読み込みと切り替え
     def show_analysis_dialog(self, tab: str | None = None):
-        """Show analysis dialog for current image and ROI."""
-        # Ignore bool argument from QAction.triggered(bool) signal
+        """表示中の画像と ROI の解析 dialog を表示する。
+
+        Args:
+            tab: 表示する tab 名（前方一致）または index。
+        """
+        # QAction.triggered(bool) から渡される bool は無視する
         if isinstance(tab, bool):
             tab = None
-        # open analysis dialog for current image and current ROI
         if self.current_index is None:
             QMessageBox.information(self, "解析", "画像が選択されていません。")
             return
 
-        # If dialog already exists, bring it to front
+        # 既に開いている場合は前面に出す
         if self._analysis_dialog is not None:
             if self._analysis_dialog.isMinimized():
                 self._analysis_dialog.showNormal()
@@ -283,12 +233,10 @@ class ImageViewer(QMainWindow):
         arr = img.get("base_array", img.get("array"))
         sel = self.current_roi_rect
         img_path = img.get("path")
-        # Create with explicit parent for proper window relationship
         dlg = AnalysisDialog(self, image_array=arr, image_rect=sel, image_path=img_path)
         dlg.show()
         dlg.raise_()
         dlg.activateWindow()
-        # keep a reference until the dialog is closed
         self._analysis_dialog = dlg
         self._child_dialogs.append(dlg)
 
@@ -298,30 +246,24 @@ class ImageViewer(QMainWindow):
             self._analysis_dialog = None
 
         dlg.finished.connect(on_closed)
-        # if a tab was requested, set it
         if tab is not None:
             with contextlib.suppress(Exception):
                 dlg.set_current_tab(tab)
 
     def open_files(self):
-        """Open file dialog to load image files."""
-        # Standard extensions
+        """ファイル選択 dialog から画像を読み込む。"""
         standard_exts = "*.png *.jpg *.tif *.bmp *.jpeg *.exr *.npy *.hdr *.tiff *.gif *.webp  *.bin"
 
-        # Get custom extensions from registry
         registry = ImageLoaderRegistry.get_instance()
         custom_exts, has_wildcard = registry.get_supported_extensions()
 
-        # Build filter string
         all_exts = standard_exts
         if custom_exts:
-            # Add custom extensions
             custom_patterns = " ".join(f"*{ext}" for ext in sorted(custom_exts))
             all_exts += " " + custom_patterns
 
-        # Create filter string
+        # wildcard loader がある場合は "All Files" を既定の filter にする
         if has_wildcard:
-            # If wildcard loader exists, show "All Files" prominently
             filter_str = f"All Files (*.*);;Images ({all_exts})"
         else:
             filter_str = f"Images ({all_exts});;All Files (*.*)"
@@ -339,56 +281,45 @@ class ImageViewer(QMainWindow):
         image_files = [f for f in files if is_image_file(f)]
         feature_files = [f for f in files if Path(f).suffix.lower() in (".json", ".csv")]
 
-        # Load images
         new_count = self._add_images(image_files)
         self._finalize_image_addition(new_count)
         self.activateWindow()
 
-        # Load feature files
         if feature_files:
             try:
                 self.features_manager.load_feature_files(feature_files)
-                # Open features dialog (or bring existing dialog to front) and reflect the contents
+                # 特徴量 dialog を開き（既に開いていれば前面に出し）内容を反映する
                 self.show_features_dialog()
                 if self._features_dialog is not None:
                     with contextlib.suppress(Exception):
                         self._features_dialog.refresh_from_manager()
             except Exception:
-                # Non-fatal
                 pass
 
     def _prepare_thumbnail_array(self, arr: np.ndarray) -> np.ndarray:
-        """Prepare array for thumbnail display using current display modes.
-
-        Returns an image array (grayscale or RGB) that matches the current
-        Channel tab display settings for 1ch and 2ch images.
-        """
-        # 1ch image handling
+        """現在の 1ch/2ch 表示モードに合わせた thumbnail 用の配列を返す。"""
         if arr.ndim == 2 or (arr.ndim == 3 and arr.shape[2] == 1):
-            # Apply brightness for consistency with main view
+            # メイン表示と揃えるため brightness を適用する
             adj = self.apply_brightness_adjustment(arr)
             if self.color_manager.mode_1ch == MODE_1CH_JET:
                 if adj.ndim == 3 and adj.shape[2] == 1:
                     adj = adj[..., 0]
                 return apply_jet_colormap(adj)
             else:
-                # Grayscale thumbnail
                 if adj.ndim == 3 and adj.shape[2] == 1:
                     adj = adj[..., 0]
                 return adj
 
-        # 2ch image handling
         if arr.ndim == 3 and arr.shape[2] == 2:
             if self.color_manager.mode_2ch == MODE_2CH_FLOW_HSV:
-                # Skip brightness adjustment for thumbnails (directly convert from original data to HSV)
+                # flow-hsv は brightness を適用せず元データから変換する
                 rgb = flow_to_hsv_rgb(arr)
                 return rgb
             else:
-                # Composite mode: apply brightness then composite with current checks/colors
+                # composite: brightness 適用後、channel の表示 ON/OFF と色で合成する
                 adj = self.apply_brightness_adjustment(arr)
                 h, w, c = adj.shape
                 n = c
-                # Align checks and colors
                 checks = (self.channel_checks or [])[:]
                 if len(checks) < n:
                     checks.extend([True] * (n - len(checks)))
@@ -412,11 +343,10 @@ class ImageViewer(QMainWindow):
                         comp[:, :, 2] += ch * b
                 return np.clip(comp * 255.0, 0, 255).astype(np.uint8)
 
-        # For other cases, return original
         return arr
 
     def _show_load_error(self, path: str, arr=None, error_msg: str = ""):
-        """Show error message with file details."""
+        """ファイルの詳細を添えて読み込みエラーを表示する。"""
         filename = Path(path).name
         details = f"ファイル名: {filename}"
         if arr is not None:
@@ -432,17 +362,15 @@ class ImageViewer(QMainWindow):
         QMessageBox.warning(self, "画像読み込みエラー", details)
 
     def _show_bulk_load_errors(self, failed_files):
-        """Show multiple file load errors in a single dialog."""
+        """複数ファイルの読み込みエラーをまとめて表示する。"""
         if len(failed_files) == 1:
             path, error = failed_files[0]
             self._show_load_error(path, error_msg=error)
             return
 
-        # Multiple files failed
         msg = f"{len(failed_files)}個のファイルの読み込みに失敗しました:\n\n"
-        for path, error in failed_files[:5]:  # Show first 5 only
+        for path, error in failed_files[:5]:  # 先頭 5 件のみ表示する
             filename = Path(path).name
-            # Truncate long error messages
             error_short = error if len(error) < 60 else error[:57] + "..."
             msg += f"• {filename}\n  {error_short}\n\n"
 
@@ -455,6 +383,7 @@ class ImageViewer(QMainWindow):
         QMessageBox.warning(self, "画像読み込みエラー", msg)
 
     def _create_img_data(self, path: str, arr: np.array, failed_files: list) -> dict:
+        """images に追加する dict を作成する。対応しない shape の場合は failed_files に追加して None を返す。"""
         if arr.ndim < 2 or arr.ndim > 3:
             failed_files.append((path, "2次元または3次元の配列が必要です"))
             return None
@@ -462,22 +391,26 @@ class ImageViewer(QMainWindow):
             failed_files.append((path, "チャンネル数は1, 2, 3, または4である必要があります"))
             return None
 
-        # Create and cache thumbnail pixmap on load
         thumb_arr = self._prepare_thumbnail_array(arr)
         thumb_qimg = numpy_to_qimage(thumb_arr)
         thumb_pixmap = QPixmap.fromImage(thumb_qimg).scaled(200, 200, Qt.KeepAspectRatio, Qt.SmoothTransformation)
 
         img_data = {
-            # "path": str(Path(path).resolve()),
             "path": path,
             "array": arr,
             "base_array": arr.copy(),
-            "thumbnail_pixmap": thumb_pixmap,  # Cache thumbnail
+            "thumbnail_pixmap": thumb_pixmap,
         }
         return img_data
 
     def _add_images(self, paths: Iterable[str]) -> int:
-        """Load image files and append them to the viewer."""
+        """画像ファイルを読み込んで images に追加する。
+
+        loader が dict を返した場合は、各値を別の画像として追加する。
+
+        Returns:
+            追加した画像の数。
+        """
         new_images = []
         failed_files = []
 
@@ -487,12 +420,11 @@ class ImageViewer(QMainWindow):
             try:
                 load_data = load_image(path)
 
-                # Check if custom loader returned None (couldn't handle the file)
+                # custom loader が対応できなかった場合
                 if load_data is None:
                     failed_files.append((path, "カスタムローダーで処理できませんでした"))
                     continue
 
-                # # Validate array shape
                 if not isinstance(load_data, dict):
                     arr = load_data
                     path_str = str(Path(path).resolve())
@@ -513,7 +445,6 @@ class ImageViewer(QMainWindow):
                 failed_files.append((path, str(e)))
                 continue
 
-        # Show bulk errors if any
         if failed_files:
             self._show_bulk_load_errors(failed_files)
 
@@ -524,7 +455,7 @@ class ImageViewer(QMainWindow):
         return len(new_images)
 
     def _finalize_image_addition(self, new_count: int) -> None:
-        """Select the newly added images and refresh UI state."""
+        """追加した画像の先頭を表示し、画像 menu を更新する。"""
         if new_count <= 0:
             return
         if self.current_index is None:
@@ -535,12 +466,12 @@ class ImageViewer(QMainWindow):
         self.update_image_list_menu()
 
     # ------------------------
-    # Features: load + dialog
+    # 特徴量
     # ------------------------
 
     def show_features_dialog(self):
         if self._features_dialog is not None:
-            # Update title with latest loaded path
+            # 最後に読み込んだファイルを title に反映する
             title = "特徴量表示"
             last_path = self.features_manager.get_last_loaded_path()
             if last_path:
@@ -551,7 +482,6 @@ class ImageViewer(QMainWindow):
             self._features_dialog.raise_()
             self._features_dialog.activateWindow()
             return
-        # Create with explicit parent for proper window relationship
         dlg = FeaturesDialog(self, self.features_manager)
         dlg.show()
         dlg.raise_()
@@ -567,9 +497,8 @@ class ImageViewer(QMainWindow):
         dlg.finished.connect(on_closed)
 
     def update_image_list_menu(self):
-        """Update the image list menu with current loaded images."""
+        """画像 menu を読み込み済みの画像一覧で更新する。"""
         self.img_menu.clear()
-        # Add navigation actions (defined in menu_builder with shortcuts)
         self.img_menu.addAction(self.next_image_action)
         self.img_menu.addAction(self.prev_image_action)
         self.img_menu.addSeparator()
@@ -579,7 +508,7 @@ class ImageViewer(QMainWindow):
         for i, info in enumerate(self.images):
             act = QAction(info["path"], self)
             act.setCheckable(True)
-            # set checked state/icons first to avoid emitting triggered during setup
+            # triggered が発火しないよう、connect の前に check 状態と icon を設定する
             if i == self.current_index:
                 act.setChecked(True)
                 pix = QPixmap(12, 12)
@@ -589,66 +518,57 @@ class ImageViewer(QMainWindow):
                 p.drawEllipse(2, 2, 8, 8)
                 p.end()
                 act.setIcon(QIcon(pix))
-            # connect after initial state is configured
             act.triggered.connect(self.make_show_callback(i))
             group.addAction(act)
             self.img_menu.addAction(act)
 
     def make_show_callback(self, idx):
-        """Create callback function to show image at specific index."""
+        """idx 番目の画像を表示する callback を返す。"""
 
         def fn(checked=None):
-            # QAction.triggered may send a checked argument; accept it but ignore
             self.current_index = idx
-            # guard: ensure index still valid
             if 0 <= idx < len(self.images):
                 self.show_current_image()
             else:
-                # if images changed, refresh menu
+                # 画像一覧が変わっている場合は menu を更新する
                 self.update_image_list_menu()
 
         return fn
 
     def show_current_image(self):
-        """Display the currently selected image."""
+        """current_index の画像を表示し、関連する widget と dialog を更新する。"""
         if self.current_index is None or not self.images:
             self.image_label.clear()
             self.update_status()
             return
 
-        # Reset zoom toggle state when switching images
+        # 画像を切り替えたら fit zoom の状態と表示 cache を破棄する
         self.fit_zoom_scale = None
         self.original_zoom_scale = 1.0
         self.original_center_coords = None
 
-        # Clear display cache when switching images
         self._cached_display_array = None
         self._cached_display_params = None
 
-        # Initialize channel checks and colors for new image
+        # channel 数に対応する色と表示 ON/OFF を読み込む
         img = self.images[self.current_index]
         arr = img["array"]
         if arr.ndim >= 3:
             n_channels = arr.shape[2]
 
-            # Always load colors and checks for this channel count from the manager
             self.channel_colors = self.color_manager.get_colors(n_channels)
             self.channel_checks = self.color_manager.get_checks(n_channels)
         else:
-            # For grayscale images, keep empty lists
             self.channel_checks = []
             self.channel_colors = []
 
         arr = img["array"]
-        # Load per-dtype brightness parameters only if not already set by user
-        # This preserves dialog adjustments while providing sensible defaults
+        # dtype が切り替わった場合のみ、その dtype で保存した brightness を読み込む
         try:
             dtype_key = self.brightness_manager._dtype_key(arr.dtype)
-            # Check if current params match this dtype's stored params
             stored_params = self.brightness_manager._params_by_dtype.get(dtype_key)
             current_params = (self.brightness_offset, self.brightness_gain, self.brightness_upper_level)
 
-            # Only load stored params if they differ (indicating a dtype switch)
             if stored_params and stored_params != current_params:
                 self.brightness_offset, self.brightness_gain, self.brightness_upper_level = stored_params
                 self.update_brightness_status()
@@ -658,12 +578,11 @@ class ImageViewer(QMainWindow):
         self.image_changed.emit()
         self.update_image_list_menu()
 
-        # Update brightness dialog if it exists (even if not visible)
+        # 非表示でも表示設定 dialog が存在すれば新しい画像に更新する
         if self.brightness_dialog is not None:
             img = self.images[self.current_index]
             arr_for_brightness = img.get("base_array", img.get("array"))
             img_path = img.get("path", None)
-            # Keep current brightness settings when switching images
             self.brightness_dialog.update_for_new_image(
                 arr_for_brightness,
                 img_path,
@@ -674,7 +593,6 @@ class ImageViewer(QMainWindow):
                 initial_mode_2ch=self.color_manager.mode_2ch,
             )
 
-        # notify open analysis dialogs about new image
         try:
             img = self.images[self.current_index]
             arr_for_analysis = img.get("base_array", img.get("array"))
@@ -696,7 +614,6 @@ class ImageViewer(QMainWindow):
             self.image_label.roi_rect = rect
             self.image_label.update()
 
-        # notify any open modeless AnalysisDialogs so they can refresh for new image
         if self._analysis_dialog:
             img = self.images[self.current_index] if self.current_index is not None else None
             if img:
@@ -706,13 +623,13 @@ class ImageViewer(QMainWindow):
                     self._analysis_dialog.set_image_and_rect(arr, self.current_roi_rect, img_path)
 
     def _get_displayed_array(self) -> np.ndarray | None:
-        """Return the processed numpy array that is currently being displayed."""
+        """brightness・channel 合成・colormap を適用した表示用の配列を返す。"""
         if self.current_index is None:
             return None
 
         arr = self.images[self.current_index]["array"]
 
-        # Build cache key from all parameters that affect display
+        # 表示に影響する parameter をすべて cache の key にする
         cache_key = (
             self.current_index,
             self.brightness_offset,
@@ -724,14 +641,10 @@ class ImageViewer(QMainWindow):
             self.color_manager.mode_2ch,
         )
 
-        # Return cached result if parameters haven't changed
         if self._cached_display_params == cache_key and self._cached_display_array is not None:
             return self._cached_display_array
 
-        # The following logic is a copy of display_image, but returns the array
-        # instead of setting it on the label.
-
-        # Special pseudo-color modes
+        # 疑似カラー表示（1ch の JET、2ch の flow-hsv）
         try:
             if arr.ndim == 2 or (arr.ndim == 3 and arr.shape[2] == 1):
                 if self.color_manager.mode_1ch == MODE_1CH_JET:
@@ -739,21 +652,18 @@ class ImageViewer(QMainWindow):
                     if adj.ndim == 3 and adj.shape[2] == 1:
                         adj = adj[..., 0]
                     result = apply_jet_colormap(adj)
-                    # Cache the result
                     self._cached_display_array = result
                     self._cached_display_params = cache_key
                     return result
             elif arr.ndim == 3 and arr.shape[2] == 2 and self.color_manager.mode_2ch == MODE_2CH_FLOW_HSV:
                 result = flow_to_hsv_rgb(arr)
-                # Cache the result
                 self._cached_display_array = result
                 self._cached_display_params = cache_key
                 return result
         except Exception:
-            # Fallback to normal processing
+            # 通常の処理に fallback する
             pass
 
-        # Brightness adjustment
         apply_adjust = False
         if (
             np.issubdtype(arr.dtype, np.floating)
@@ -766,7 +676,7 @@ class ImageViewer(QMainWindow):
         if apply_adjust:
             arr = self.apply_brightness_adjustment(arr)
 
-        # Channel selection and color synthesis
+        # 表示する channel を選択した色で合成する
         if arr.ndim >= 3 and self.channel_checks:
             n_channels = arr.shape[2]
             if len(self.channel_checks) < n_channels:
@@ -797,25 +707,18 @@ class ImageViewer(QMainWindow):
                     composite[:, :, 1] += channel_data * g
                     composite[:, :, 2] += channel_data * b
             result = (np.clip(composite, 0, 1) * 255).astype(np.uint8)
-            # Cache the result
             self._cached_display_array = result
             self._cached_display_params = cache_key
             return result
 
-        # Cache the result
         self._cached_display_array = arr
         self._cached_display_params = cache_key
         return arr
 
     def display_image(self, arr):
-        """Display image array in the viewer with current zoom and adjustments.
-
-        Args:
-            arr: NumPy array (H,W[,C]) representing image data
-        """
+        """現在の zoom 倍率と表示設定で画像を表示する。"""
         processed_arr = self._get_displayed_array()
         if processed_arr is None:
-            # Fallback for safety, though _get_displayed_array should handle it
             processed_arr = arr
 
         qimg = numpy_to_qimage(processed_arr)
@@ -823,24 +726,22 @@ class ImageViewer(QMainWindow):
         self.update_status()
 
     def next_image(self):
-        """Navigate to next image in the list."""
         if not self.images:
             return
         self.current_index = (self.current_index + 1) % len(self.images)
         self.show_current_image()
 
     def prev_image(self):
-        """Navigate to previous image in the list."""
         if not self.images:
             return
         self.current_index = (self.current_index - 1) % len(self.images)
         self.show_current_image()
 
     def close_current_image(self):
-        """Close the currently displayed image."""
+        """表示中の画像を閉じる。"""
         if self.current_index is None:
             return
-        # Explicitly delete image data to free memory
+        # memory を解放するため配列を明示的に削除する
         img_data = self.images[self.current_index]
         if "array" in img_data:
             del img_data["array"]
@@ -849,15 +750,14 @@ class ImageViewer(QMainWindow):
         del self.images[self.current_index]
         if not self.images:
             self.current_index = None
-            # Clear the image label to release any held references
             self.image_label.clear()
         else:
             self.current_index = min(self.current_index, len(self.images) - 1)
         self.show_current_image()
 
     def close_all_images(self):
-        """Close all loaded images."""
-        # Explicitly delete all image data to free memory
+        """すべての画像を閉じる。"""
+        # memory を解放するため配列を明示的に削除する
         for img_data in self.images:
             if "array" in img_data:
                 del img_data["array"]
@@ -865,26 +765,23 @@ class ImageViewer(QMainWindow):
                 del img_data["base_array"]
         self.images.clear()
         self.current_index = None
-        # Clear the image label to release any held references
         self.image_label.clear()
-        # update UI and image menu
         with contextlib.suppress(Exception):
             self.show_current_image()
-        # ensure image menu is cleared
         with contextlib.suppress(Exception):
             self.update_image_list_menu()
-        # notify analysis dialogs that there's no image now
         if self._analysis_dialog:
             with contextlib.suppress(Exception):
                 self._analysis_dialog.set_image_and_rect(None, None)
 
     def reboot(self):
+        # app が viewer を import しているため、循環 import を避けて関数内で import する
         from PixelScopeViewer.app import RESTART_EXIT_CODE
 
         QApplication.exit(RESTART_EXIT_CODE)
 
     def show_diff_dialog(self):
-        """Show difference image creation dialog."""
+        """2 枚の画像の差分画像を作成して追加する。"""
         if len(self.images) < 2:
             QMessageBox.information(self, "差分", "比較する画像が2枚必要です。")
             return
@@ -896,7 +793,6 @@ class ImageViewer(QMainWindow):
             return
         a = self.images[a_idx]["array"]
         b = self.images[b_idx]["array"]
-        # compute diff with offset and clip
         try:
             diff = a - b + offset
             diff[diff < 0] = 0
@@ -904,7 +800,6 @@ class ImageViewer(QMainWindow):
             QMessageBox.information(self, "差分", "差分の作成に失敗しました。画像サイズや型を確認してください。")
             return
 
-        # Create and cache thumbnail for the diff image
         thumb_arr = self._prepare_thumbnail_array(diff)
         thumb_qimg = numpy_to_qimage(thumb_arr)
         thumb_pixmap = QPixmap.fromImage(thumb_qimg).scaled(
@@ -918,38 +813,34 @@ class ImageViewer(QMainWindow):
             "thumbnail_pixmap": thumb_pixmap,
         }
         self.images.append(img_data)
-        # switch to the new image
         self.current_index = len(self.images) - 1
         self.show_current_image()
 
     def show_tiling_comparison_dialog(self):
-        """Show tiling comparison dialog."""
+        """複数画像比較 dialog を表示する。"""
         if len(self.images) < 2:
             QMessageBox.information(self, "複数画像比較", "比較する画像が2枚以上必要です。")
             return
-        # Create modeless dialog (allows main window operation)
-        # Keep reference to prevent garbage collection
+        # modeless で開き、GC されないよう参照を保持する
         if not hasattr(self, "_tiling_dialog") or self._tiling_dialog is None:
             self._tiling_dialog = TilingComparisonDialog(self, image_list=self.images)
-            # If dialog is closed, reset the reference
             self._tiling_dialog.finished.connect(lambda: setattr(self, "_tiling_dialog", None))
 
         self._tiling_dialog.show()
         self._tiling_dialog.raise_()
         self._tiling_dialog.activateWindow()
 
-    # ROI operations
+    # ROI 操作
     def select_all(self):
-        """Set entire image as ROI and notify related dialogs."""
+        """画像全体を ROI にする。"""
         if self.current_index is None or not self.images:
             return
         self.image_label.set_roi_full()
-        # Notify that ROI changed (same as manual ROI)
         if self.image_label.roi_rect:
             self.on_roi_changed(self.image_label.roi_rect)
 
     def on_roi_changed(self, rect: QRect):
-        """Handle ROI change events."""
+        """widget 座標の ROI を画像座標に変換して保存し、関連する widget と dialog に通知する。"""
         s = self.scale
         self.current_roi_rect = QRect(
             int(rect.x() / s),
@@ -958,9 +849,7 @@ class ImageViewer(QMainWindow):
             int(rect.height() / s),
         )
         self.status_updater.update_roi_status()
-        # notify any open modeless AnalysisDialogs so they can refresh for new ROI
         if self._analysis_dialog:
-            # Get current image data
             img = self.images[self.current_index] if self.current_index is not None else None
             if img:
                 arr = img.get("base_array", img.get("array"))
@@ -971,12 +860,11 @@ class ImageViewer(QMainWindow):
         self.roi_changed.emit()
 
     def copy_roi_to_clipboard(self):
-        """Copy ROI region or the entire displayed image to clipboard."""
+        """表示中の画像の ROI（ROI がなければ全体）を表示倍率で clipboard にコピーする。"""
         if self.current_index is None:
             QMessageBox.information(self, "コピー", "画像がありません。")
             return
 
-        # Get the currently displayed numpy array (with all adjustments)
         displayed_arr = self._get_displayed_array()
         if displayed_arr is None:
             QMessageBox.information(self, "コピー", "表示されている画像データを取得できません。")
@@ -984,21 +872,18 @@ class ImageViewer(QMainWindow):
 
         sel = self.current_roi_rect
         if sel and not sel.isEmpty():
-            # ROI is in original image coordinates, which matches the array coordinates
             x, y, w, h = sel.x(), sel.y(), sel.width(), sel.height()
-            # Ensure ROI is within the array bounds before slicing
             h_arr, w_arr = displayed_arr.shape[:2]
             if x < w_arr and y < h_arr:
                 sub_arr = displayed_arr[y : y + h, x : x + w]
                 qimg = numpy_to_qimage(sub_arr)
             else:
-                qimg = None  # ROI is outside the image
+                qimg = None  # ROI が画像の範囲外
         else:
-            # If no ROI, use the entire displayed array
             qimg = numpy_to_qimage(displayed_arr)
 
         if qimg and not qimg.isNull():
-            # Viewerで設定している倍率にscaling. (Nearest Neighbor補間)
+            # viewer の表示倍率に nearest neighbor で拡大縮小する
             scaled_qimg = qimg.scaled(
                 int(qimg.width() * self.scale),
                 int(qimg.height() * self.scale),
@@ -1010,14 +895,12 @@ class ImageViewer(QMainWindow):
             QMessageBox.information(self, "コピー", "クリップボードにコピーする画像を作成できませんでした。")
 
     def set_roi_from_image_rect(self, rect_img: QRect):
-        """Set ROI using image coordinates and update label, status, and listeners.
+        """画像座標で ROI を設定する。
 
-        This avoids lossy roundtrip via label coordinates when zoomed, ensuring
-        spin box edits map 1:1 to the internal ROI regardless of scale.
+        widget 座標を経由しないため、zoom 中でも丸め誤差なく反映される。
         """
         try:
             self.current_roi_rect = rect_img
-            # Project to label/widget coordinates for display
             s = self.scale if hasattr(self, "scale") else 1.0
             rect_label = QRect(
                 int(rect_img.x() * s),
@@ -1028,7 +911,6 @@ class ImageViewer(QMainWindow):
             self.image_label.roi_rect = rect_label
             self.image_label.update()
 
-            # Notify any open modeless AnalysisDialogs
             if self._analysis_dialog:
                 img = self.images[self.current_index] if self.current_index is not None else None
                 if img:
@@ -1036,54 +918,48 @@ class ImageViewer(QMainWindow):
                     img_path = img.get("path")
                     with contextlib.suppress(Exception):
                         self._analysis_dialog.set_image_and_rect(arr, self.current_roi_rect, img_path)
-            # Emit ROI changed for dependent widgets (e.g., ROIInfo)
             self.roi_changed.emit()
         except Exception:
-            # Best effort; avoid crashing on edge cases
             self.roi_changed.emit()
 
-    # Event handlers
+    # event handler
     def changeEvent(self, event):
-        """Handle window state changes to synchronize child dialogs."""
+        # 最小化・復元を子 dialog にも反映する
         if event.type() == QEvent.WindowStateChange:
             if self.isMinimized():
-                # Minimize all child dialogs
                 for dlg in self._child_dialogs:
                     try:
                         if dlg.isVisible() and not dlg.isMinimized():
                             dlg.showMinimized()
                     except RuntimeError:
-                        pass  # Dialog already deleted
+                        pass  # dialog は削除済み
             elif event.oldState() & Qt.WindowMinimized:
-                # Restore all child dialogs
                 for dlg in self._child_dialogs:
                     try:
                         if dlg.isMinimized():
                             dlg.showNormal()
                     except RuntimeError:
-                        pass  # Dialog already deleted
+                        pass  # dialog は削除済み
         super().changeEvent(event)
 
     def mousePressEvent(self, event):
-        """Raise child dialogs when parent window is clicked."""
-        # Raise child dialogs to front when parent is clicked
+        # クリック時に子 dialog も前面に出す
         for dlg in self._child_dialogs:
             try:
                 if dlg.isVisible() and not dlg.isMinimized():
                     dlg.raise_()
             except RuntimeError:
-                pass  # Dialog already deleted
+                pass  # dialog は削除済み
         super().mousePressEvent(event)
 
     def eventFilter(self, obj, event):
-        """Filter events to update status on mouse move."""
         if obj is self.image_label and event.type() == QEvent.MouseMove:
             self.update_mouse_status(event.position().toPoint())
             return False
         return super().eventFilter(obj, event)
 
     def keyPressEvent(self, e):
-        """Handle key press events (ESC to clear ROI)."""
+        # Esc で ROI を解除する
         if e.key() == Qt.Key_Escape:
             self.image_label.roi_rect = None
             self.image_label.update()
@@ -1092,41 +968,35 @@ class ImageViewer(QMainWindow):
         super().keyPressEvent(e)
 
     def closeEvent(self, event):
-        """Handle window close event to ensure all child dialogs are closed.
-
-        When the main window is closed, all child windows including tiling dialog
-        are also closed to prevent the application from becoming unusable.
-        """
-        # Close tiling dialog first if it exists
+        # 子 window が残って操作不能にならないよう、modeless dialog をすべて閉じる
         try:
             if hasattr(self, "_tiling_dialog") and self._tiling_dialog is not None:
                 self._tiling_dialog.close()
         except RuntimeError:
-            pass  # Dialog already deleted by Qt
+            pass  # Qt 側で削除済み
 
-        # Close all modeless dialogs to ensure the application exits cleanly
         try:
             if self.brightness_dialog and self.brightness_dialog.isVisible():
                 self.brightness_dialog.close()
         except RuntimeError:
-            pass  # Dialog already deleted by Qt
+            pass
 
         try:
             if self._features_dialog and self._features_dialog.isVisible():
                 self._features_dialog.close()
         except RuntimeError:
-            pass  # Dialog already deleted by Qt
+            pass
 
         try:
             if self._analysis_dialog and self._analysis_dialog.isVisible():
                 self._analysis_dialog.close()
         except RuntimeError:
-            pass  # Dialog already deleted by Qt
+            pass
 
         try:
             if self.help_dialog and self.help_dialog.isVisible():
                 self.help_dialog.close()
         except RuntimeError:
-            pass  # Dialog already deleted by Qt
+            pass
 
         event.accept()

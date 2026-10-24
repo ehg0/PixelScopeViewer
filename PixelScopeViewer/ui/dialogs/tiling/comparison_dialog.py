@@ -4,6 +4,7 @@ import contextlib
 from pathlib import Path
 
 import numpy as np
+import pyqtgraph as pg
 from PySide6.QtGui import QBrush, QColor, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -22,19 +23,12 @@ from ..analysis.core import determine_hist_bins
 from ..analysis.core.compute import ecdf_series, get_profile_offset, histogram_series, histogram_stats, profile_series
 from ..analysis.dialog import AnalysisDialog
 
-try:
-    import pyqtgraph as pg
 
-    PYQTGRAPH_AVAILABLE = True
-except ImportError:
-    PYQTGRAPH_AVAILABLE = False
-
-
-class TilingComparisonDialog(AnalysisDialog):
+class TilingAnalysisDialog(AnalysisDialog):
     """全 tile の histogram・profile を色分けして重ね、metadata を比較表示する AnalysisDialog。
 
     Args:
-        parent: 親の TilingComparisonDialog。
+        parent: 親の TilingDialog。
         tiles_data: array, rect（ROI）, path, index, color を持つ tile ごとの dict のリスト。
     """
 
@@ -138,7 +132,7 @@ class TilingComparisonDialog(AnalysisDialog):
             return
 
         if not self.tiles_data:
-            self.meta_tab.update([("Info", "No tiles available")])
+            self.meta_tab.set_rows([("Info", "No tiles available")])
             return
 
         all_metadata = []
@@ -165,7 +159,7 @@ class TilingComparisonDialog(AnalysisDialog):
             all_metadata.append({"index": tile_data["index"], "path": path, "metadata": metadata})
 
         if not all_metadata:
-            self.meta_tab.update([("Info", "No metadata available")])
+            self.meta_tab.set_rows([("Info", "No metadata available")])
             return
 
         self._build_comparison_table(all_metadata)
@@ -237,8 +231,6 @@ class TilingComparisonDialog(AnalysisDialog):
         self._update_metadata()
 
         if not self.tiles_data:
-            return
-        if not PYQTGRAPH_AVAILABLE:
             return
 
         # ROI を適用した tile ごとの配列

@@ -9,6 +9,7 @@ import numpy as np
 import OpenImageIO as oiio
 from PySide6.QtGui import QImage
 
+from .constants import OIIO_EXTENSIONS, OPENCV_EXTENSIONS, STANDARD_IMAGE_EXTENSIONS
 from .metadata_utils import extract_exif, extract_png_metadata
 
 
@@ -153,33 +154,20 @@ def load_image(path: str | Path) -> np.ndarray:
 
     registry = ImageLoaderRegistry.get_instance()
 
-    # priority > 0 の custom loader
-    for loader_info in registry.custom_loaders:
-        if loader_info["priority"] <= 0:
-            break  # priority 順に並んでいるのでここで打ち切れる
+    result = _try_custom_loaders(registry, path_str, ext, lambda p: p > 0)
+    if result is not None:
+        return result
 
-        if loader_info["is_wildcard"] or ext in loader_info["extensions"]:
-            try:
-                result = loader_info["func"](path_str)
-                if result is not None:
-                    return result
-            except Exception as e:
-                print(f"Error: {e}")
-                continue
-
-    # 標準 loader（priority == 0 相当）
-    if ext in [".exr", ".hdr"]:
-        img = oiio.ImageInput.open(str(path))
+    if ext in OIIO_EXTENSIONS:
+        img = oiio.ImageInput.open(path_str)
         arr = img.read_image()
         img.close()
         return arr
     elif ext == ".npy":
-        arr = np.load(path)
-        return arr
+        return np.load(path)
     elif ext == ".bin":
-        arr = read_bin(path)
-        return arr
-    elif ext in [".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".gif", ".webp"]:
+        return read_bin(path)
+    elif ext in OPENCV_EXTENSIONS:
         img = cv2_imread_unicode(path_str)
         if img is None:
             raise RuntimeError(f"Cannot open image: {path_str}")
@@ -191,44 +179,35 @@ def load_image(path: str | Path) -> np.ndarray:
             img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         return img
 
-    # priority == 0 の custom loader
-    for loader_info in registry.custom_loaders:
-        if loader_info["priority"] != 0:
-            continue
-
-        if loader_info["is_wildcard"] or ext in loader_info["extensions"]:
-            try:
-                result = loader_info["func"](path_str)
-                if result is not None:
-                    return result
-            except Exception as e:
-                print(f"Error: {e}")
-                continue
-
-    # priority < 0 の fallback loader
-    for loader_info in registry.custom_loaders:
-        if loader_info["priority"] >= 0:
-            continue
-
-        if loader_info["is_wildcard"] or ext in loader_info["extensions"]:
-            try:
-                result = loader_info["func"](path_str)
-                if result is not None:
-                    return result
-            except Exception as e:
-                print(f"Error: {e}")
-                continue
+    for accept in (lambda p: p == 0, lambda p: p < 0):
+        result = _try_custom_loaders(registry, path_str, ext, accept)
+        if result is not None:
+            return result
 
     raise RuntimeError(f"Cannot open image: {path_str} (unsupported format)")
 
 
+def _try_custom_loaders(
+    registry: ImageLoaderRegistry, path_str: str, ext: str, accept_priority: Callable[[int], bool]
+) -> np.ndarray | None:
+    """priority が accept_priority を満たす custom loader を順に試し、最初に成功した結果を返す。"""
+    for loader_info in registry.custom_loaders:
+        if not accept_priority(loader_info["priority"]):
+            continue
+        if loader_info["is_wildcard"] or ext in loader_info["extensions"]:
+            try:
+                result = loader_info["func"](path_str)
+                if result is not None:
+                    return result
+            except Exception as e:
+                print(f"Error: {e}")
+    return None
+
+
 def is_image_file(path: str | Path) -> bool:
     """拡張子から読み込み可能な画像ファイルかを判定する（custom loader の拡張子を含む）。"""
-    path_obj = Path(path)
-    ext = path_obj.suffix.lower()
-
-    standard_exts = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".exr", ".npy", ".bin", ".hdr", ".gif", ".webp"}
-    if ext in standard_exts:
+    ext = Path(path).suffix.lower()
+    if ext in STANDARD_IMAGE_EXTENSIONS:
         return True
 
     registry = ImageLoaderRegistry.get_instance()

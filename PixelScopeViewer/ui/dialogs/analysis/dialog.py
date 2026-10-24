@@ -4,6 +4,7 @@ import contextlib
 from fractions import Fraction
 
 import numpy as np
+import pyqtgraph as pg
 from PySide6.QtCore import QEvent, QRect, Qt
 from PySide6.QtGui import QColor, QGuiApplication
 from PySide6.QtWidgets import (
@@ -21,18 +22,6 @@ from PySide6.QtWidgets import (
 )
 
 from ....core.image_io import get_image_metadata
-
-try:
-    import pyqtgraph as pg
-    from pyqtgraph import PlotWidget
-
-    PYQTGRAPH_AVAILABLE = True
-
-except ImportError:
-    pg = None
-    PlotWidget = None
-    PYQTGRAPH_AVAILABLE = False
-
 from ...utils.color_utils import get_default_channel_colors
 from .core import (
     calc_stats,
@@ -143,7 +132,6 @@ class AnalysisDialog(QDialog):
         self.tabs.addTab(self.meta_tab, "Metadata")
 
         self.profile_tab = ProfileTab(
-            PYQTGRAPH_AVAILABLE,
             on_save_viewbox_state=lambda vb: self._save_viewbox_state(vb, "prof"),
             on_connect_plot_controls=lambda plot_item: self._connect_plotitem_controls(plot_item, "prof"),
             on_channel_changed=lambda checks: self._on_channel_changed(checks),
@@ -165,7 +153,6 @@ class AnalysisDialog(QDialog):
         self.tabs.addTab(self.profile_tab, "Profile")
 
         self.hist_tab = HistogramTab(
-            PYQTGRAPH_AVAILABLE,
             on_save_viewbox_state=lambda vb: self._save_viewbox_state(vb, "hist"),
             on_connect_plot_controls=lambda plot_item: self._connect_plotitem_controls(plot_item, "hist"),
             on_channel_changed=lambda checks: self._on_channel_changed(checks),
@@ -301,9 +288,6 @@ class AnalysisDialog(QDialog):
 
         self._update_metadata()
 
-        if not PYQTGRAPH_AVAILABLE:
-            return
-
         # channel_checks の長さを channel 数に合わせる
         if arr.ndim == 3 and arr.shape[2] > 1:
             nch = arr.shape[2]
@@ -413,7 +397,7 @@ class AnalysisDialog(QDialog):
                 self.channel_color_map["I"] = (0, 0, 0)
                 self.channel_color_map["0"] = (0, 0, 0)
                 self.channel_color_map["C0"] = (0, 0, 0)
-        self.hist_tab.update(
+        self.hist_tab.update_plot(
             visible_hist_series,
             hist_stats,
             apply_log=apply_log,
@@ -456,7 +440,7 @@ class AnalysisDialog(QDialog):
             method=self.profile_compute_method,
             channel_checks=self.channel_checks,
         )
-        self.profile_tab.update(
+        self.profile_tab.update_plot(
             visible_prof_series,
             prof_stats,
             self.profile_orientation,
@@ -466,18 +450,17 @@ class AnalysisDialog(QDialog):
         )
 
         # 保存済みの ViewBox 状態がなければ、データに合わせて表示範囲を自動調整する
-        if PYQTGRAPH_AVAILABLE:
-            try:
-                if not hasattr(self, "viewbox_full_hist"):
-                    hist_vb = self.hist_widget.getViewBox()
-                    hist_vb.autoRange()
-                    hist_vb.enableAutoRange(axis=pg.ViewBox.XYAxes)
-                if not hasattr(self, "viewbox_full_prof"):
-                    prof_vb = self.prof_widget.getViewBox()
-                    prof_vb.autoRange()
-                    prof_vb.enableAutoRange(axis=pg.ViewBox.XYAxes)
-            except Exception:
-                pass
+        try:
+            if not hasattr(self, "viewbox_full_hist"):
+                hist_vb = self.hist_widget.getViewBox()
+                hist_vb.autoRange()
+                hist_vb.enableAutoRange(axis=pg.ViewBox.XYAxes)
+            if not hasattr(self, "viewbox_full_prof"):
+                prof_vb = self.prof_widget.getViewBox()
+                prof_vb.autoRange()
+                prof_vb.enableAutoRange(axis=pg.ViewBox.XYAxes)
+        except Exception:
+            pass
 
         # 保存済みの plot 設定（grid、ViewBox 状態）を再適用する
         self._apply_plot_settings()
@@ -488,7 +471,7 @@ class AnalysisDialog(QDialog):
             return
 
         if self.image_path is None or not self.image_path:
-            self.meta_tab.update([("Error", "No file path available")])
+            self.meta_tab.set_rows([("Error", "No file path available")])
             self.last_metadata = []
             return
 
@@ -496,7 +479,7 @@ class AnalysisDialog(QDialog):
             metadata = get_image_metadata(self.image_path, self.image_array)
 
             if not metadata:
-                self.meta_tab.update([("Info", "No metadata available")])
+                self.meta_tab.set_rows([("Info", "No metadata available")])
                 self.last_metadata = []
                 return
 
@@ -519,10 +502,10 @@ class AnalysisDialog(QDialog):
                     rows.append((" -> (seconds)", f"{exposure_time:.3e}"))
 
             self.last_metadata = rows
-            self.meta_tab.update(rows)
+            self.meta_tab.set_rows(rows)
 
         except Exception as e:
-            self.meta_tab.update([("Error", f"Error reading metadata: {e!s}")])
+            self.meta_tab.set_rows([("Error", f"Error reading metadata: {e!s}")])
             self.last_metadata = []
 
     def hist_config_mode_toggle(self):
@@ -712,14 +695,12 @@ class AnalysisDialog(QDialog):
 
     def _apply_plot_settings(self):
         try:
-            if hasattr(self, "hist_widget") and self.hist_widget is not None:
-                pg_apply_plot_settings(
-                    self.hist_widget, "hist", self.plot_settings, getattr(self, "viewbox_full_hist", None)
-                )
-            if hasattr(self, "prof_widget") and self.prof_widget is not None:
-                pg_apply_plot_settings(
-                    self.prof_widget, "prof", self.plot_settings, getattr(self, "viewbox_full_prof", None)
-                )
+            pg_apply_plot_settings(
+                self.hist_widget, "hist", self.plot_settings, getattr(self, "viewbox_full_hist", None)
+            )
+            pg_apply_plot_settings(
+                self.prof_widget, "prof", self.plot_settings, getattr(self, "viewbox_full_prof", None)
+            )
         except Exception:
             pass
 

@@ -29,7 +29,6 @@ class HistogramTab(QWidget):
     """histogram の plot、統計量の table、設定 control を持つ tab。
 
     Args:
-        pyqtgraph_available: pyqtgraph が使えるか。False の場合 plot は作成しない。
         on_save_viewbox_state: ViewBox の状態を保存する callback。
         on_connect_plot_controls: PlotItem の control を接続する callback。
         on_channel_changed: channel の表示 ON/OFF 変更時の callback。
@@ -43,7 +42,6 @@ class HistogramTab(QWidget):
 
     def __init__(
         self,
-        pyqtgraph_available: bool,
         on_save_viewbox_state: Callable[[object], None] | None = None,
         on_connect_plot_controls: Callable[[object], None] | None = None,
         on_channel_changed: Callable[[list], None] | None = None,
@@ -53,7 +51,6 @@ class HistogramTab(QWidget):
     ):
         super().__init__(parent)
 
-        self.hist_widget = None
         self.on_channel_changed = on_channel_changed
         self.on_spinbox_changed = on_spinbox_changed
         self.on_spinbox_bar_alpha_changed = on_spinbox_bar_alpha_changed
@@ -63,40 +60,39 @@ class HistogramTab(QWidget):
         root = QHBoxLayout(self)
 
         left = QVBoxLayout()
-        if pyqtgraph_available and PlotWidget is not None:
-            self.hist_widget = PlotWidget()
-            self.hist_widget.setLabel("left", "Count")
-            self.hist_widget.setLabel("bottom", "Intensity")
-            self.hist_widget.setBackground("white")
-            self.hist_widget.showGrid(x=True, y=True, alpha=0.4)
-            try:
-                self.hist_widget.getAxis("left").setPen(pg.mkPen(color="#7f8c8d", width=1))
-                self.hist_widget.getAxis("bottom").setPen(pg.mkPen(color="#7f8c8d", width=1))
-                self.hist_widget.getAxis("left").setTextPen(pg.mkPen(color="#2c3e50"))
-                self.hist_widget.getAxis("bottom").setTextPen(pg.mkPen(color="#2c3e50"))
-            except Exception:
-                pass
-            self.hist_widget.setMenuEnabled(True)
-            try:
-                view_box = self.hist_widget.getViewBox()
-                view_box.setMouseEnabled(x=False, y=False)
-                if on_save_viewbox_state is not None:
-                    try:
-                        view_box.sigStateChanged.connect(lambda vb: on_save_viewbox_state(vb))
-                        on_save_viewbox_state(view_box)
-                    except Exception:
-                        pass
-            except Exception:
-                pass
-            try:
-                if on_connect_plot_controls is not None:
-                    on_connect_plot_controls(self.hist_widget.getPlotItem())
-            except Exception:
-                pass
-            left.addWidget(self.hist_widget, 3)
+        self.hist_widget = PlotWidget()
+        self.hist_widget.setLabel("left", "Count")
+        self.hist_widget.setLabel("bottom", "Intensity")
+        self.hist_widget.setBackground("white")
+        self.hist_widget.showGrid(x=True, y=True, alpha=0.4)
+        try:
+            self.hist_widget.getAxis("left").setPen(pg.mkPen(color="#7f8c8d", width=1))
+            self.hist_widget.getAxis("bottom").setPen(pg.mkPen(color="#7f8c8d", width=1))
+            self.hist_widget.getAxis("left").setTextPen(pg.mkPen(color="#2c3e50"))
+            self.hist_widget.getAxis("bottom").setTextPen(pg.mkPen(color="#2c3e50"))
+        except Exception:
+            pass
+        self.hist_widget.setMenuEnabled(True)
+        try:
+            view_box = self.hist_widget.getViewBox()
+            view_box.setMouseEnabled(x=False, y=False)
+            if on_save_viewbox_state is not None:
+                try:
+                    view_box.sigStateChanged.connect(lambda vb: on_save_viewbox_state(vb))
+                    on_save_viewbox_state(view_box)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        try:
+            if on_connect_plot_controls is not None:
+                on_connect_plot_controls(self.hist_widget.getPlotItem())
+        except Exception:
+            pass
+        left.addWidget(self.hist_widget, 3)
 
-            # マウス位置の値を status bar に表示する
-            self.hist_widget.scene().sigMouseMoved.connect(self._on_mouse_over)
+        # マウス位置の値を status bar に表示する
+        self.hist_widget.scene().sigMouseMoved.connect(self._on_mouse_over)
 
         self.stats_table = QTableWidget()
         stats_headers = ["ch", "Mean", "Std", "Median", "Min", "Max", "Fano"]
@@ -271,7 +267,7 @@ class HistogramTab(QWidget):
             else:
                 cb.setVisible(False)
 
-    def update(
+    def update_plot(
         self,
         series: dict,
         stats_rows: list[dict],
@@ -292,9 +288,6 @@ class HistogramTab(QWidget):
             chart_kind: "Line" または "Bar"。
             bar_alpha: Bar 表示時の alpha。
         """
-        if self.hist_widget is None:
-            return
-
         self.hist_widget.clear()
 
         # 複数画像比較では親 dialog の overlay_color_map を使う

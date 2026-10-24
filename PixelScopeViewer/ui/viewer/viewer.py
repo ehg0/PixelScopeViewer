@@ -29,9 +29,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ...core.constants import STANDARD_IMAGE_EXTENSIONS
 from ...core.image_io import ImageLoaderRegistry, is_image_file, load_image, numpy_to_qimage
 from ..dialogs import AnalysisDialog, DiffDialog, FeaturesDialog, HelpDialog
-from ..dialogs.tiling import TilingComparisonDialog
+from ..dialogs.tiling import TilingDialog
 from ..utils import MODE_1CH_JET, MODE_2CH_FLOW_HSV, ChannelColorManager, apply_jet_colormap, flow_to_hsv_rgb
 from ..utils.features_manager import FeaturesManager
 from ..widgets import DisplayInfoWidget, ImageLabel, NavigatorWidget, ROIInfoWidget
@@ -252,15 +253,11 @@ class ImageViewer(QMainWindow):
 
     def open_files(self):
         """ファイル選択 dialog から画像を読み込む。"""
-        standard_exts = "*.png *.jpg *.tif *.bmp *.jpeg *.exr *.npy *.hdr *.tiff *.gif *.webp  *.bin"
-
         registry = ImageLoaderRegistry.get_instance()
         custom_exts, has_wildcard = registry.get_supported_extensions()
 
-        all_exts = standard_exts
-        if custom_exts:
-            custom_patterns = " ".join(f"*{ext}" for ext in sorted(custom_exts))
-            all_exts += " " + custom_patterns
+        exts = [*STANDARD_IMAGE_EXTENSIONS, *sorted(set(custom_exts) - set(STANDARD_IMAGE_EXTENSIONS))]
+        all_exts = " ".join(f"*{ext}" for ext in exts)
 
         # wildcard loader がある場合は "All Files" を既定の filter にする
         if has_wildcard:
@@ -823,7 +820,7 @@ class ImageViewer(QMainWindow):
             return
         # modeless で開き、GC されないよう参照を保持する
         if not hasattr(self, "_tiling_dialog") or self._tiling_dialog is None:
-            self._tiling_dialog = TilingComparisonDialog(self, image_list=self.images)
+            self._tiling_dialog = TilingDialog(self, image_list=self.images)
             self._tiling_dialog.finished.connect(lambda: setattr(self, "_tiling_dialog", None))
 
         self._tiling_dialog.show()

@@ -17,9 +17,7 @@ from PySide6.QtWidgets import (
 
 from ..analysis.dialog import AnalysisDialog
 from .brightness_dialog import TilingBrightnessDialog
-
-# 本モジュールの TilingComparisonDialog と同名のため別名で import する
-from .comparison_dialog import TilingComparisonDialog as OverlayComparisonDialog
+from .comparison_dialog import TilingAnalysisDialog
 from .core import (
     BrightnessManager,
     ROIManager,
@@ -32,7 +30,7 @@ from .selection_dialog import TileSelectionDialog
 from .tile_widget import TileWidget
 
 
-class TilingComparisonDialog(QDialog):
+class TilingDialog(QDialog):
     """複数画像を grid に並べ、scroll・zoom・ROI を同期して比較する dialog。
 
     Args:
@@ -660,7 +658,7 @@ class TilingComparisonDialog(QDialog):
             return
 
         if self._comparison_dialog is None or not self._comparison_dialog.isVisible():
-            self._comparison_dialog = OverlayComparisonDialog(parent=self, tiles_data=tiles_data)
+            self._comparison_dialog = TilingAnalysisDialog(parent=self, tiles_data=tiles_data)
 
             self._child_dialogs.append(self._comparison_dialog)
 

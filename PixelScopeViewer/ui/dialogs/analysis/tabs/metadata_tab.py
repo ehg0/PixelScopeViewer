@@ -38,7 +38,7 @@ class MetadataTab(QWidget):
         self.copy_btn.setToolTip("表示中のメタデータ一覧をクリップボードにコピーします")
         layout.addWidget(self.copy_btn)
 
-    def update(self, rows: list[tuple[str, str]]):
+    def set_rows(self, rows: list[tuple[str, str]]):
         """metadata の table を (key, value) のリストで更新する。"""
         # sort 有効時のちらつきを防ぐ
         self.metadata_table.setSortingEnabled(False)

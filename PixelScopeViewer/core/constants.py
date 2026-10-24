@@ -1,5 +1,10 @@
 """アプリケーション全体で共有する定数。"""
 
+# 標準 loader が対応する拡張子
+OIIO_EXTENSIONS: tuple[str, ...] = (".exr", ".hdr")
+OPENCV_EXTENSIONS: tuple[str, ...] = (".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".gif", ".webp")
+STANDARD_IMAGE_EXTENSIONS: tuple[str, ...] = (*OPENCV_EXTENSIONS, *OIIO_EXTENSIONS, ".npy", ".bin")
+
 # zoom 倍率の範囲
 MIN_ZOOM_SCALE: float = 1.0 / 32.0
 MAX_ZOOM_SCALE: float = 32.0

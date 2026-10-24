@@ -17,7 +17,7 @@ class TileWidget(QWidget):
 
     Args:
         image_data: 画像の dict。
-        parent_dialog: 親の TilingComparisonDialog。
+        parent_dialog: 親の TilingDialog。
         tile_index: grid 内の tile の index。
     """
 

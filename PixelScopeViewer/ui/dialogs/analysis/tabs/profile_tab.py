@@ -2,6 +2,8 @@
 
 from collections.abc import Callable
 
+import pyqtgraph as pg
+from pyqtgraph import PlotWidget
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QPixmap
 from PySide6.QtWidgets import (
@@ -18,19 +20,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-try:
-    import pyqtgraph as pg
-    from pyqtgraph import PlotWidget
-except Exception:  # pyqtgraph がない環境では plot を作成しない
-    pg = None
-    PlotWidget = None
-
 
 class ProfileTab(QWidget):
     """profile の plot、統計量の table、設定 control を持つ tab。
 
     Args:
-        pyqtgraph_available: pyqtgraph が使えるか。False の場合 plot は作成しない。
         on_save_viewbox_state: ViewBox の状態を保存する callback。
         on_connect_plot_controls: PlotItem の control を接続する callback。
         on_channel_changed: channel の表示 ON/OFF 変更時の callback。
@@ -42,7 +36,6 @@ class ProfileTab(QWidget):
 
     def __init__(
         self,
-        pyqtgraph_available: bool,
         on_save_viewbox_state: Callable[[object], None] | None = None,
         on_connect_plot_controls: Callable[[object], None] | None = None,
         on_channel_changed: Callable[[list], None] | None = None,
@@ -50,7 +43,6 @@ class ProfileTab(QWidget):
     ):
         super().__init__(parent)
 
-        self.prof_widget = None
         self.on_channel_changed = on_channel_changed
         self.channel_checkboxes: list[QCheckBox] = []
         self.MAX_CHANNELS = 8
@@ -60,40 +52,39 @@ class ProfileTab(QWidget):
         # 左側: plot と統計量
         left = QVBoxLayout()
 
-        if pyqtgraph_available and PlotWidget is not None:
-            self.prof_widget = PlotWidget()
-            self.prof_widget.setLabel("left", "Intensity")
-            self.prof_widget.setLabel("bottom", "Position")
-            self.prof_widget.setBackground("white")
-            self.prof_widget.showGrid(x=True, y=True, alpha=0.4)
-            try:
-                self.prof_widget.getAxis("left").setPen(pg.mkPen(color="#7f8c8d", width=1))
-                self.prof_widget.getAxis("bottom").setPen(pg.mkPen(color="#7f8c8d", width=1))
-                self.prof_widget.getAxis("left").setTextPen(pg.mkPen(color="#2c3e50"))
-                self.prof_widget.getAxis("bottom").setTextPen(pg.mkPen(color="#2c3e50"))
-            except Exception:
-                pass
-            self.prof_widget.setMenuEnabled(True)
-            try:
-                view_box = self.prof_widget.getViewBox()
-                view_box.setMouseEnabled(x=False, y=False)
-                if on_save_viewbox_state is not None:
-                    try:
-                        view_box.sigStateChanged.connect(lambda vb: on_save_viewbox_state(vb))
-                        on_save_viewbox_state(view_box)
-                    except Exception:
-                        pass
-            except Exception:
-                pass
-            try:
-                if on_connect_plot_controls is not None:
-                    on_connect_plot_controls(self.prof_widget.getPlotItem())
-            except Exception:
-                pass
-            left.addWidget(self.prof_widget, 3)
+        self.prof_widget = PlotWidget()
+        self.prof_widget.setLabel("left", "Intensity")
+        self.prof_widget.setLabel("bottom", "Position")
+        self.prof_widget.setBackground("white")
+        self.prof_widget.showGrid(x=True, y=True, alpha=0.4)
+        try:
+            self.prof_widget.getAxis("left").setPen(pg.mkPen(color="#7f8c8d", width=1))
+            self.prof_widget.getAxis("bottom").setPen(pg.mkPen(color="#7f8c8d", width=1))
+            self.prof_widget.getAxis("left").setTextPen(pg.mkPen(color="#2c3e50"))
+            self.prof_widget.getAxis("bottom").setTextPen(pg.mkPen(color="#2c3e50"))
+        except Exception:
+            pass
+        self.prof_widget.setMenuEnabled(True)
+        try:
+            view_box = self.prof_widget.getViewBox()
+            view_box.setMouseEnabled(x=False, y=False)
+            if on_save_viewbox_state is not None:
+                try:
+                    view_box.sigStateChanged.connect(lambda vb: on_save_viewbox_state(vb))
+                    on_save_viewbox_state(view_box)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        try:
+            if on_connect_plot_controls is not None:
+                on_connect_plot_controls(self.prof_widget.getPlotItem())
+        except Exception:
+            pass
+        left.addWidget(self.prof_widget, 3)
 
-            # マウス位置の値を status bar に表示する
-            self.prof_widget.scene().sigMouseMoved.connect(self._on_mouse_over)
+        # マウス位置の値を status bar に表示する
+        self.prof_widget.scene().sigMouseMoved.connect(self._on_mouse_over)
 
         self.prof_stats_table = QTableWidget()
         stats_headers = ["ch", "Mean", "Std", "Median", "Min", "Max", "Fano"]
@@ -240,7 +231,7 @@ class ProfileTab(QWidget):
             else:
                 cb.setVisible(False)
 
-    def update(
+    def update_plot(
         self,
         series: dict,
         stats_rows: list[dict],
@@ -259,9 +250,6 @@ class ProfileTab(QWidget):
             method: 'mean', 'std', 'max', 'min', 'p2p', 'median' のいずれか。
             channel_colors: channel ごとの QColor。
         """
-        if self.prof_widget is None:
-            return
-
         self.prof_widget.clear()
 
         # 複数画像比較では親 dialog の overlay_color_map を使う
@@ -313,7 +301,7 @@ class ProfileTab(QWidget):
             return "#7f8c8d"
 
         for _, (label, (xs, ys)) in enumerate(series.items()):
-            pen = pg.mkPen(color=_color_for_label(label), width=2) if pg else None
+            pen = pg.mkPen(color=_color_for_label(label), width=2)
             self.prof_widget.plot(xs, ys, pen=pen, name=label if label != "I" else "Intensity")
 
         orientation_label = {"h": "Horizontal", "v": "Vertical", "d": "Diagonal"}[orientation]

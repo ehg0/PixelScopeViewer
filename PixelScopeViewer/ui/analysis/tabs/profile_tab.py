@@ -234,9 +234,6 @@ class ProfileTab(QWidget):
         def _color_for_label(label: str) -> str:
             rgb = overlay_map.get(label)
             if rgb:
-                # grayscale の色は見やすさのため黒で描画する
-                if rgb[0] == rgb[1] == rgb[2]:
-                    return theme.PLOT_INTENSITY_COLOR
                 return f"rgb({rgb[0]},{rgb[1]},{rgb[2]})"
             # Intensity（1ch）は channel 0 の色
             if label == "I":

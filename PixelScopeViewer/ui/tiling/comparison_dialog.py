@@ -5,9 +5,10 @@ from pathlib import Path
 
 import numpy as np
 import pyqtgraph as pg
-from PySide6.QtGui import QBrush, QColor, QPixmap
+from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import (
     QCheckBox,
+    QColorDialog,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -27,7 +28,9 @@ from PixelScopeViewer.core.statistics import (
     profile_series,
 )
 from PixelScopeViewer.ui.analysis.dialog import AnalysisDialog
+from PixelScopeViewer.ui.analysis.tabs.channel_list import ChannelListWidget
 from PixelScopeViewer.ui.common import theme
+from PixelScopeViewer.ui.common.channel_display import to_plot_color
 
 
 class TilingAnalysisDialog(AnalysisDialog):
@@ -53,7 +56,13 @@ class TilingAnalysisDialog(AnalysisDialog):
             image_array = None
             image_path = None
 
+        # label から描画に使う RGB への dict（個別設定とパレットから毎回作り直す）
         self.overlay_color_map: dict[str, tuple[int, int, int]] = {}
+        # 個別に設定した色は複数画像比較の window（TilingDialog の state）に保持する
+        tiling_state = getattr(parent, "state", None)
+        self._overlay_overrides: dict[str, str] = (
+            tiling_state.overlay_color_overrides if tiling_state is not None else {}
+        )
         self.hist_plot_items: dict[str, object] = {}
         self.profile_plot_items: dict[str, object] = {}
 
@@ -66,9 +75,14 @@ class TilingAnalysisDialog(AnalysisDialog):
 
     # ---- 色 ----
     def _assign_overlay_colors(self, labels: list[str]):
-        """'Tile {n} C{k}' 形式の label に、tile 番号と channel から決まる theme.OVERLAY_PALETTE の色を割り当てる。"""
+        """'Tile {n} C{k}' 形式の label の色を決める。
+
+        個別設定があればそのまま、なければ tile 番号と channel から決まる theme.OVERLAY_PALETTE の色
+        （灰色系は黒）を使う。
+        """
         for lbl in labels:
-            if lbl in self.overlay_color_map:
+            if lbl in self._overlay_overrides:
+                self.overlay_color_map[lbl] = QColor(self._overlay_overrides[lbl]).getRgb()[:3]
                 continue
             parts = lbl.split()
             tile_num = 1
@@ -92,7 +106,7 @@ class TilingAnalysisDialog(AnalysisDialog):
                 tile_num = 1
                 ch_index = 0
             idx = ((tile_num - 1) * 8 + ch_index) % len(theme.OVERLAY_PALETTE)
-            self.overlay_color_map[lbl] = theme.OVERLAY_PALETTE[idx]
+            self.overlay_color_map[lbl] = to_plot_color(QColor(theme.OVERLAY_PALETTE[idx])).getRgb()[:3]
         return {lbl: self.overlay_color_map[lbl] for lbl in labels}
 
     def _make_pen(self, rgb: tuple[int, int, int], *, width: int = 2, alpha: int = 255):
@@ -570,32 +584,21 @@ class TilingAnalysisDialog(AnalysisDialog):
                 if item.widget():
                     item.widget().deleteLater()
 
-        checkbox_meta = []
         for tile_idx, vis_list in sorted(self.overlay_channel_visibility.items()):
             tile_label = QLabel(f"Tile {tile_idx + 1}")
             tile_label.setStyleSheet("font-weight: bold; margin-top: 5px;")
             layout.addWidget(tile_label)
-            for ch_idx, enabled in enumerate(vis_list):
-                if len(vis_list) > 1:
-                    channel_code = f"C{ch_idx}"
-                    label_text = f"{channel_code}"
-                else:
-                    channel_code = "I"
-                    label_text = "Intensity"
-                curve_label = f"Tile {tile_idx + 1} {channel_code}"
-                self._assign_overlay_colors([curve_label])
-                rgb = self.overlay_color_map.get(curve_label, theme.PLOT_FALLBACK_RGB)
-                cbx = QCheckBox(label_text)
-                pix = QPixmap(14, 14)
-                pix.fill(QColor(*rgb))
-                cbx.setIcon(pix)
-                cbx.setIconSize(pix.size())
-                cbx.setChecked(enabled)
-                cbx.toggled.connect(
-                    lambda checked, t=tile_idx, c=ch_idx: self._on_overlay_channel_toggled(t, c, checked)
-                )
-                layout.addWidget(cbx)
-                checkbox_meta.append((tile_idx, ch_idx, cbx))
+            curve_labels = self._overlay_curve_labels(tile_idx, len(vis_list))
+            self._assign_overlay_colors(curve_labels)
+            row_labels = [f"C{c}" for c in range(len(vis_list))] if len(vis_list) > 1 else ["Intensity"]
+            channel_list = ChannelListWidget(max_rows=len(vis_list))
+            channel_list.set_channels(
+                row_labels, vis_list, [QColor(*self.overlay_color_map[lbl]) for lbl in curve_labels]
+            )
+            channel_list.checks_changed.connect(lambda checks, t=tile_idx: self._on_overlay_checks_changed(t, checks))
+            channel_list.color_clicked.connect(lambda c, t=tile_idx: self._on_overlay_color_clicked(t, c))
+            channel_list.reset_requested.connect(lambda t=tile_idx: self._on_overlay_color_reset(t))
+            layout.addWidget(channel_list)
 
         layout.addStretch()
 
@@ -617,9 +620,36 @@ class TilingAnalysisDialog(AnalysisDialog):
             if cb.isChecked() != value:
                 cb.setChecked(value)
 
-    def _on_overlay_channel_toggled(self, tile_idx: int, ch_idx: int, checked: bool):
+    def _on_overlay_checks_changed(self, tile_idx: int, checks: list[bool]):
         vis = self.overlay_channel_visibility.get(tile_idx)
-        if vis is None or ch_idx < 0 or ch_idx >= len(vis):
+        if vis is None or vis == checks:
             return
-        vis[ch_idx] = bool(checked)
+        vis[:] = [bool(c) for c in checks[: len(vis)]]
+        self.update_contents()
+
+    @staticmethod
+    def _overlay_curve_labels(tile_idx: int, n_channels: int) -> list[str]:
+        if n_channels > 1:
+            return [f"Tile {tile_idx + 1} C{c}" for c in range(n_channels)]
+        return [f"Tile {tile_idx + 1} I"]
+
+    def _on_overlay_color_clicked(self, tile_idx: int, ch_idx: int):
+        """色選択 dialog で選んだ色を、その tile・channel の重ね描きの色として設定する。"""
+        vis = self.overlay_channel_visibility.get(tile_idx, [])
+        labels = self._overlay_curve_labels(tile_idx, len(vis))
+        if not 0 <= ch_idx < len(labels):
+            return
+        label = labels[ch_idx]
+        self._assign_overlay_colors([label])
+        current = QColor(*self.overlay_color_map[label])
+        color = QColorDialog.getColor(current, self, f"{label} の色を選択")
+        if color.isValid():
+            self._overlay_overrides[label] = color.name()
+            self.update_contents()
+
+    def _on_overlay_color_reset(self, tile_idx: int):
+        """tile の個別設定を消し、パレットの色に戻す。"""
+        vis = self.overlay_channel_visibility.get(tile_idx, [])
+        for label in self._overlay_curve_labels(tile_idx, len(vis)):
+            self._overlay_overrides.pop(label, None)
         self.update_contents()

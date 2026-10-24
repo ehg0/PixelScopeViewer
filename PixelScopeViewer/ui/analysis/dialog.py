@@ -113,11 +113,8 @@ class AnalysisDialog(QDialog):
         self._build_ui()
 
         # 前回の geometry を復元する
-        try:
-            if AnalysisDialog._saved_geometry:
-                self.restoreGeometry(AnalysisDialog._saved_geometry)
-        except Exception:
-            pass
+        if AnalysisDialog._saved_geometry:
+            self.restoreGeometry(AnalysisDialog._saved_geometry)
 
         if self.image_array is not None:
             self.update_contents()
@@ -201,13 +198,11 @@ class AnalysisDialog(QDialog):
         super().changeEvent(event)
 
     def moveEvent(self, event):
-        with contextlib.suppress(Exception):
-            AnalysisDialog._saved_geometry = self.saveGeometry()
+        AnalysisDialog._saved_geometry = self.saveGeometry()
         super().moveEvent(event)
 
     def resizeEvent(self, event):
-        with contextlib.suppress(Exception):
-            AnalysisDialog._saved_geometry = self.saveGeometry()
+        AnalysisDialog._saved_geometry = self.saveGeometry()
         super().resizeEvent(event)
 
     def set_image_and_rect(
@@ -343,17 +338,13 @@ class AnalysisDialog(QDialog):
         )
 
         # 保存済みの ViewBox 状態がなければ、データに合わせて表示範囲を自動調整する
-        try:
-            if self.viewbox_full_hist is None:
-                hist_vb = self.hist_tab.hist_widget.getViewBox()
-                hist_vb.autoRange()
-                hist_vb.enableAutoRange(axis=pg.ViewBox.XYAxes)
-            if self.viewbox_full_prof is None:
-                prof_vb = self.profile_tab.prof_widget.getViewBox()
-                prof_vb.autoRange()
-                prof_vb.enableAutoRange(axis=pg.ViewBox.XYAxes)
-        except Exception:
-            pass
+        for widget, saved in (
+            (self.hist_tab.hist_widget, self.viewbox_full_hist),
+            (self.profile_tab.prof_widget, self.viewbox_full_prof),
+        ):
+            if saved is None:
+                widget.getViewBox().autoRange()
+                widget.getViewBox().enableAutoRange(axis=pg.ViewBox.XYAxes)
 
         # 保存済みの plot 設定（grid、ViewBox 状態）を再適用する
         self._apply_plot_settings()
@@ -365,38 +356,27 @@ class AnalysisDialog(QDialog):
             self.last_metadata = []
             return
 
-        try:
-            metadata = get_image_metadata(self.image_path, self.image_array)
-
-            if not metadata:
-                self.meta_tab.set_rows([("Info", "No metadata available")])
-                self.last_metadata = []
-                return
-
-            # 基本情報、EXIF の順に並べる
-            rows = []
-
-            basic_keys = ["Filepath", "Format", "FileSize", "Size", "Channels", "DataType"]
-            for key in basic_keys:
-                if key in metadata:
-                    value_str = str(metadata[key])
-                    rows.append((key, value_str))
-
-            exif_items = [(k, v) for k, v in metadata.items() if k not in basic_keys]
-            for key, value in exif_items:
-                value_str = str(value)
-                rows.append((key, value_str))
-                if key == "EXIF_ExposureTime":
-                    # 露光時間を秒で併記する
-                    exposure_time = float(Fraction(value))
-                    rows.append((" -> (seconds)", f"{exposure_time:.3e}"))
-
-            self.last_metadata = rows
-            self.meta_tab.set_rows(rows)
-
-        except Exception as e:
-            self.meta_tab.set_rows([("Error", f"Error reading metadata: {e!s}")])
+        # 読み込みの失敗は get_image_metadata が Error の項目として返す
+        metadata = get_image_metadata(self.image_path, self.image_array)
+        if not metadata:
+            self.meta_tab.set_rows([("Info", "No metadata available")])
             self.last_metadata = []
+            return
+
+        # 基本情報、EXIF の順に並べる
+        basic_keys = ["Filepath", "Format", "FileSize", "Size", "Channels", "DataType"]
+        rows = [(key, str(metadata[key])) for key in basic_keys if key in metadata]
+        for key, value in metadata.items():
+            if key in basic_keys:
+                continue
+            rows.append((key, str(value)))
+            if key == "EXIF_ExposureTime":
+                # 露光時間（"1/60" など）を秒で併記する。形式が崩れている場合は省略する
+                with contextlib.suppress(ValueError, ZeroDivisionError):
+                    rows.append((" -> (seconds)", f"{float(Fraction(str(value))):.3e}"))
+
+        self.last_metadata = rows
+        self.meta_tab.set_rows(rows)
 
     def hist_config_mode_toggle(self):
         if self.settings.hist_mode == "Histogram":
@@ -433,8 +413,7 @@ class AnalysisDialog(QDialog):
             self.channel_display.reset_plot_colors(self._n_plot)
 
     def _on_channel_colors_changed(self, _n_channels: int):
-        with contextlib.suppress(Exception):
-            self.update_contents()
+        self.update_contents()
 
     def hist_config_reset(self):
         self._on_spinbox_changed(defaults.HIST_BIN_STEP)
@@ -590,11 +569,8 @@ class AnalysisDialog(QDialog):
 
     def _on_external_log_toggled(self, checked: bool):
         # pyqtgraph の menu で log Y が切り替えられたら設定を保存して再描画する
-        try:
-            self.settings.plot_settings.setdefault("hist", {})["log"] = bool(checked)
-            self.update_contents()
-        except Exception:
-            pass
+        self.settings.plot_settings.setdefault("hist", {})["log"] = bool(checked)
+        self.update_contents()
 
     def _connect_plotitem_controls(self, plot_item, which: str):
         pg_connect_plot_controls(
@@ -607,26 +583,13 @@ class AnalysisDialog(QDialog):
         )
 
     def _apply_plot_settings(self):
-        try:
-            pg_apply_plot_settings(
-                self.hist_tab.hist_widget, "hist", self.settings.plot_settings, self.viewbox_full_hist
-            )
-            pg_apply_plot_settings(
-                self.profile_tab.prof_widget,
-                "prof",
-                self.settings.plot_settings,
-                self.viewbox_full_prof,
-            )
-        except Exception:
-            pass
+        pg_apply_plot_settings(self.hist_tab.hist_widget, "hist", self.settings.plot_settings, self.viewbox_full_hist)
+        pg_apply_plot_settings(
+            self.profile_tab.prof_widget, "prof", self.settings.plot_settings, self.viewbox_full_prof
+        )
 
     def _save_viewbox_state(self, vb, which: str):
-        try:
-            full_state = pg_save_viewbox_state(vb)
-            if full_state is not None:
-                setattr(self, f"viewbox_full_{which}", full_state)
-        except Exception:
-            pass
+        setattr(self, f"viewbox_full_{which}", pg_save_viewbox_state(vb))
 
     def keyPressEvent(self, event):
         # Esc で dialog を閉じず、入力欄の focus を外すだけにする

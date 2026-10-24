@@ -59,11 +59,8 @@ def make_hist_bar_item(xs, heights, width: float, brush, name: str, log_x: bool,
 
 def plot_log_mode(plot_widget) -> tuple[bool, bool]:
     """PlotWidget の menu の log X/Y の状態を返す。"""
-    try:
-        ctrl = plot_widget.getPlotItem().ctrl
-        return bool(ctrl.logXCheck.isChecked()), bool(ctrl.logYCheck.isChecked())
-    except Exception:
-        return False, False
+    ctrl = plot_widget.getPlotItem().ctrl
+    return bool(ctrl.logXCheck.isChecked()), bool(ctrl.logYCheck.isChecked())
 
 
 class HistogramTab(QWidget):

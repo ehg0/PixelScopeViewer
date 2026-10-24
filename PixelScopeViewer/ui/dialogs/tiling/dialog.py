@@ -1,36 +1,30 @@
 """Main tiling comparison dialog."""
 
 import numpy as np
-from pathlib import Path
-from typing import List, Dict, Optional
+from PySide6.QtCore import QEvent, QRect, Qt, Signal
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QDialog,
-    QVBoxLayout,
-    QHBoxLayout,
     QGridLayout,
-    QWidget,
-    QStatusBar,
     QLabel,
-    QMessageBox,
     QMenuBar,
+    QMessageBox,
+    QStatusBar,
+    QVBoxLayout,
+    QWidget,
 )
-from PySide6.QtCore import Qt, Signal, QRect, QEvent
-from PySide6.QtGui import QShortcut, QKeySequence, QGuiApplication
 
+from .brightness_dialog import TilingBrightnessDialog
+from .core import (
+    BrightnessManager,
+    ROIManager,
+    ScrollManager,
+    TileManager,
+    ZoomManager,
+)
+from .help_dialog import TilingHelpDialog
 from .selection_dialog import TileSelectionDialog
 from .tile_widget import TileWidget
-from .brightness_dialog import TilingBrightnessDialog
-from .help_dialog import TilingHelpDialog
-from .core import (
-    ZoomManager,
-    BrightnessManager,
-    ScrollManager,
-    ROIManager,
-    TileManager,
-    determine_dtype_group,
-)
-from PixelScopeViewer.core.image_io import numpy_to_qimage
-from PixelScopeViewer.core.constants import MIN_ZOOM_SCALE, MAX_ZOOM_SCALE
 
 
 class TilingComparisonDialog(QDialog):
@@ -38,7 +32,7 @@ class TilingComparisonDialog(QDialog):
 
     Features:
     - Synchronized scroll/zoom/ROI across all tiles
-    - Per-dtype brightness adjustment (Offset/Saturation)
+    - Per-dtype brightness adjustment (Offset/Upper_level)
     - Common Gain control
     - Tile rotation and swapping
     - Active tile management for ROI editing and copying
@@ -47,7 +41,7 @@ class TilingComparisonDialog(QDialog):
     # Signals
     common_roi_changed = Signal(QRect)
 
-    def __init__(self, parent, image_list: List[Dict]):
+    def __init__(self, parent, image_list: list[dict]):
         """Initialize tiling comparison dialog.
 
         Args:
@@ -160,7 +154,7 @@ class TilingComparisonDialog(QDialog):
         analysis_dialog_action.triggered.connect(lambda: self.show_analysis_dialog())
 
         comparison_table_action = analysis_menu.addAction("解析ビュー(複数画像)")
-        comparison_table_action.setShortcut("Ctrl+Shift+A")
+        comparison_table_action.setShortcut("Shift+A")
         comparison_table_action.setShortcutContext(Qt.WindowShortcut)
         self.addAction(comparison_table_action)
         comparison_table_action.triggered.connect(lambda: self.show_comparison_dialog())
@@ -411,7 +405,7 @@ class TilingComparisonDialog(QDialog):
             def on_closed():
                 if self._brightness_dialog in self._child_dialogs:
                     self._child_dialogs.remove(self._brightness_dialog)
-                setattr(self, "_brightness_dialog", None)
+                self._brightness_dialog = None
 
             self._brightness_dialog.finished.connect(on_closed)
 
@@ -430,7 +424,7 @@ class TilingComparisonDialog(QDialog):
             def on_closed():
                 if self._help_dialog in self._child_dialogs:
                     self._child_dialogs.remove(self._help_dialog)
-                setattr(self, "_help_dialog", None)
+                self._help_dialog = None
 
             self._help_dialog.finished.connect(on_closed)
 
@@ -491,11 +485,11 @@ class TilingComparisonDialog(QDialog):
         # Accept the close event
         super().closeEvent(event)
 
-    def on_brightness_dialog_changed(self, full_params: Dict):
+    def on_brightness_dialog_changed(self, full_params: dict):
         """Handle brightness change from dialog.
 
         Args:
-            full_params: Dict mapping dtype groups to {gain, offset, saturation}
+            full_params: Dict mapping dtype groups to {gain, offset, upper_level}
         """
         if self.brightness_manager:
             self.brightness_manager.on_brightness_dialog_changed(full_params)
@@ -541,7 +535,7 @@ class TilingComparisonDialog(QDialog):
         if coords is not None:
             ix, iy = coords
             for tile in tiles:
-                arr = tile.get_displayed_array()
+                arr = tile.get_base_array()
                 if arr is not None:
                     try:
                         val = arr[iy, ix]
@@ -549,7 +543,7 @@ class TilingComparisonDialog(QDialog):
                         # Determine if array dtype is floating for formatting
                         is_float_dtype = np.issubdtype(arr.dtype, np.floating)
 
-                        def _fmt(v):
+                        def _fmt(v, is_float_dtype=is_float_dtype):
                             try:
                                 # Handle numpy scalar types
                                 if isinstance(v, (np.floating, float)):
@@ -626,7 +620,7 @@ class TilingComparisonDialog(QDialog):
         active_tile = tiles[active_index]
 
         # Get displayed image array (with brightness adjustments applied)
-        image_array = active_tile.get_displayed_array()
+        image_array = active_tile.get_base_array()
 
         # Validate image array
         if image_array is None:
@@ -676,7 +670,7 @@ class TilingComparisonDialog(QDialog):
 
         for i, tile in enumerate(tiles):
             # Get displayed image array
-            image_array = tile.get_displayed_array()
+            image_array = tile.get_base_array()
 
             # Skip if invalid
             if image_array is None or image_array.size == 0:
@@ -779,7 +773,7 @@ class TilingComparisonDialog(QDialog):
             def on_closed():
                 if self._analysis_dialog in self._child_dialogs:
                     self._child_dialogs.remove(self._analysis_dialog)
-                setattr(self, "_analysis_dialog", None)
+                self._analysis_dialog = None
 
             self._analysis_dialog.finished.connect(on_closed)
 
@@ -839,7 +833,7 @@ class TilingComparisonDialog(QDialog):
             def on_closed():
                 if self._comparison_dialog in self._child_dialogs:
                     self._child_dialogs.remove(self._comparison_dialog)
-                setattr(self, "_comparison_dialog", None)
+                self._comparison_dialog = None
 
             self._comparison_dialog.finished.connect(on_closed)
 

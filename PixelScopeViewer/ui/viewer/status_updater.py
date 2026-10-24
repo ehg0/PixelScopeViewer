@@ -8,8 +8,8 @@ This module handles all status bar update operations including:
 """
 
 from pathlib import Path
+
 import numpy as np
-from PySide6.QtCore import QRect
 
 
 class StatusUpdater:
@@ -71,6 +71,19 @@ class StatusUpdater:
             self.viewer.status_pixel.setText("")
             self.viewer.current_mouse_image_coords = None
 
+    def update_roi_status(self) -> str:
+        """Update status bar with ROI area"""
+        if self.viewer.current_index is None or not self.viewer.images:
+            self.viewer.status_roi_area.setText("")
+            return
+        if self.viewer.current_roi_rect and not self.viewer.current_roi_rect.isEmpty():
+            r = self.viewer.current_roi_rect
+            x0, y0 = r.x(), r.y()
+            x1, y1 = x0 + r.width() - 1, y0 + r.height() - 1
+            self.viewer.status_roi_area.setText(f"({x0}, {y0}) - ({x1}, {y1}), w: {r.width()}, h: {r.height()}")
+        else:
+            self.viewer.status_roi_area.setText("")
+
     def update_status(self):
         """Update status bar with current image info and brightness parameters."""
         if self.viewer.current_index is None:
@@ -84,7 +97,13 @@ class StatusUpdater:
         p = self.viewer.images[self.viewer.current_index]["path"]
 
         # Update title bar with filename, size, and index
-        filename = Path(p).name
+        p_path = Path(p)
+        parts = p_path.parts
+        if len(parts) > 3:
+            host_root = parts[0].replace("\\", "/").rstrip("/")
+            filename = f"{host_root}/.../{p_path.parent.name}/{p_path.name}"
+        else:
+            filename = f"{p_path.parent.name}/{p_path.name}"
         img = self.viewer.images[self.viewer.current_index]
         arr = img.get("base_array", img.get("array"))
         if arr.ndim == 2:
@@ -109,9 +128,9 @@ class StatusUpdater:
             file_size_str = ""
 
         if file_size_str:
-            title = f"[{self.viewer.current_index+1}/{len(self.viewer.images)}]  {filename} ({file_size_str}) — {w}×{h}, {c}ch"
+            title = f"[{self.viewer.current_index + 1}/{len(self.viewer.images)}]  {filename} ({file_size_str}) — {w}×{h}, {c}ch"
         else:
-            title = f"[{self.viewer.current_index+1}/{len(self.viewer.images)}]  {filename} — {w}×{h}, {c}ch"
+            title = f"[{self.viewer.current_index + 1}/{len(self.viewer.images)}]  {filename} — {w}×{h}, {c}ch"
         self.viewer.setWindowTitle(title)
 
         # display current scale
@@ -145,13 +164,13 @@ class StatusUpdater:
             else:
                 gain_str = f"{self.viewer.brightness_gain:.2f}"
 
-            # Format saturation
-            if isinstance(self.viewer.brightness_saturation, (int, np.integer)):
-                sat_str = str(self.viewer.brightness_saturation)
+            # Format upper_level
+            if isinstance(self.viewer.brightness_upper_level, (int, np.integer)):
+                upper_str = str(self.viewer.brightness_upper_level)
             else:
-                sat_str = f"{self.viewer.brightness_saturation:.1f}"
+                upper_str = f"{self.viewer.brightness_upper_level:.1f}"
 
-            brightness_text = f"Offset: {offset_str}, Gain: {gain_str}, Sat: {sat_str}"
+            brightness_text = f"Offset: {offset_str}, Gain: {gain_str}, Upper: {upper_str}"
             self.viewer.status_brightness.setText(brightness_text)
         except Exception as e:
             self.viewer.status_brightness.setText("")

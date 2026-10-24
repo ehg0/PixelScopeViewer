@@ -1,16 +1,14 @@
 """Brightness management for tiling comparison."""
 
 import math
-from typing import List, Dict
 
-from PixelScopeViewer.core.constants import MIN_BRIGHTNESS_GAIN, MAX_BRIGHTNESS_GAIN
-from PixelScopeViewer.ui.dialogs.display.tabs.logic import get_dtype_defaults
+from PixelScopeViewer.core.constants import MAX_BRIGHTNESS_GAIN, MIN_BRIGHTNESS_GAIN, get_dtype_defaults
 
 
 class BrightnessManager:
     """Manages brightness parameters for all tiles."""
 
-    def __init__(self, tiles: List, tile_dtype_groups: List[str]):
+    def __init__(self, tiles: list, tile_dtype_groups: list[str]):
         """Initialize brightness manager.
 
         Args:
@@ -27,7 +25,7 @@ class BrightnessManager:
             defaults = get_dtype_defaults(dtype_key)
             self.brightness_params_by_dtype[dtype_key] = {
                 "offset": defaults["initial_offset"],
-                "saturation": defaults["initial_saturation"],
+                "upper_level": defaults["initial_upper_level"],
             }
 
     def adjust_gain(self, factor: float):
@@ -58,7 +56,7 @@ class BrightnessManager:
             defaults = get_dtype_defaults(dtype_key)
             self.brightness_params_by_dtype[dtype_key] = {
                 "offset": defaults["initial_offset"],
-                "saturation": defaults["initial_saturation"],
+                "upper_level": defaults["initial_upper_level"],
             }
 
         self.refresh_all_tiles()
@@ -74,11 +72,11 @@ class BrightnessManager:
             if self.tile_dtype_groups[i] == dtype_group:
                 tile.update_display()
 
-    def on_brightness_dialog_changed(self, full_params: Dict):
+    def on_brightness_dialog_changed(self, full_params: dict):
         """Handle brightness change from dialog.
 
         Args:
-            full_params: Dict mapping dtype groups to {gain, offset, saturation}
+            full_params: Dict mapping dtype groups to {gain, offset, upper_level}
         """
         # Update gain from first entry (they're all the same)
         if full_params:
@@ -88,11 +86,11 @@ class BrightnessManager:
         # Update per-dtype params
         for dtype_group, params in full_params.items():
             self.brightness_params_by_dtype[dtype_group]["offset"] = params["offset"]
-            self.brightness_params_by_dtype[dtype_group]["saturation"] = params["saturation"]
+            self.brightness_params_by_dtype[dtype_group]["upper_level"] = params["upper_level"]
 
         self.refresh_all_tiles()
 
-    def get_brightness_params(self) -> Dict:
+    def get_brightness_params(self) -> dict:
         """Get current brightness parameters."""
         return {
             "gain": self.brightness_gain,
@@ -114,9 +112,9 @@ class BrightnessManager:
             params = self.brightness_params_by_dtype[dtype_group]
             if dtype_group == "float":
                 brightness_parts.append(
-                    f"{dtype_group}({count}): off={params['offset']:.2f} sat={params['saturation']:.2f}"
+                    f"{dtype_group}({count}): off={params['offset']:.2f} upper={params['upper_level']:.2f}"
                 )
             else:
-                brightness_parts.append(f"{dtype_group}({count}): off={params['offset']} sat={params['saturation']}")
+                brightness_parts.append(f"{dtype_group}({count}): off={params['offset']} upper={params['upper_level']}")
 
         return " | ".join(brightness_parts)

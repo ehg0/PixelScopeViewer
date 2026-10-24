@@ -4,12 +4,14 @@ This module handles brightness parameter management and display dialog coordinat
 """
 
 import numpy as np
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QMessageBox
+
+from PixelScopeViewer.core.constants import DTYPE_DEFAULTS, get_dtype_defaults
+
 from ..dialogs import BrightnessDialog
-from ..utils import MODE_1CH_GRAYSCALE, MODE_1CH_JET, MODE_2CH_COMPOSITE, MODE_2CH_FLOW_HSV
 from ..dialogs.display.core import apply_brightness_adjustment as apply_brightness_core
 from ..dialogs.display.tabs.logic.brightness_utils import determine_dtype_defaults
+from ..utils import MODE_1CH_GRAYSCALE, MODE_1CH_JET, MODE_2CH_COMPOSITE, MODE_2CH_FLOW_HSV
 
 
 class BrightnessManager:
@@ -28,11 +30,14 @@ class BrightnessManager:
         self.viewer = viewer
         # Persist brightness params by dtype key ("float"/"uint8"/"uint16")
         # These store last-used settings per data type across image switches
-        self._params_by_dtype = {
-            "float": (0.0, 1.0, 1.0),
-            "uint8": (0, 1.0, 255),
-            "uint16": (0, 1.0, 1023),
-        }
+        self._params_by_dtype = {}
+        for dtype_key in DTYPE_DEFAULTS:
+            defaults = get_dtype_defaults(dtype_key)
+            self._params_by_dtype[dtype_key] = (
+                defaults.get("initial_offset"),
+                defaults.get("initial_gain"),
+                defaults.get("initial_upper_level"),
+            )
 
     def show_brightness_dialog(self):
         """Show the brightness/display settings dialog.
@@ -49,15 +54,9 @@ class BrightnessManager:
         img_path = img.get("path")
 
         # Create dialog if it doesn't exist
-        # For float images, prefer saturation initial value of 1 unless user already changed it
-        try:
-            is_float_img = np.issubdtype(arr.dtype, np.floating)
-        except Exception:
-            is_float_img = False
-
         init_offset = self.viewer.brightness_offset
         init_gain = self.viewer.brightness_gain
-        init_sat = self._default_saturation_for_dtype(arr.dtype, self.viewer.brightness_saturation)
+        init_upper_level = self._default_upper_level_for_dtype(arr.dtype, self.viewer.brightness_upper_level)
 
         if self.viewer.brightness_dialog is None:
             # Create with explicit parent for proper window relationship
@@ -65,7 +64,7 @@ class BrightnessManager:
                 self.viewer,
                 arr,
                 img_path,
-                initial_brightness=(init_offset, init_gain, init_sat),
+                initial_brightness=(init_offset, init_gain, init_upper_level),
                 initial_channels=self.viewer.channel_checks,
                 initial_colors=self.viewer.channel_colors,
                 initial_mode_1ch=self.viewer.color_manager.mode_1ch,
@@ -87,14 +86,14 @@ class BrightnessManager:
             def on_closed():
                 if self.viewer.brightness_dialog in self.viewer._child_dialogs:
                     self.viewer._child_dialogs.remove(self.viewer.brightness_dialog)
-                setattr(self.viewer, "brightness_dialog", None)
+                self.viewer.brightness_dialog = None
 
             self.viewer.brightness_dialog.finished.connect(on_closed)
             # Initialize status bar with current parameters
             params = self.viewer.brightness_dialog.get_brightness()
             self.viewer.brightness_offset = params[0]
             self.viewer.brightness_gain = params[1]
-            self.viewer.brightness_saturation = params[2]
+            self.viewer.brightness_upper_level = params[2]
             self.viewer.update_brightness_status()
         else:
             # Update dialog for new image
@@ -110,7 +109,7 @@ class BrightnessManager:
             # Note: update_for_new_image will emit brightness_changed signal
             # which will update the status bar through on_brightness_changed
 
-        # 表示中のダイアログは show() を再実行しない(位置が変わるのを防ぐ)
+        # Do not re-run show() on a displayed dialog (prevents position changes)
         if self.viewer.brightness_dialog.isVisible():
             try:
                 if self.viewer.brightness_dialog.isMinimized():
@@ -121,7 +120,7 @@ class BrightnessManager:
                 pass
             return
 
-        # 非表示(前回閉じた等)の場合のみ再表示し、可能なら保存ジオメトリを復元
+        # Show only if hidden (previously closed, etc.), and restore saved geometry if possible.
         try:
             from ..dialogs.display import BrightnessDialog as _BD
 
@@ -136,8 +135,8 @@ class BrightnessManager:
         except Exception:
             pass
 
-    def _default_saturation_for_dtype(self, dtype, current):
-        """Return a dtype-appropriate saturation value given current value.
+    def _default_upper_level_for_dtype(self, dtype, current):
+        """Return a dtype-appropriate upper_level value given current value.
 
         Rules:
         - Float: prefer 1.0 if current is None or an integer default (255)
@@ -163,7 +162,7 @@ class BrightnessManager:
         """Reset brightness settings to default values.
 
         Delegates to dialog's reset if it's open, otherwise resets parameters manually.
-        Default saturation depends on image dtype: 1.0 for float, 255 for integer.
+        Default upper_level depends on image dtype: 1.0 for float, 255 for integer.
         """
         handled_by_dialog = False
 
@@ -175,16 +174,15 @@ class BrightnessManager:
             # Reset brightness parameters manually when dialog is closed
             self.viewer.brightness_offset = 0
             self.viewer.brightness_gain = 1.0
-            self.viewer.brightness_saturation = 255
+            self.viewer.brightness_upper_level = 255
             if self.viewer.current_index is not None:
                 try:
                     img = self.viewer.images[self.viewer.current_index]
                     base_arr = img.get("base_array", img.get("array"))
-                    img_path = img.get("path")
-                    dtype_defaults = determine_dtype_defaults(base_arr, img_path)
+                    dtype_defaults = determine_dtype_defaults(base_arr)
                     self.viewer.brightness_offset = dtype_defaults.get("initial_offset", 0)
                     self.viewer.brightness_gain = dtype_defaults.get("initial_gain", 1.0)
-                    self.viewer.brightness_saturation = dtype_defaults.get("initial_saturation", 255)
+                    self.viewer.brightness_upper_level = dtype_defaults.get("initial_upper_level", 255)
                 except Exception:
                     pass
             self.viewer.update_brightness_status()
@@ -196,17 +194,17 @@ class BrightnessManager:
         if not handled_by_dialog and self.viewer.current_index is not None:
             self.viewer.display_image(self.viewer.images[self.viewer.current_index]["array"])
 
-    def on_brightness_changed(self, offset, gain, saturation):
+    def on_brightness_changed(self, offset, gain, upper_level):
         """Handle brightness parameter changes.
 
         Args:
             offset: Offset value
             gain: Gain value
-            saturation: Saturation level
+            upper_level: Upper_level level
         """
         self.viewer.brightness_offset = offset
         self.viewer.brightness_gain = gain
-        self.viewer.brightness_saturation = saturation
+        self.viewer.brightness_upper_level = upper_level
 
         # Persist per-dtype params
         self._save_current_dtype_params()
@@ -292,9 +290,10 @@ class BrightnessManager:
             base_arr = img.get("base_array", img.get("array"))
             if (base_arr.ndim == 2) or (base_arr.ndim == 3 and base_arr.shape[2] == 1):
                 try:
-                    from ...core.image_io import numpy_to_qimage
-                    from PySide6.QtGui import QPixmap
                     from PySide6.QtCore import Qt
+                    from PySide6.QtGui import QPixmap
+
+                    from ...core.image_io import numpy_to_qimage
 
                     thumb_arr = self.viewer._prepare_thumbnail_array(base_arr)
                     thumb_qimg = numpy_to_qimage(thumb_arr)
@@ -325,9 +324,10 @@ class BrightnessManager:
             if base_arr.ndim == 3 and base_arr.shape[2] == 2:
                 # Regenerate thumbnail with new mode
                 try:
-                    from ...core.image_io import numpy_to_qimage
-                    from PySide6.QtGui import QPixmap
                     from PySide6.QtCore import Qt
+                    from PySide6.QtGui import QPixmap
+
+                    from ...core.image_io import numpy_to_qimage
 
                     thumb_arr = self.viewer._prepare_thumbnail_array(base_arr)
                     thumb_qimg = numpy_to_qimage(thumb_arr)
@@ -349,7 +349,7 @@ class BrightnessManager:
     def apply_brightness_adjustment(self, arr: np.ndarray) -> np.ndarray:
         """Apply brightness adjustment to image array.
 
-        Formula: yout = gain * (yin - offset) / saturation * 255
+        Formula: yout = gain * (yin - offset) / (upper_level - offset) * 255
 
         Args:
             arr: Input image array (any dtype accepted)
@@ -357,8 +357,11 @@ class BrightnessManager:
         Returns:
             Adjusted array clipped and converted to uint8
         """
+        dtype_key = self.viewer.brightness_manager._dtype_key(arr.dtype)
+        stored_params = self.viewer.brightness_manager._params_by_dtype.get(dtype_key)
+        self.viewer.brightness_offset, self.viewer.brightness_gain, self.viewer.brightness_upper_level = stored_params
         return apply_brightness_core(
-            arr, self.viewer.brightness_offset, self.viewer.brightness_gain, self.viewer.brightness_saturation
+            arr, self.viewer.brightness_offset, self.viewer.brightness_gain, self.viewer.brightness_upper_level
         )
 
     # ------------------------ dtype helpers & persistence ------------------------
@@ -388,7 +391,7 @@ class BrightnessManager:
             self._params_by_dtype[key] = (
                 self.viewer.brightness_offset,
                 self.viewer.brightness_gain,
-                self.viewer.brightness_saturation,
+                self.viewer.brightness_upper_level,
             )
         except Exception:
             pass

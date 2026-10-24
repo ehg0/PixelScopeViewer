@@ -75,7 +75,7 @@ class ZoomManager:
             tile.set_zoom(self.scale)
 
         # Wait for GUI to update scrollbar ranges after zoom change
-        QApplication.processEvents()
+        # QApplication.processEvents()
 
         # Calculate new scroll position to keep the target point at the same viewport position
         # After zoom, the image point should be at: new_scroll + viewport_offset = image_coord * new_scale

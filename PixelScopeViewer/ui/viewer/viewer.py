@@ -14,46 +14,41 @@ Features:
 - Title bar showing current filename and image index
 """
 
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable, Optional
+
 import numpy as np
+from PySide6.QtCore import QEvent, QRect, Qt, Signal
+from PySide6.QtGui import (
+    QAction,
+    QActionGroup,
+    QGuiApplication,
+    QIcon,
+    QPainter,
+    QPixmap,
+)
 from PySide6.QtWidgets import (
-    QMainWindow,
-    QWidget,
-    QVBoxLayout,
-    QHBoxLayout,
-    QScrollArea,
-    QStatusBar,
-    QLabel,
-    QFileDialog,
-    QMessageBox,
     QDialog,
     QDockWidget,
+    QFileDialog,
+    QHBoxLayout,
+    QLabel,
+    QMainWindow,
+    QMessageBox,
+    QScrollArea,
+    QStatusBar,
+    QWidget,
 )
-from PySide6.QtGui import QPixmap, QPainter, QIcon, QGuiApplication, QAction, QActionGroup
-from PySide6.QtCore import Qt, QRect, QEvent, Signal
 
-from ...core.image_io import numpy_to_qimage, load_image, is_image_file
-from ..utils import (
-    get_default_channel_colors,
-    ChannelColorManager,
-    MODE_1CH_GRAYSCALE,
-    MODE_1CH_JET,
-    MODE_2CH_COMPOSITE,
-    MODE_2CH_FLOW_HSV,
-    apply_jet_colormap,
-    flow_to_hsv_rgb,
-)
-from ..widgets import ImageLabel, NavigatorWidget, DisplayInfoWidget, ROIInfoWidget
-from ..dialogs import HelpDialog, DiffDialog, AnalysisDialog
-from ..dialogs import FeaturesDialog
+from ...core.image_io import is_image_file, load_image, numpy_to_qimage
+from ..dialogs import AnalysisDialog, DiffDialog, FeaturesDialog, HelpDialog
+from ..utils import MODE_1CH_JET, MODE_2CH_FLOW_HSV, ChannelColorManager, apply_jet_colormap, flow_to_hsv_rgb
 from ..utils.features_manager import FeaturesManager
-
-from .menu_builder import create_menus
-from .zoom_manager import ZoomManager
+from ..widgets import DisplayInfoWidget, ImageLabel, NavigatorWidget, ROIInfoWidget
 from .brightness_manager import BrightnessManager
+from .menu_builder import create_menus
 from .status_updater import StatusUpdater
-from ..dialogs.display.core.compute import apply_brightness_adjustment_float
+from .zoom_manager import ZoomManager
 
 
 class ImageViewer(QMainWindow):
@@ -122,7 +117,7 @@ class ImageViewer(QMainWindow):
         # Brightness adjustment parameters
         self.brightness_offset = 0
         self.brightness_gain = 1.0
-        self.brightness_saturation = 255
+        self.brightness_upper_level = 255
 
         # Channel selection parameters
         self.channel_checks = []
@@ -136,7 +131,7 @@ class ImageViewer(QMainWindow):
         self.setCentralWidget(central)
         h_layout = QHBoxLayout(central)
 
-        self.current_roi_rect: Optional[QRect] = None
+        self.current_roi_rect: QRect | None = None
 
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
@@ -178,13 +173,17 @@ class ImageViewer(QMainWindow):
         self.setStatusBar(self.status)
         self.statusBar().setStyleSheet("font-size: 11pt;")
         self.status_pixel = QLabel()
+        self.status_roi_area = QLabel()
         self.status_brightness = QLabel()
         self.status_scale = QLabel()
 
         left_container = QWidget()
         left_layout = QHBoxLayout(left_container)
         left_layout.setContentsMargins(15, 0, 15, 0)
+        left_layout.setSpacing(8)
         left_layout.addWidget(self.status_pixel)
+        left_layout.addWidget(QLabel("|"))
+        left_layout.addWidget(self.status_roi_area)
         self.status.addWidget(left_container)
 
         right_container = QWidget()
@@ -257,7 +256,7 @@ class ImageViewer(QMainWindow):
         self.status_updater.update_brightness_status()
 
     # Image loading and navigation
-    def show_analysis_dialog(self, tab: Optional[str] = None):
+    def show_analysis_dialog(self, tab: str | None = None):
         """Show analysis dialog for current image and ROI."""
         # Ignore bool argument from QAction.triggered(bool) signal
         if isinstance(tab, bool):
@@ -296,7 +295,7 @@ class ImageViewer(QMainWindow):
         def on_closed():
             if dlg in self._child_dialogs:
                 self._child_dialogs.remove(dlg)
-            setattr(self, "_analysis_dialog", None)
+            self._analysis_dialog = None
 
         dlg.finished.connect(on_closed)
         # if a tab was requested, set it
@@ -309,7 +308,7 @@ class ImageViewer(QMainWindow):
     def open_files(self):
         """Open file dialog to load image files."""
         # Standard extensions
-        standard_exts = "*.png *.jpg *.tif *.bmp *.jpeg *.exr *.npy *.hdr *.tiff *.gif *.webp"
+        standard_exts = "*.png *.jpg *.tif *.bmp *.jpeg *.exr *.npy *.hdr *.tiff *.gif *.webp  *.bin"
 
         # Get custom extensions from registry
         from ...core.image_io import ImageLoaderRegistry
@@ -353,7 +352,7 @@ class ImageViewer(QMainWindow):
         if feature_files:
             try:
                 self.features_manager.load_feature_files(feature_files)
-                # Open features dialog (または既存ダイアログを前面に)して内容を反映する
+                # Open features dialog (or bring existing dialog to front) and reflect the contents
                 self.show_features_dialog()
                 if self._features_dialog is not None:
                     try:
@@ -387,7 +386,7 @@ class ImageViewer(QMainWindow):
         # 2ch image handling
         if arr.ndim == 3 and arr.shape[2] == 2:
             if self.color_manager.mode_2ch == MODE_2CH_FLOW_HSV:
-                # サムネイルでは明るさ調整をスキップ（元データから直接HSV変換）
+                # Skip brightness adjustment for thumbnails (directly convert from original data to HSV)
                 rgb = flow_to_hsv_rgb(arr)
                 return rgb
             else:
@@ -461,6 +460,28 @@ class ImageViewer(QMainWindow):
 
         QMessageBox.warning(self, "画像読み込みエラー", msg)
 
+    def _create_img_data(self, path: str, arr: np.array, failed_files: list) -> dict:
+        if arr.ndim < 2 or arr.ndim > 3:
+            failed_files.append((path, "2次元または3次元の配列が必要です"))
+            return None
+        if arr.ndim == 3 and arr.shape[2] not in [1, 2, 3, 4]:
+            failed_files.append((path, "チャンネル数は1, 2, 3, または4である必要があります"))
+            return None
+
+        # Create and cache thumbnail pixmap on load
+        thumb_arr = self._prepare_thumbnail_array(arr)
+        thumb_qimg = numpy_to_qimage(thumb_arr)
+        thumb_pixmap = QPixmap.fromImage(thumb_qimg).scaled(200, 200, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+
+        img_data = {
+            # "path": str(Path(path).resolve()),
+            "path": path,
+            "array": arr,
+            "base_array": arr.copy(),
+            "thumbnail_pixmap": thumb_pixmap,  # Cache thumbnail
+        }
+        return img_data
+
     def _add_images(self, paths: Iterable[str]) -> int:
         """Load image files and append them to the viewer."""
         new_images = []
@@ -470,35 +491,29 @@ class ImageViewer(QMainWindow):
             if not path:
                 continue
             try:
-                arr = load_image(path)
+                load_data = load_image(path)
 
                 # Check if custom loader returned None (couldn't handle the file)
-                if arr is None:
+                if load_data is None:
                     failed_files.append((path, "カスタムローダーで処理できませんでした"))
                     continue
 
-                # Validate array shape
-                if arr.ndim < 2 or arr.ndim > 3:
-                    failed_files.append((path, "2次元または3次元の配列が必要です"))
-                    continue
-                if arr.ndim == 3 and arr.shape[2] not in [1, 2, 3, 4]:
-                    failed_files.append((path, "チャンネル数は1, 2, 3, または4である必要があります"))
-                    continue
-
-                # Create and cache thumbnail pixmap on load
-                thumb_arr = self._prepare_thumbnail_array(arr)
-                thumb_qimg = numpy_to_qimage(thumb_arr)
-                thumb_pixmap = QPixmap.fromImage(thumb_qimg).scaled(
-                    200, 200, Qt.KeepAspectRatio, Qt.SmoothTransformation
-                )
-
-                img_data = {
-                    "path": str(Path(path).resolve()),
-                    "array": arr,
-                    "base_array": arr.copy(),
-                    "thumbnail_pixmap": thumb_pixmap,  # Cache thumbnail
-                }
-                new_images.append(img_data)
+                # # Validate array shape
+                if not isinstance(load_data, dict):
+                    arr = load_data
+                    path_str = str(Path(path).resolve())
+                    img_data = self._create_img_data(path_str, arr, failed_files)
+                    if img_data is not None:
+                        new_images.append(img_data)
+                else:
+                    for key, value in load_data.items():
+                        arr = value
+                        path_str = str(Path(path).resolve())
+                        if key not in ("ORIGINAL", "ORIG", "SOURCE", "SRC"):
+                            path_str += f"_{key}"
+                        img_data = self._create_img_data(path_str, arr, failed_files)
+                        if img_data is not None:
+                            new_images.append(img_data)
 
             except Exception as e:
                 failed_files.append((path, str(e)))
@@ -553,7 +568,7 @@ class ImageViewer(QMainWindow):
         def on_closed():
             if dlg in self._child_dialogs:
                 self._child_dialogs.remove(dlg)
-            setattr(self, "_features_dialog", None)
+            self._features_dialog = None
 
         dlg.finished.connect(on_closed)
 
@@ -629,7 +644,6 @@ class ImageViewer(QMainWindow):
             # For grayscale images, keep empty lists
             self.channel_checks = []
             self.channel_colors = []
-            pass
 
         arr = img["array"]
         # Load per-dtype brightness parameters only if not already set by user
@@ -638,11 +652,11 @@ class ImageViewer(QMainWindow):
             dtype_key = self.brightness_manager._dtype_key(arr.dtype)
             # Check if current params match this dtype's stored params
             stored_params = self.brightness_manager._params_by_dtype.get(dtype_key)
-            current_params = (self.brightness_offset, self.brightness_gain, self.brightness_saturation)
+            current_params = (self.brightness_offset, self.brightness_gain, self.brightness_upper_level)
 
             # Only load stored params if they differ (indicating a dtype switch)
             if stored_params and stored_params != current_params:
-                self.brightness_offset, self.brightness_gain, self.brightness_saturation = stored_params
+                self.brightness_offset, self.brightness_gain, self.brightness_upper_level = stored_params
                 self.update_brightness_status()
         except Exception:
             pass
@@ -701,7 +715,7 @@ class ImageViewer(QMainWindow):
                 except Exception:
                     pass
 
-    def _get_displayed_array(self) -> Optional[np.ndarray]:
+    def _get_displayed_array(self) -> np.ndarray | None:
         """Return the processed numpy array that is currently being displayed."""
         if self.current_index is None:
             return None
@@ -713,7 +727,7 @@ class ImageViewer(QMainWindow):
             self.current_index,
             self.brightness_offset,
             self.brightness_gain,
-            self.brightness_saturation,
+            self.brightness_upper_level,
             tuple(self.channel_checks) if self.channel_checks else None,
             tuple(id(c) for c in self.channel_colors) if self.channel_colors else None,
             self.color_manager.mode_1ch,
@@ -739,22 +753,24 @@ class ImageViewer(QMainWindow):
                     self._cached_display_array = result
                     self._cached_display_params = cache_key
                     return result
-            elif arr.ndim == 3 and arr.shape[2] == 2:
-                if self.color_manager.mode_2ch == MODE_2CH_FLOW_HSV:
-                    result = flow_to_hsv_rgb(arr)
-                    # Cache the result
-                    self._cached_display_array = result
-                    self._cached_display_params = cache_key
-                    return result
+            elif arr.ndim == 3 and arr.shape[2] == 2 and self.color_manager.mode_2ch == MODE_2CH_FLOW_HSV:
+                result = flow_to_hsv_rgb(arr)
+                # Cache the result
+                self._cached_display_array = result
+                self._cached_display_params = cache_key
+                return result
         except Exception:
             # Fallback to normal processing
             pass
 
         # Brightness adjustment
         apply_adjust = False
-        if np.issubdtype(arr.dtype, np.floating):
-            apply_adjust = True
-        elif self.brightness_offset != 0 or self.brightness_gain != 1.0 or self.brightness_saturation != 255:
+        if (
+            np.issubdtype(arr.dtype, np.floating)
+            or self.brightness_offset != 0
+            or self.brightness_gain != 1.0
+            or self.brightness_upper_level != 255
+        ):
             apply_adjust = True
 
         if apply_adjust:
@@ -878,6 +894,13 @@ class ImageViewer(QMainWindow):
             except Exception:
                 pass
 
+    def reboot(self):
+        from PySide6.QtWidgets import QApplication
+
+        from PixelScopeViewer.app import RESTART_EXIT_CODE
+
+        QApplication.exit(RESTART_EXIT_CODE)
+
     def show_diff_dialog(self):
         """Show difference image creation dialog."""
         if len(self.images) < 2:
@@ -889,11 +912,12 @@ class ImageViewer(QMainWindow):
         a_idx, b_idx, offset = dlg.get_result()
         if a_idx is None or b_idx is None:
             return
-        a = self.images[a_idx]["array"].astype(int)
-        b = self.images[b_idx]["array"].astype(int)
+        a = self.images[a_idx]["array"]
+        b = self.images[b_idx]["array"]
         # compute diff with offset and clip
         try:
-            diff = (a - b + int(offset)).clip(0, 255).astype("uint8")
+            diff = a - b + offset
+            diff[diff < 0] = 0
         except Exception:
             QMessageBox.information(self, "差分", "差分の作成に失敗しました。画像サイズや型を確認してください。")
             return
@@ -906,7 +930,7 @@ class ImageViewer(QMainWindow):
         )
 
         img_data = {
-            "path": f"diff:{a_idx+1}-{b_idx+1}",
+            "path": f"diff:{a_idx + 1}-{b_idx + 1}",
             "array": diff,
             "base_array": diff.copy(),
             "thumbnail_pixmap": thumb_pixmap,
@@ -953,6 +977,7 @@ class ImageViewer(QMainWindow):
             int(rect.width() / s),
             int(rect.height() / s),
         )
+        self.status_updater.update_roi_status()
         # notify any open modeless AnalysisDialogs so they can refresh for new ROI
         if self._analysis_dialog:
             # Get current image data
@@ -996,7 +1021,14 @@ class ImageViewer(QMainWindow):
             qimg = numpy_to_qimage(displayed_arr)
 
         if qimg and not qimg.isNull():
-            QGuiApplication.clipboard().setImage(qimg)
+            # Viewerで設定している倍率にscaling. (Nearest Neighbor補間)
+            scaled_qimg = qimg.scaled(
+                int(qimg.width() * self.scale),
+                int(qimg.height() * self.scale),
+                Qt.KeepAspectRatio,
+                Qt.FastTransformation,
+            )
+            QGuiApplication.clipboard().setImage(scaled_qimg)
         else:
             QMessageBox.information(self, "コピー", "クリップボードにコピーする画像を作成できませんでした。")
 

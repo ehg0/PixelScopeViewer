@@ -1,5 +1,12 @@
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QHeaderView
-from PySide6.QtWidgets import QAbstractItemView, QTableWidget
+from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QHeaderView,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
 
 
 class MetadataTab(QWidget):
@@ -18,10 +25,17 @@ class MetadataTab(QWidget):
         self.metadata_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.metadata_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.metadata_table.setSelectionBehavior(QAbstractItemView.SelectItems)
+
+        self.metadata_table.setWordWrap(False)
+        # マウスホバー時のツールチップ表示をスムーズにする設定
+        self.metadata_table.setMouseTracking(True)
+
         layout.addWidget(self.metadata_table)
 
         # Copy button (parent dialog connects the handler)
         self.copy_btn = QPushButton("クリップボードにコピー")
+        # ボタンにもマウスホバー時の補足説明（ツールチップ）を追加
+        self.copy_btn.setToolTip("表示中のメタデータ一覧をクリップボードにコピーします")
         layout.addWidget(self.copy_btn)
 
     def update(self, rows: list[tuple[str, str]]):
@@ -32,9 +46,21 @@ class MetadataTab(QWidget):
         rows: list[tuple[str, str]]
             List of (key, value) tuples to display
         """
-        from PySide6.QtWidgets import QTableWidgetItem
-
+        # ソート有効時のチラつき防止
+        self.metadata_table.setSortingEnabled(False)
         self.metadata_table.setRowCount(len(rows))
+
         for i, (key, value) in enumerate(rows):
-            self.metadata_table.setItem(i, 0, QTableWidgetItem(key))
-            self.metadata_table.setItem(i, 1, QTableWidgetItem(value))
+            # 文字列化して安全に扱う
+            key_str = str(key)
+            val_str = str(value)
+
+            # Keyアイテムの設定
+            key_item = QTableWidgetItem(key_str)
+            key_item.setToolTip(key_str)  # ★ マウスオーバーで表示
+            self.metadata_table.setItem(i, 0, key_item)
+
+            # Valueアイテムの設定
+            val_item = QTableWidgetItem(val_str)
+            val_item.setToolTip(val_str)  # ★ 長文でもマウスオーバーで全体を表示
+            self.metadata_table.setItem(i, 1, val_item)

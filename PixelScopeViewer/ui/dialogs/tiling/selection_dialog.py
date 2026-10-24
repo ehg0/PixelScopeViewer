@@ -118,10 +118,6 @@ class TileSelectionDialog(QDialog):
         deselect_all_btn.clicked.connect(self._deselect_all)
         btn_layout.addWidget(deselect_all_btn)
 
-        clear_btn = QPushButton("クリア")
-        clear_btn.clicked.connect(self._deselect_all)
-        btn_layout.addWidget(clear_btn)
-
         btn_layout.addStretch()
         layout.addLayout(btn_layout)
 

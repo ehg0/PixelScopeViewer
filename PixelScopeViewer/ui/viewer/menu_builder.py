@@ -4,9 +4,10 @@ This module handles the creation of all menus and application-level
 keyboard shortcuts for the image viewer.
 """
 
-from PySide6.QtGui import QAction
 from PySide6.QtCore import Qt
-from ...core.constants import MIN_ZOOM_SCALE, MAX_ZOOM_SCALE
+from PySide6.QtGui import QAction
+
+from ...core.constants import MAX_ZOOM_SCALE, MIN_ZOOM_SCALE
 
 
 def create_menus(viewer):
@@ -39,6 +40,12 @@ def create_menus(viewer):
     viewer.close_all_action.triggered.connect(viewer.close_all_images)
     viewer.addAction(viewer.close_all_action)
     file_menu.addAction(viewer.close_all_action)
+
+    file_menu.addSeparator()
+    viewer.reboot_action = QAction("再起動", viewer)
+    viewer.reboot_action.triggered.connect(viewer.reboot)
+    viewer.addAction(viewer.reboot_action)
+    file_menu.addAction(viewer.reboot_action)
 
     # Create actions that will be used in multiple menus and as window shortcuts
     # These must be defined before menus that use them

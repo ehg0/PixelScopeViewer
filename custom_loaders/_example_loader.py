@@ -12,9 +12,10 @@ Note: You can disable this example loader by renaming it to start with
 an underscore (e.g., _example_loader.py) or deleting it.
 """
 
-import numpy as np
 from pathlib import Path
 from typing import Optional
+
+import numpy as np
 
 # Import the registry to register our loader
 from PixelScopeViewer.core.image_io import ImageLoaderRegistry
@@ -146,6 +147,35 @@ def wildcard_fallback_loader(path: str) -> Optional[np.ndarray]:
     return None
 
 
+def npy_custom_loader(path: str) -> Optional[np.ndarray]:
+    """Example loader for .npy files with custom structure.
+
+    This example shows how to load custom npy formats
+
+    Args:
+        path: Path to the file to load
+
+    Returns:
+        NumPy array if successfully loaded, None if cannot handle this file
+    """
+    # Only handle .npy files
+    if not path.lower().endswith(".npy"):
+        return None
+
+    try:
+        # Load the npy file : (digit, h, w_packed, c)
+        data = np.load(path)
+        unpacked_array = np.unpackbits(data, axis=2)
+
+        # reshape : (h, w, c)
+        img = unpacked_array.sum(axis=0)
+        return img
+
+    except Exception:
+        # If loading fails, return None to try other loaders
+        return None
+
+
 # Register the loaders when this module is imported
 # Higher priority values are tried first
 registry = ImageLoaderRegistry.get_instance()
@@ -153,9 +183,10 @@ registry = ImageLoaderRegistry.get_instance()
 # Register specific format loaders with high priority
 registry.register(npz_custom_loader, extensions=[".npz"], priority=10)
 registry.register(binary_custom_loader, extensions=[".dat", ".raw"], priority=10)
+registry.register(npy_custom_loader, extensions=[".npy"], priority=10)
 
 # Register wildcard fallback with low priority
 # Uncomment the line below if you want to enable wildcard loading:
 # registry.register(wildcard_fallback_loader, extensions=['*'], priority=-100)
 
-print("Example custom loaders registered (.npz, .dat, .raw)")
+print("Example custom loaders registered (.npz, .dat, .raw, .npy)")

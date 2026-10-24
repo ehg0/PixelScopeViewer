@@ -16,9 +16,13 @@ Usage:
 
 import sys
 from pathlib import Path
-from PySide6.QtWidgets import QApplication
+
 from PySide6.QtGui import QIcon
+from PySide6.QtWidgets import QApplication
+
 from .ui.viewer import ImageViewer
+
+RESTART_EXIT_CODE = 1001
 
 
 def main(argv=None):
@@ -65,6 +69,10 @@ def main(argv=None):
     w = ImageViewer()
     w.show()
     return app.exec()
+
+
+def reboot(self):
+    QApplication.exit(RESTART_EXIT_CODE)
 
 
 if __name__ == "__main__":

@@ -23,7 +23,6 @@ UI Components:
     - Difference dialog (DiffDialog)
 
 Image I/O:
-    - PIL-based image loading
     - NumPy array to QImage conversion
     - Support for common formats: PNG, JPEG, TIFF, BMP
 
@@ -40,8 +39,6 @@ Quick Start:
 Dependencies:
     - PySide6: Qt for Python
     - numpy: Array operations
-    - Pillow: Image loading
-    - matplotlib (optional): For histogram and profile plots
 """
 
 from .app import main

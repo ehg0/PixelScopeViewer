@@ -3,39 +3,38 @@
 This module provides a dialog for adjusting image display brightness with:
 - Offset: Shifts intensity baseline (can be negative)
 - Gain: Amplifies intensity changes (positive only)
-- Saturation: Sets the maximum intensity reference (positive only)
+- Upper_level: Sets the maximum intensity reference (positive only)
 
-Formula: yout = gain * (yin - offset) / saturation * 255
+Formula: yout = gain * (yin - offset) / (upper_level - offset) * 255
 
 The dialog adapts to image data type and provides both sliders and spinboxes
 for precise control. Also includes channel visibility selection.
 """
 
-import os
-import numpy as np
+from PySide6.QtCore import QEvent, Qt, Signal
 from PySide6.QtWidgets import (
-    QDialog,
-    QVBoxLayout,
-    QTabWidget,
     QAbstractSpinBox,
+    QDialog,
+    QTabWidget,
+    QVBoxLayout,
 )
-from PySide6.QtCore import Qt, Signal, QEvent
-from .tabs import BrightnessTab, ChannelTab
+
 from ...utils import MODE_1CH_GRAYSCALE, MODE_2CH_FLOW_HSV
+from .tabs import BrightnessTab, ChannelTab
 
 
 class BrightnessDialog(QDialog):
     """Dialog for adjusting display brightness parameters and channel visibility.
 
     Signals:
-        brightness_changed: Emitted when brightness parameters change (offset, gain, saturation)
+        brightness_changed: Emitted when brightness parameters change (offset, gain, upper_level)
         channels_changed: Emitted when channel visibility changes
 
     The dialog automatically detects image data type and sets appropriate
     parameter ranges and initial values.
     """
 
-    brightness_changed = Signal(float, float, float)  # offset, gain, saturation
+    brightness_changed = Signal(float, float, float)  # offset, gain, upper_level
     channels_changed = Signal(list)  # list of bools for channel visibility
     channel_colors_changed = Signal(list)  # list of colors for channels
     mode_1ch_changed = Signal(str)
@@ -63,13 +62,14 @@ class BrightnessDialog(QDialog):
             parent: Parent widget
             image_array: NumPy array of current image
             image_path: Path to current image file
-            initial_brightness: Tuple of (offset, gain, saturation)
+            initial_brightness: Tuple of (offset, gain, upper_level)
             initial_channels: List of bools for channel visibility
             initial_colors: List of QColor objects for channel colors
         """
         super().__init__(parent)
+        self.viewer = parent
         self.setWindowTitle("表示設定")
-        self.resize(500, 600)
+        self.resize(500, 450)
         self.setStyleSheet("QDialog { background-color: #fafafa; }")
 
         # Set window flags to allow minimizing and prevent staying on top
@@ -104,6 +104,7 @@ class BrightnessDialog(QDialog):
         # Also forward brightness to channel tab for colorbar captions
         self.brightness_tab.brightness_changed.connect(self.channel_tab.on_brightness_for_colorbar)
         self.channel_tab.channels_changed.connect(self.channels_changed)
+        self.channel_tab.channels_changed.connect(self.brightness_tab._apply_autoscale)
         self.channel_tab.channel_colors_changed.connect(self.channel_colors_changed)
         self.channel_tab.mode_1ch_changed.connect(self.mode_1ch_changed)
         self.channel_tab.mode_2ch_changed.connect(self.mode_2ch_changed)
@@ -134,11 +135,11 @@ class BrightnessDialog(QDialog):
         if initial_colors:
             self.set_channel_colors(initial_colors)
 
-    def set_brightness(self, offset, gain, saturation):
+    def set_brightness(self, offset, gain, upper_level):
         """Set brightness parameters."""
         self.brightness_tab.offset_spinbox.setValue(offset)
         self.brightness_tab.gain_spinbox.setValue(gain)
-        self.brightness_tab.saturation_spinbox.setValue(saturation)
+        self.brightness_tab.upper_level_spinbox.setValue(upper_level)
 
     def set_gain(self, gain_value: float):
         """Programmatically set gain value via the Brightness tab.
@@ -211,10 +212,8 @@ class BrightnessDialog(QDialog):
             if self.isMinimized():
                 # Save current position before minimize
                 BrightnessDialog._position_before_minimize = self.pos()
-            elif event.oldState() & Qt.WindowMinimized:
-                # Restore position after showNormal()
-                if BrightnessDialog._position_before_minimize is not None:
-                    self.move(BrightnessDialog._position_before_minimize)
+            elif event.oldState() & Qt.WindowMinimized and BrightnessDialog._position_before_minimize is not None:
+                self.move(BrightnessDialog._position_before_minimize)
         super().changeEvent(event)
 
     def moveEvent(self, event):

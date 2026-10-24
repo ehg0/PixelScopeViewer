@@ -6,32 +6,49 @@ into CSV text suitable for copying to clipboard.
 
 from __future__ import annotations
 
-from typing import Dict, Iterable
-
 import numpy as np
 
 
-def series_to_csv(xs: np.ndarray, series: Dict[str, np.ndarray], *, cast_int: bool = False) -> str:
-    """Build CSV from shared x-array and multiple named y-series.
+def series_to_csv(data_dict: dict[str, np.ndarray], *, cast_int_keys: list[str] | None = None) -> str:
+    """複数の系列から、指定したフォーマットでCSV文字列を構築する。
 
     Parameters
     ----------
-    xs: 1D numpy array for the x-axis
-    series: dict of name -> 1D numpy array (same length as xs)
-    cast_int: if True, y data are cast to int before export (for histogram counts)
+    data_dict: 列名 -> 1D numpy array の辞書
+    cast_int_keys: 整数（int）にキャストしたい列名のリスト（ヒストグラムの度数など）
     """
-    keys = list(series.keys())
+    keys = list(data_dict.keys())
     if not keys:
         return ""
-    data_cols = [series[k] for k in keys]
-    if cast_int:
-        data_cols = [np.asarray(col).astype(int) for col in data_cols]
-    mat = np.column_stack([xs] + data_cols)
-    header = ",".join(["x"] + keys)
+
+    if cast_int_keys is None:
+        cast_int_keys = []
+
+    formatted_cols = []
+    for k in keys:
+        # flatten() を入れ、万が一2次元(N, 1)が混ざっていても確実に1次元にする
+        col = np.asarray(data_dict[k]).flatten()
+
+        if k in cast_int_keys:
+            # 指定された列（度数など）は int にキャストして文字列化
+            cols_str = col.astype(int).astype(str)
+        elif k in ["bin_start", "bin_end", "bin_center"]:
+            # ビン関連の列は、小数点3桁固定の文字列にする
+            cols_str = np.char.mod("%.3f", col)
+        else:
+            # その他（実数のプロファイルデータなど）はそのまま文字列化
+            cols_str = col.astype(str)
+
+        formatted_cols.append(cols_str)
+
+    # 1次元配列同士を横方向に結合して、1行ずつのcsv文字列にする
+    mat = np.column_stack(formatted_cols)
+    header = ",".join(keys)
+
     lines = [header]
     for row in mat:
-        # keep x as-is; y as int or float repr
-        lines.append(",".join(map(str, row)))
+        lines.append(",".join(row))
+
     return "\n".join(lines)
 
 

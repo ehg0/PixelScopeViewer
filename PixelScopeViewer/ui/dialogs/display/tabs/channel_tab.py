@@ -1,24 +1,28 @@
-from PySide6.QtCore import Signal, Qt
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
+    QButtonGroup,
+    QCheckBox,
+    QColorDialog,
     QGroupBox,
-    QVBoxLayout as QV,
     QHBoxLayout,
     QLabel,
-    QCheckBox,
     QPushButton,
-    QColorDialog,
     QRadioButton,
-    QButtonGroup,
+    QVBoxLayout,
+    QWidget,
 )
-from PySide6.QtGui import QColor, QPixmap, QIcon
-from ....utils import (
-    get_default_channel_colors,
-    colorbar_jet,
-    colorbar_flow_hsv,
+from PySide6.QtWidgets import (
+    QVBoxLayout as QV,
 )
+
 from PixelScopeViewer.core.image_io import numpy_to_qimage
+
+from ....utils import (
+    colorbar_flow_hsv,
+    colorbar_jet,
+    get_default_channel_colors,
+)
 
 
 class ChannelTab(QWidget):
@@ -50,7 +54,7 @@ class ChannelTab(QWidget):
         self._mode_group_box = None
         self._mode_layout = None
         self._mode_controls_layout = None
-        self._last_brightness = None  # (offset, gain, saturation)
+        self._last_brightness = None  # (offset, gain, upper_level)
         self._setup_ui(initial_channels, initial_colors)
 
     # ---------- UI helpers ----------
@@ -271,14 +275,14 @@ class ChannelTab(QWidget):
             max_label = None
             if self._last_brightness is not None:
                 try:
-                    off, gain, sat = self._last_brightness
-                    # yout = gain*(yin - off)/sat*255 -> yin at 0 and 255
+                    off, gain, upper = self._last_brightness
+                    # yout = gain*(yin - off)/(upper - off)*255 -> yin at 0 and 255
                     vmin = off
-                    vmax = off + (sat / gain if gain not in (0, None) else 0)
+                    vmax = off + ((upper - off) / gain if gain not in (0, None) else 0)
 
                     def fmt(v):
                         if abs(v - round(v)) < 1e-6:
-                            return str(int(round(v)))
+                            return str(round(v))
                         return f"{v:.3f}"
 
                     min_label = fmt(vmin)
@@ -311,8 +315,8 @@ class ChannelTab(QWidget):
             self._colorbar_label.setPixmap(pixmap)
 
     # Receive brightness updates for colorbar captions
-    def on_brightness_for_colorbar(self, offset, gain, saturation):
-        self._last_brightness = (offset, gain, saturation)
+    def on_brightness_for_colorbar(self, offset, gain, upper_level):
+        self._last_brightness = (offset, gain, upper_level)
         self._update_colorbar()
 
     def _on_mode1_changed(self, mode: str | None):

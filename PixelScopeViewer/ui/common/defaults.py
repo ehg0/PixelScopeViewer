@@ -27,6 +27,10 @@ PLOT_SETTINGS = {
     "hist": {"grid": True, "log": False, "auto_range": True},
     "prof": {"grid": True, "auto_range": True},
 }
+# 解析対象の ROI: "active"（編集中ROI）, "overlay", "split"（登録ROI）
+ANALYSIS_ROI_MODE = "active"
+# Split 表示で全グラフの軸を連動させるか
+ANALYSIS_ROI_LINK_AXES = True
 # channel の checkbox の最大数
 MAX_CHANNEL_CHECKBOXES = 8
 

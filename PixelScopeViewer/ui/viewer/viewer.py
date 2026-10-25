@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QScrollArea,
     QTabWidget,
+    QVBoxLayout,
     QWidget,
 )
 
@@ -38,9 +39,16 @@ from PixelScopeViewer.ui.viewer.brightness_manager import BrightnessManager
 from PixelScopeViewer.ui.viewer.help_dialog import HelpDialog
 from PixelScopeViewer.ui.viewer.image_list import ImageListManager
 from PixelScopeViewer.ui.viewer.menu_builder import create_menus
+from PixelScopeViewer.ui.viewer.roi_list import RoiListManager
 from PixelScopeViewer.ui.viewer.state import ViewerState
 from PixelScopeViewer.ui.viewer.status_updater import StatusUpdater
-from PixelScopeViewer.ui.viewer.widgets import DisplayInfoWidget, ImageLabel, NavigatorWidget, ROIInfoWidget
+from PixelScopeViewer.ui.viewer.widgets import (
+    DisplayInfoWidget,
+    ImageLabel,
+    NavigatorWidget,
+    ROIInfoWidget,
+    RoiListWidget,
+)
 from PixelScopeViewer.ui.viewer.zoom_manager import ZoomManager
 
 
@@ -51,12 +59,15 @@ class ImageViewer(QMainWindow):
         images: 読み込んだ画像の dict（path, array, base_array, thumbnail_pixmap）のリスト。
         state: 表示中の画像の index・zoom 倍率・ROI・brightness などの現在値。
         image_list: 画像の読み込み・切り替え・閉じる操作。
+        roi_list: ROI 一覧の登録・削除・連動・保存と読み込み。
         status_updater: status bar の作成と表示の更新。
     """
 
     scale_changed = Signal()
     image_changed = Signal()
     roi_changed = Signal()
+    # ROI 一覧（登録・削除・☑・連動・色の個別設定）の変更
+    rois_changed = Signal()
 
     def __init__(self):
         super().__init__()
@@ -68,6 +79,7 @@ class ImageViewer(QMainWindow):
 
         self.images = []
         self.state = ViewerState()
+        self.roi_list = RoiListManager(self)
 
         # zoom の中心に使うマウス位置（画像座標）
         self.current_mouse_image_coords = None
@@ -102,8 +114,13 @@ class ImageViewer(QMainWindow):
         display_info_widget = DisplayInfoWidget(self)
         self.info_tabs.addTab(display_info_widget, "Display Area")
 
-        roi_info_widget = ROIInfoWidget(self)
-        self.info_tabs.addTab(roi_info_widget, "ROI Area")
+        # 編集中 ROI の座標の下に ROI 一覧を並べる
+        roi_area = QWidget()
+        roi_area_layout = QVBoxLayout(roi_area)
+        roi_area_layout.setContentsMargins(0, 0, 0, 0)
+        roi_area_layout.addWidget(ROIInfoWidget(self))
+        roi_area_layout.addWidget(RoiListWidget(self), 1)
+        self.info_tabs.addTab(roi_area, "ROI Area")
 
         self.info_dock.setWidget(self.info_tabs)
         self.addDockWidget(Qt.LeftDockWidgetArea, self.info_dock)
@@ -126,6 +143,8 @@ class ImageViewer(QMainWindow):
         self.channel_display.colors_changed.connect(self._on_channel_display_changed)
         self.channel_display.checks_changed.connect(self._on_channel_display_changed)
         self.channel_display.modes_changed.connect(self._on_channel_display_changed)
+
+        self.rois_changed.connect(self._update_analysis_dialog)
 
         create_menus(self)
         self.setAcceptDrops(True)
@@ -291,7 +310,12 @@ class ImageViewer(QMainWindow):
         sel = self.state.roi
         img_path = img.get("path")
         dlg = AnalysisDialog(
-            self, image_array=arr, image_rect=sel, image_path=img_path, channel_display=self.channel_display
+            self,
+            image_array=arr,
+            image_rect=sel,
+            image_path=img_path,
+            channel_display=self.channel_display,
+            rois=self.roi_list.enabled_rois(),
         )
         bring_to_front(dlg)
         self._analysis_dialog = self.child_dialogs.track(dlg, lambda: setattr(self, "_analysis_dialog", None))
@@ -364,20 +388,24 @@ class ImageViewer(QMainWindow):
             int(rect.width() / s),
             int(rect.height() / s),
         )
+        self.roi_list.sync_linked()
         self.status_updater.update_roi_status()
         self._update_analysis_dialog()
 
         self.roi_changed.emit()
 
     def _update_analysis_dialog(self):
-        """表示中の画像と ROI を解析 dialog に反映する。画像がない場合は解析 dialog を空にする。"""
+        """表示中の画像・ROI・解析対象の ROI 一覧を解析 dialog に反映する。画像がない場合は解析 dialog を空にする。"""
         if self._analysis_dialog is None:
             return
+        rois = self.roi_list.enabled_rois()
         if self.state.current_index is None:
-            self._analysis_dialog.set_image_and_rect(None, None)
+            self._analysis_dialog.set_image_and_rect(None, None, rois=rois)
             return
         img = self.images[self.state.current_index]
-        self._analysis_dialog.set_image_and_rect(img.get("base_array", img["array"]), self.state.roi, img.get("path"))
+        self._analysis_dialog.set_image_and_rect(
+            img.get("base_array", img["array"]), self.state.roi, img.get("path"), rois=rois
+        )
 
     def copy_roi_to_clipboard(self):
         """表示中の画像の ROI（ROI がなければ全体）を表示倍率で clipboard にコピーする。"""
@@ -420,11 +448,13 @@ class ImageViewer(QMainWindow):
         widget 座標を経由しないため、zoom 中でも丸め誤差なく反映される。
         """
         self.state.roi = rect_img
+        self.roi_list.sync_linked()
         s = self.state.scale
         self.image_label.roi_rect = QRect(
             int(rect_img.x() * s), int(rect_img.y() * s), int(rect_img.width() * s), int(rect_img.height() * s)
         )
         self.image_label.update()
+        self.status_updater.update_roi_status()
         self._update_analysis_dialog()
         self.roi_changed.emit()
 

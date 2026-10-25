@@ -12,15 +12,18 @@ from PySide6.QtWidgets import (
     QLabel,
     QPushButton,
     QSpinBox,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
 
 from PixelScopeViewer.ui.analysis.tabs.common import (
+    SplitPlotArea,
     StatsTable,
     create_channel_group,
     create_export_group,
     create_plot_widget,
+    create_roi_group,
     label_color,
     make_group_box,
     mouse_position_text,
@@ -92,12 +95,16 @@ class HistogramTab(QWidget):
 
         root = QHBoxLayout(self)
 
-        # 左側: plot と統計量
+        # 左側: plot（編集中ROI・Overlay は hist_widget、Split は split_area）と統計量
         left = QVBoxLayout()
         self.hist_widget = create_plot_widget(
             "Count", "Intensity", on_save_viewbox_state, on_connect_plot_controls, self._on_mouse_over
         )
-        left.addWidget(self.hist_widget, 3)
+        self.split_area = SplitPlotArea(self.hist_widget.getPlotItem(), "Count", "Intensity", self.status_changed.emit)
+        self.plot_stack = QStackedWidget()
+        self.plot_stack.addWidget(self.hist_widget)
+        self.plot_stack.addWidget(self.split_area)
+        left.addWidget(self.plot_stack, 3)
         self.stats_table = StatsTable(int_format=True)
         left.addWidget(self.stats_table, 0)
         root.addLayout(left, 1)
@@ -107,7 +114,10 @@ class HistogramTab(QWidget):
         right.setContentsMargins(10, 10, 10, 10)
         right.setSpacing(8)
 
-        channels_group, self.channel_list = create_channel_group(self._on_checkbox_changed)
+        self.roi_group, self.roi_mode_combo, self.link_axes_check = create_roi_group()
+        right.addWidget(self.roi_group)
+
+        channels_group, self.channel_list, self.roi_channel_panel = create_channel_group(self._on_checkbox_changed)
         right.addWidget(channels_group)
 
         config_group, config_layout = make_group_box("Histgram config")
@@ -152,6 +162,12 @@ class HistogramTab(QWidget):
         if self.on_channel_changed:
             self.on_channel_changed(checks)
 
+    def set_roi_view(self, mode: str):
+        """ROI の表示方法（"active" / "overlay" / "split"）に合わせて plot と channel の一覧を切り替える。"""
+        self.plot_stack.setCurrentWidget(self.split_area if mode == "split" else self.hist_widget)
+        self.channel_list.setVisible(mode == "active")
+        self.roi_channel_panel.setVisible(mode != "active")
+
     def update_channel_checkboxes(self, nch: int, checks: list[bool], channel_colors: list | None = None):
         """channel の行（checkbox・label・色ボタン）を更新する。"""
         self.channel_list.set_channels([f"C{i}" for i in range(nch)], checks, channel_colors or [])
@@ -165,6 +181,7 @@ class HistogramTab(QWidget):
         is_integer_type: bool = False,
         chart_kind: str = "Line",
         bar_alpha: int = 120,
+        title: str | None = None,
     ):
         """計算済みのデータで histogram の plot と統計量の table を更新する。
 
@@ -176,27 +193,72 @@ class HistogramTab(QWidget):
             is_integer_type: 整数 dtype か。
             chart_kind: "Line" または "Bar"。
             bar_alpha: Bar 表示時の alpha。
+            title: グラフの title。None の場合は "Intensity Histogram" などにする。
         """
         self.hist_widget.clear()
+        self._plot_series(self.hist_widget.getPlotItem(), series, color_by_label, apply_log, chart_kind, bar_alpha)
+        if title is None:
+            title = f"Intensity {self.config_mode_btn.text()}"
+        self.hist_widget.setTitle(title, color=theme.PLOT_TEXT_COLOR, size="12pt")
+        if is_integer_type:
+            self.hist_widget.getAxis("bottom").setStyle(tickTextOffset=10)
+        self.stats_table.set_rows(stats_rows, color_by_label)
+
+    def update_split_plots(
+        self,
+        groups: list[tuple[int, str, str, dict]],
+        stats_rows: list[dict],
+        color_by_label: dict[str, tuple[int, int, int]],
+        link_axes: bool,
+        apply_log: bool = False,
+        is_integer_type: bool = False,
+        chart_kind: str = "Line",
+        bar_alpha: int = 120,
+    ):
+        """登録 ROI ごとの histogram を grid に並べて描画し、統計量の table を更新する。
+
+        Args:
+            groups: (ROI の id, title, title の色, label から (x, 度数) への dict) のリスト。
+            stats_rows: 全 ROI の統計量の行。
+            color_by_label: label から RGB への dict。
+            link_axes: 全グラフの軸を連動させるか。
+            apply_log: Y 軸を log 表示するか。
+            is_integer_type: 整数 dtype か。
+            chart_kind: "Line" または "Bar"。
+            bar_alpha: Bar 表示時の alpha。
+        """
+        items = self.split_area.plot_items([g[0] for g in groups])
+        plotted = []
+        for item, (_, title, title_color, series) in zip(items, groups, strict=True):
+            item.clear()
+            plotted += self._plot_series(item, series, color_by_label, apply_log, chart_kind, bar_alpha)
+            item.setTitle(title, color=title_color, size="11pt")
+            if is_integer_type:
+                item.getAxis("bottom").setStyle(tickTextOffset=10)
+        self.split_area.set_linked(link_axes, plotted)
+        self.stats_table.set_rows(stats_rows, color_by_label)
+
+    def _plot_series(
+        self, plot_item, series: dict, color_by_label: dict, apply_log: bool, chart_kind: str, bar_alpha: int
+    ) -> list[tuple[np.ndarray, np.ndarray]]:
+        """series を Line または Bar で描画し、描画した (x, y) のリストを返す。log の軸は hist_widget の設定に従う。"""
         log_x, log_y = plot_log_mode(self.hist_widget)
+        plotted = []
         for label, (xs, ys) in series.items():
             yplot = np.array(ys, dtype=float)
             if apply_log:
                 # 0 を 0.1 に置き換え、log10(0.1) = -1 として下端に表示する
                 yplot[yplot == 0] = 0.1
-                self.hist_widget.setLimits(yMin=-1)
+                plot_item.setLimits(yMin=-1)
             if chart_kind == "Line":
                 pen = pg.mkPen(color=label_color(label, color_by_label), width=2)
-                self.hist_widget.plot(xs, yplot, pen=pen, name=label if label != "I" else "Intensity")
+                plot_item.plot(xs, yplot, pen=pen, name=label if label != "I" else "Intensity")
             else:
                 brush = label_color(label, color_by_label, alpha=bar_alpha)
                 item = make_hist_bar_item(xs, yplot, self.bin_step_spin_box.value(), brush, label, log_x, log_y)
-                self.hist_widget.addItem(item)
-
-        self.hist_widget.setTitle(f"Intensity {self.config_mode_btn.text()}", color=theme.PLOT_TEXT_COLOR, size="12pt")
-        if is_integer_type:
-            self.hist_widget.getAxis("bottom").setStyle(tickTextOffset=10)
-        self.stats_table.set_rows(stats_rows, color_by_label)
+                plot_item.addItem(item)
+            plotted.append((xs, yplot))
+        return plotted
 
     def _on_mouse_over(self, pos):
-        self.status_changed.emit(mouse_position_text(self.hist_widget, pos))
+        self.status_changed.emit(mouse_position_text(self.hist_widget.getPlotItem(), pos))

@@ -9,6 +9,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QGroupBox,
     QHeaderView,
     QPushButton,
@@ -19,10 +20,25 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from PixelScopeViewer.ui.analysis.tabs.channel_list import ChannelListWidget
+from PixelScopeViewer.ui.analysis.tabs.channel_list import ChannelListWidget, RoiChannelPanel
 from PixelScopeViewer.ui.common import theme
 
 STATS_HEADERS = ["ch", "Mean", "Std", "Median", "Min", "Max", "Fano"]
+
+
+ROI_MODES = (("active", "編集中ROI"), ("overlay", "登録ROI - Overlay"), ("split", "登録ROI - Split"))
+
+
+def _style_plot_item(plot_item: pg.PlotItem, left_label: str, bottom_label: str):
+    """軸の label・色と grid を設定し、mouse による拡大縮小を無効にする。"""
+    plot_item.setLabel("left", left_label)
+    plot_item.setLabel("bottom", bottom_label)
+    plot_item.showGrid(x=True, y=True, alpha=0.4)
+    for axis in ("left", "bottom"):
+        plot_item.getAxis(axis).setPen(pg.mkPen(color=theme.PLOT_AXIS_COLOR, width=1))
+        plot_item.getAxis(axis).setTextPen(pg.mkPen(color=theme.PLOT_TEXT_COLOR))
+    plot_item.setMenuEnabled(True)
+    plot_item.getViewBox().setMouseEnabled(x=False, y=False)
 
 
 def create_plot_widget(
@@ -34,16 +50,9 @@ def create_plot_widget(
 ) -> PlotWidget:
     """白背景・grid 付きで、mouse による拡大縮小を無効にした PlotWidget を作る。"""
     widget = PlotWidget()
-    widget.setLabel("left", left_label)
-    widget.setLabel("bottom", bottom_label)
     widget.setBackground(theme.PLOT_BACKGROUND)
-    widget.showGrid(x=True, y=True, alpha=0.4)
-    for axis in ("left", "bottom"):
-        widget.getAxis(axis).setPen(pg.mkPen(color=theme.PLOT_AXIS_COLOR, width=1))
-        widget.getAxis(axis).setTextPen(pg.mkPen(color=theme.PLOT_TEXT_COLOR))
-    widget.setMenuEnabled(True)
+    _style_plot_item(widget.getPlotItem(), left_label, bottom_label)
     view_box = widget.getViewBox()
-    view_box.setMouseEnabled(x=False, y=False)
     if on_save_viewbox_state is not None:
         view_box.sigStateChanged.connect(on_save_viewbox_state)
         on_save_viewbox_state(view_box)
@@ -53,9 +62,127 @@ def create_plot_widget(
     return widget
 
 
-def mouse_position_text(widget: PlotWidget, pos) -> str:
+class SplitPlotArea(pg.GraphicsLayoutWidget):
+    """登録 ROI ごとの PlotItem を 2 列の grid に並べる。
+
+    PlotItem は ROI の id ごとに使い回し、ユーザーが設定した表示範囲を保つ。
+    grid・log は source（編集中ROI・Overlay 用の PlotItem）の menu の設定に揃え、
+    各 PlotItem の menu での変更は source に伝える。
+
+    Args:
+        source: grid・log の設定を共有する PlotItem。
+        left_label: 縦軸の label。
+        bottom_label: 横軸の label。
+        on_status: マウス位置の値の文字列を受け取る callback。
+    """
+
+    N_COLS = 2
+    _CTRL_CHECKS = ("xGridCheck", "yGridCheck", "logXCheck", "logYCheck")
+
+    def __init__(self, source: pg.PlotItem, left_label: str, bottom_label: str, on_status: Callable[[str], None]):
+        super().__init__()
+        self.setBackground(theme.PLOT_BACKGROUND)
+        self._source = source
+        self._labels = (left_label, bottom_label)
+        self._items: dict[int, pg.PlotItem] = {}
+        self._order: list[int] = []
+        # None は軸の連動を設定し直す必要がある状態
+        self._linked: bool | None = None
+        self.scene().sigMouseMoved.connect(lambda pos: on_status(self._mouse_text(pos)))
+
+    def plot_items(self, ids: list[int]) -> list[pg.PlotItem]:
+        """ids の順に PlotItem を返す。ROI の増減があったときだけ PlotItem を追加・削除して並べ直す。"""
+        if ids != self._order:
+            for item in list(self.ci.items):
+                self.ci.removeItem(item)
+            for roi_id in [r for r in self._items if r not in ids]:
+                del self._items[roi_id]
+            for n, roi_id in enumerate(ids):
+                if roi_id not in self._items:
+                    self._items[roi_id] = self._make_item()
+                self.ci.addItem(self._items[roi_id], row=n // self.N_COLS, col=n % self.N_COLS)
+            self._order = list(ids)
+            self._linked = None
+        self.sync_controls()
+        return [self._items[r] for r in ids]
+
+    def _make_item(self) -> pg.PlotItem:
+        item = pg.PlotItem()
+        _style_plot_item(item, *self._labels)
+        for name in self._CTRL_CHECKS:
+            getattr(item.ctrl, name).toggled.connect(
+                lambda checked, n=name: getattr(self._source.ctrl, n).setChecked(checked)
+            )
+        return item
+
+    def sync_controls(self):
+        """各 PlotItem の grid・log を source に揃える。"""
+        for item in self._items.values():
+            for name in self._CTRL_CHECKS:
+                getattr(item.ctrl, name).setChecked(getattr(self._source.ctrl, name).isChecked())
+
+    def set_linked(self, linked: bool, series: list[tuple[np.ndarray, np.ndarray]]):
+        """軸の連動を設定する。描画の後に呼ぶ。
+
+        連動中は先頭の PlotItem の auto range に全 ROI のデータが収まるよう、
+        全データの範囲を覆う透明な線を先頭の PlotItem に加える。
+        連動を切り替えたときは auto range を有効に戻す。連動中は先頭の PlotItem だけを auto range にする。
+        """
+        items = [self._items[r] for r in self._order]
+        if not items:
+            return
+        first = items[0]
+        if linked != self._linked:
+            first.setXLink(None)
+            first.setYLink(None)
+            for item in items[1:]:
+                item.setXLink(first if linked else None)
+                item.setYLink(first if linked else None)
+                # 連動先の auto range は自身のデータだけに合わせ、先頭の範囲を上書きしてしまう
+                if linked:
+                    item.disableAutoRange()
+                else:
+                    item.enableAutoRange()
+            first.enableAutoRange()
+            self._linked = linked
+        if linked and len(items) > 1:
+            bounds = self._data_bounds(series)
+            if bounds is not None:
+                x0, x1, y0, y1 = bounds
+                first.addItem(pg.PlotDataItem([x0, x1], [y0, y1], pen=pg.mkPen((0, 0, 0, 0))))
+
+    def _data_bounds(self, series) -> tuple[float, float, float, float] | None:
+        """全系列の (x 最小, x 最大, y 最小, y 最大) を返す。log 表示の軸では正の値だけを使う。"""
+        log_x = self._source.ctrl.logXCheck.isChecked()
+        log_y = self._source.ctrl.logYCheck.isChecked()
+        xs_all, ys_all = [], []
+        for xs, ys in series:
+            xs = np.asarray(xs, dtype=float)
+            ys = np.asarray(ys, dtype=float)
+            keep = np.isfinite(xs) & np.isfinite(ys)
+            if log_x:
+                keep &= xs > 0
+            if log_y:
+                keep &= ys > 0
+            xs_all.append(xs[keep])
+            ys_all.append(ys[keep])
+        if not xs_all:
+            return None
+        xs_all = np.concatenate(xs_all)
+        ys_all = np.concatenate(ys_all)
+        if xs_all.size == 0:
+            return None
+        return float(xs_all.min()), float(xs_all.max()), float(ys_all.min()), float(ys_all.max())
+
+    def _mouse_text(self, pos) -> str:
+        for item in self._items.values():
+            if item.sceneBoundingRect().contains(pos):
+                return mouse_position_text(item, pos)
+        return ""
+
+
+def mouse_position_text(plot_item: pg.PlotItem, pos) -> str:
     """scene 座標 pos の plot 上の値を "X: .., Y: .." で返す。plot の外なら空文字。"""
-    plot_item = widget.getPlotItem()
     if not plot_item.sceneBoundingRect().contains(pos):
         return ""
     point = plot_item.vb.mapSceneToView(pos)
@@ -85,8 +212,27 @@ def make_group_box(title: str) -> tuple[QGroupBox, QVBoxLayout]:
     return group, layout
 
 
-def create_channel_group(on_checks_changed: Callable[[list], None]) -> tuple[QGroupBox, ChannelListWidget]:
-    """scroll area の中に ChannelListWidget を置いた Channels group を作る。
+def create_roi_group() -> tuple[QGroupBox, QComboBox, QCheckBox]:
+    """解析対象の ROI（編集中ROI / 登録ROI の Overlay・Split）の combo と軸の連動の checkbox を持つ group を作る。"""
+    group, layout = make_group_box("ROI")
+    combo = QComboBox()
+    for mode, text in ROI_MODES:
+        combo.addItem(text, mode)
+    combo.setToolTip("登録ROIはメイン画面の Info > ROI Area の ROI一覧で ☑ を付けた ROI です")
+    combo.setMinimumWidth(100)
+    link_check = QCheckBox("軸を連動")
+    link_check.setToolTip(
+        "Split 表示で、全グラフの表示範囲を揃えます。OFF にすると各グラフの右クリックで個別に設定できます"
+    )
+    layout.addWidget(combo)
+    layout.addWidget(link_check)
+    return group, combo, link_check
+
+
+def create_channel_group(
+    on_checks_changed: Callable[[list], None],
+) -> tuple[QGroupBox, ChannelListWidget, RoiChannelPanel]:
+    """scroll area の中に ChannelListWidget と登録 ROI 用の RoiChannelPanel（初期は非表示）を置いた group を作る。
 
     複数画像比較の解析 dialog は scroll area の中身を tile ごとの一覧に置き換えるため、この構造を保つ。
     """
@@ -104,10 +250,13 @@ def create_channel_group(on_checks_changed: Callable[[list], None]) -> tuple[QGr
     channel_list = ChannelListWidget()
     channel_list.checks_changed.connect(on_checks_changed)
     scroll_layout.addWidget(channel_list)
+    roi_panel = RoiChannelPanel()
+    roi_panel.setVisible(False)
+    scroll_layout.addWidget(roi_panel)
     scroll_layout.addStretch()
     scroll.setWidget(scroll_widget)
     layout.addWidget(scroll)
-    return group, channel_list
+    return group, channel_list, roi_panel
 
 
 def create_export_group() -> tuple[QGroupBox, QPushButton, QPushButton, QCheckBox]:

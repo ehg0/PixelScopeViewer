@@ -29,6 +29,7 @@ class HelpDialog(QDialog):
             "  Ctrl+A : 画像全域をROIに設定\n"
             "  Ctrl+C : ROI矩形をコピー\n"
             "  矢印キー / Shift+矢印 : ROIを1px / 10px移動\n"
+            "  R      : ROIをROI一覧に登録 (Info > ROI Area)\n"
             "  Ctrl+W : 現在画像を閉じる / Ctrl+Shift+W : 全画像閉じる\n\n"
             "[ダイアログ表示]\n"
             "  D : 表示設定 (チャンネル毎の色/表示ゲイン・オフセット)\n"

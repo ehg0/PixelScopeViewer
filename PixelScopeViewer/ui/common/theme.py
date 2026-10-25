@@ -53,6 +53,8 @@ OVERLAY_PALETTE: tuple[str, ...] = (
 # --- 画像上の描画 ---
 ROI_COLOR = "#33ff66"
 ROI_INACTIVE_COLOR = "#aaaaaa"
+# ROI 一覧の名前（R1 など）の背景
+ROI_LABEL_BACKGROUND = "#ffffff"
 NAVIGATOR_VIEW_RECT_COLOR = "#ff4444"
 # colorbar の両端の label（RGB）
 COLORBAR_LABEL_RGB = (255, 255, 255)

@@ -5,7 +5,7 @@ from collections.abc import Callable
 import numpy as np
 import pyqtgraph as pg
 from pyqtgraph import PlotWidget
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QPoint, Qt
 from PySide6.QtGui import QColor, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
@@ -78,7 +78,8 @@ class SplitPlotView(QWidget):
     """SplitPlotArea を scroll area に入れ、左上の [Fit] [+] [-] で grid の 1 枚の大きさを変える。
 
     Fit では表示エリアに合わせる。ただし 1 枚が SPLIT_MIN_CELL より小さくなる場合は scroll bar を出す。
-    [+] [-] では 1 枚の大きさを SPLIT_ZOOM_STEP 倍ずつ変え、表示エリアからはみ出す分は scroll する。
+    [+] [-]（グラフ上の Shift + wheel も同じ）では 1 枚の大きさを SPLIT_ZOOM_STEP 倍ずつ変え、
+    表示エリアからはみ出す分は scroll する。
 
     Args:
         source: grid・log の設定を共有する PlotItem。
@@ -117,6 +118,7 @@ class SplitPlotView(QWidget):
         self.scroll.setWidgetResizable(True)
         self.scroll.setWidget(self.area)
         self.area.wheel_target = self.scroll.viewport()
+        self.area.on_shift_wheel = self.zoom
         layout.addWidget(self.scroll, 1)
         self._apply_size()
 
@@ -133,13 +135,28 @@ class SplitPlotView(QWidget):
         self._cell_size = None
         self._apply_size()
 
-    def zoom(self, factor: float):
-        """1 枚の大きさを factor 倍にする。Fit 中は今の大きさを基準にする。"""
+    def zoom(self, factor: float, anchor: QPoint | None = None):
+        """1 枚の大きさを factor 倍にする。Fit 中は今の大きさを基準にする。
+
+        Args:
+            factor: 倍率。
+            anchor: 拡大縮小の前後で表示エリア内の同じ位置に保つ点（SplitPlotArea の座標）。
+        """
         rows, cols = self._grid
-        w, h = self._cell_size or (self.area.width() / cols, self.area.height() / rows)
+        old_w, old_h = self.area.width(), self.area.height()
+        w, h = self._cell_size or (old_w / cols, old_h / rows)
         min_w, min_h = SPLIT_ZOOM_MIN_CELL
         self._cell_size = (max(min_w, round(w * factor)), max(min_h, round(h * factor)))
         self._apply_size()
+        if anchor is None or not old_w or not old_h:
+            return
+        # anchor の点が wheel を回した位置に残るよう scroll する
+        for bar, pos, old, new in (
+            (self.scroll.horizontalScrollBar(), anchor.x(), old_w, self.area.width()),
+            (self.scroll.verticalScrollBar(), anchor.y(), old_h, self.area.height()),
+        ):
+            in_view = pos - bar.value()
+            bar.setValue(round(pos * new / old - in_view))
 
     def _apply_size(self):
         rows, cols = self._grid
@@ -178,6 +195,8 @@ class SplitPlotArea(pg.GraphicsLayoutWidget):
         self._n_cols = 0
         # wheel を渡す widget（SplitPlotView の scroll area の viewport）
         self.wheel_target: QWidget | None = None
+        # Shift + wheel で呼ぶ callback（倍率, wheel の位置）
+        self.on_shift_wheel: Callable[[float, QPoint], None] | None = None
         # None は軸の連動を設定し直す必要がある状態
         self._linked: bool | None = None
         self.scene().sigMouseMoved.connect(lambda pos: on_status(self._mouse_text(pos)))
@@ -271,8 +290,15 @@ class SplitPlotArea(pg.GraphicsLayoutWidget):
         return float(xs_all.min()), float(xs_all.max()), float(ys_all.min()), float(ys_all.max())
 
     def wheelEvent(self, event):
-        # mouse による拡大縮小は無効のため、wheel は外側の scroll area の scroll に使う。
+        # Shift + wheel はグラフの拡大縮小、それ以外は外側の scroll area の scroll に使う。
         # ViewBox は mouse が無効でも wheel を受け取って捨てるため、scene には渡さない
+        if event.modifiers() & Qt.ShiftModifier and self.on_shift_wheel is not None:
+            # Shift で横 wheel に変換する環境があるため、縦がなければ横の回転量を使う
+            delta = event.angleDelta().y() or event.angleDelta().x()
+            if delta:
+                self.on_shift_wheel(SPLIT_ZOOM_STEP ** (delta / 120), event.position().toPoint())
+            event.accept()
+            return
         if self.wheel_target is not None:
             QApplication.sendEvent(self.wheel_target, event)
         else:

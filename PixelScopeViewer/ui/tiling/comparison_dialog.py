@@ -7,10 +7,8 @@ import pyqtgraph as pg
 from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import (
     QColorDialog,
-    QHBoxLayout,
     QHeaderView,
     QLabel,
-    QPushButton,
     QScrollArea,
     QTableWidgetItem,
     QWidget,
@@ -29,10 +27,10 @@ from PixelScopeViewer.core.statistics import (
     stats_row,
 )
 from PixelScopeViewer.ui.analysis.dialog import AnalysisDialog
-from PixelScopeViewer.ui.analysis.tabs.channel_list import ChannelListWidget
+from PixelScopeViewer.ui.analysis.overlay import overlay_color
+from PixelScopeViewer.ui.analysis.tabs.channel_list import ChannelListWidget, make_select_buttons
 from PixelScopeViewer.ui.analysis.tabs.histogram_tab import make_hist_bar_item, plot_log_mode
 from PixelScopeViewer.ui.common import theme
-from PixelScopeViewer.ui.common.channel_display import to_plot_color
 
 
 class TilingAnalysisDialog(AnalysisDialog):
@@ -73,6 +71,9 @@ class TilingAnalysisDialog(AnalysisDialog):
         super().__init__(parent=parent, image_array=image_array, image_rect=None, image_path=image_path)
 
         self.setWindowTitle("複数画像比較 - 解析ビュー(複数画像)")
+        # 登録 ROI はメインビューアの解析 dialog のみで扱う
+        for tab in (self.hist_tab, self.profile_tab):
+            tab.roi_group.hide()
 
         # tab の channel の checkbox を tile ごとの checkbox に置き換える
         self._setup_overlay_channel_checkboxes()
@@ -85,15 +86,11 @@ class TilingAnalysisDialog(AnalysisDialog):
         （灰色系は黒）を使う。
         """
         for lbl in labels:
-            if lbl in self._overlay_overrides:
-                self.overlay_color_map[lbl] = QColor(self._overlay_overrides[lbl]).getRgb()[:3]
-                continue
             # label は _overlay_curve_labels などで作る "Tile {n} C{k}" / "Tile {n} I" の形式
             _, tile_num, ch_code = lbl.split()
             ch_index = int(ch_code[1:]) if ch_code.startswith("C") else 0
-            tile_num = int(tile_num)
-            idx = ((tile_num - 1) * 8 + ch_index) % len(theme.OVERLAY_PALETTE)
-            self.overlay_color_map[lbl] = to_plot_color(QColor(theme.OVERLAY_PALETTE[idx])).getRgb()[:3]
+            color = overlay_color(int(tile_num), ch_index, self._overlay_overrides, lbl)
+            self.overlay_color_map[lbl] = color.getRgb()[:3]
         return {lbl: self.overlay_color_map[lbl] for lbl in labels}
 
     @staticmethod
@@ -384,8 +381,8 @@ class TilingAnalysisDialog(AnalysisDialog):
 
     def _replace_tab_channel_ui(self, tab):
         """tab の scroll area の中身を tile ごとの channel 一覧にし、その上に全選択・全解除の button を置く。"""
-        # 削除済みの widget を参照しないよう、毎回 tab から探す
-        scroll_area = tab.findChild(QScrollArea)
+        # Channels group の scroll area（Split のグラフの scroll area とは別）
+        scroll_area = tab.channel_scroll
         if scroll_area is None or scroll_area.widget() is None or scroll_area.parent() is None:
             return
         if scroll_area.parent().layout() is None:
@@ -423,13 +420,7 @@ class TilingAnalysisDialog(AnalysisDialog):
     def _make_select_buttons(self, scroll_area: QScrollArea) -> QWidget:
         """全 tile の channel を全選択・全解除する button の行を、scroll area の上に置く。"""
         row = QWidget(scroll_area.parent())
-        row_layout = QHBoxLayout(row)
-        row_layout.setContentsMargins(0, 0, 0, 0)
-        for text, value in (("全選択", True), ("全解除", False)):
-            btn = QPushButton(text, row)
-            btn.setMaximumWidth(80)
-            btn.clicked.connect(lambda _checked=False, v=value: self._apply_all(v))
-            row_layout.addWidget(btn)
+        row.setLayout(make_select_buttons(self._apply_all))
 
         parent_layout = scroll_area.parent().layout()
         parent_layout.insertWidget(max(0, parent_layout.indexOf(scroll_area)), row)

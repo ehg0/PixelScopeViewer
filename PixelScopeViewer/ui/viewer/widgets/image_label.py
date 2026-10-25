@@ -5,6 +5,7 @@ from PySide6.QtGui import QColor, QImage, QPainter, QPen, QWheelEvent
 
 from PixelScopeViewer.core.constants import MAX_ZOOM_SCALE, MIN_ZOOM_SCALE, ZOOM_STEP
 from PixelScopeViewer.core.roi import hit_test_edge, move_rect, rect_from_points, resize_rect
+from PixelScopeViewer.ui.analysis.overlay import roi_color
 from PixelScopeViewer.ui.common import theme
 from PixelScopeViewer.ui.common.widgets import edge_cursor
 from PixelScopeViewer.ui.viewer.widgets.base_image_label import BaseImageLabel
@@ -73,12 +74,40 @@ class ImageLabel(BaseImageLabel):
 
     # --- event ---
     def paintEvent(self, event):
-        # 基底クラスで画像を描画した後、ROI を重ねて描画する
+        # 基底クラスで画像を描画した後、ROI 一覧、編集中 ROI の順に重ねて描画する
         super().paintEvent(event)
+        if not self.showing:
+            return
+        painter = QPainter(self)
+        self._paint_roi_list(painter)
         if self.roi_rect:
-            painter = QPainter(self)
             painter.setPen(QPen(QColor(theme.ROI_COLOR), 1))
+            painter.setBrush(Qt.NoBrush)
             painter.drawRect(self.roi_rect)
+
+    def _paint_roi_list(self, painter: QPainter):
+        """ROI 一覧の枠と名前を描く。解析対象は C0 のグラフの色の実線、対象外は灰色の破線にする。"""
+        state = self.viewer.state
+        font = painter.font()
+        font.setPointSize(9)
+        font.setBold(True)
+        painter.setFont(font)
+        for entry in state.rois:
+            rect = self._image_rect_to_widget(entry.rect)
+            if entry.enabled:
+                color = roi_color(entry.id, 0, state.roi_color_overrides)
+                pen = QPen(color, 1)
+            else:
+                color = QColor(theme.ROI_INACTIVE_COLOR)
+                pen = QPen(color, 1, Qt.DashLine)
+            painter.setPen(pen)
+            painter.setBrush(Qt.NoBrush)
+            painter.drawRect(rect)
+            # 名前は枠の左上の内側に、読みやすいよう背景を付けて描く
+            text_rect = painter.fontMetrics().boundingRect(entry.name).adjusted(-2, 0, 2, 0)
+            text_rect.moveTopLeft(rect.topLeft() + QPoint(1, 1))
+            painter.fillRect(text_rect, QColor(theme.ROI_LABEL_BACKGROUND))
+            painter.drawText(text_rect, Qt.AlignCenter, entry.name)
 
     def mousePressEvent(self, ev):
         if not self.showing:
@@ -97,6 +126,8 @@ class ImageLabel(BaseImageLabel):
                 self._drag_orig_img_rect = self.get_roi_in_image_coords()
             else:
                 self._drag_mode = "create"
+                # 新しい ROI は ROI 一覧の選択中の ROI に反映しない
+                self.viewer.roi_list.unlink()
                 # クリック直後から 1 pixel の ROI を表示する
                 if img_pt is not None:
                     self.roi_rect = QRect(self._image_to_widget_x(img_pt[0]), self._image_to_widget_y(img_pt[1]), 1, 1)

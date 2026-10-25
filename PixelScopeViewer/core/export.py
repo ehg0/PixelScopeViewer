@@ -76,6 +76,30 @@ def profile_csv(profile_data: dict[str, tuple[np.ndarray, np.ndarray]], orientat
     return series_to_csv(csv_data)
 
 
+def grouped_profile_csv(profile_data: dict[str, tuple[np.ndarray, np.ndarray]], orientation: str) -> str:
+    """長さの異なる profile を group ごとの x 列とともに並べた CSV を作成する。
+
+    label は "{group} {channel}"（"R0 C0" など）の形式。列は "R0 x address, R0 C0, R1 x address, ..." の順にし、
+    短い列は空欄で埋める。
+    """
+    axis = "x address" if orientation == "h" else "y address"
+    columns: list[tuple[str, list[str]]] = []
+    seen_groups = set()
+    for label, (xs, ys) in profile_data.items():
+        group = label.split(" ", 1)[0]
+        if group not in seen_groups:
+            seen_groups.add(group)
+            columns.append((f"{group} {axis}", np.asarray(xs).flatten().astype(str).tolist()))
+        columns.append((label, np.asarray(ys).flatten().astype(str).tolist()))
+    if not columns:
+        return ""
+    n_rows = max(len(values) for _, values in columns)
+    lines = [",".join(name for name, _ in columns)]
+    for i in range(n_rows):
+        lines.append(",".join(values[i] if i < len(values) else "" for _, values in columns))
+    return "\n".join(lines)
+
+
 def metadata_csv(rows: list[tuple[str, str]]) -> str:
     """metadata の (key, value) を CSV にする。"""
     return "\n".join(["Key,Value", *(f"{key},{value}" for key, value in rows)])
@@ -93,10 +117,37 @@ def roi_stats_csv(
         rect: 画像座標の ROI (x, y, w, h)。
         profile: (orientation, method)。指定した場合は ROI の profile の統計量にする。
     """
-    x, y, w, h = rect
-    profile_cols = "orientation,method," if profile else ""
-    text = f"path,ch,x_sta,y_sta,width,hight,{profile_cols}mean,std,median,min,max,fano\n"
+    return _roi_stats_header(profile) + "".join(_roi_stats_lines(images, rect, profile))
 
+
+def multi_roi_stats_csv(
+    images: list[tuple[str, np.ndarray]],
+    rois: list[tuple[str, tuple[int, int, int, int]]],
+    profile: tuple[str, str] | None = None,
+) -> str:
+    """ROI ごと・画像ごと・channel ごとに統計量の CSV を作成する。先頭の roi 列に ROI の名前を入れる。
+
+    Args:
+        images: (path, 配列) のリスト。ROI が画像の範囲外にある画像は飛ばす。
+        rois: (名前, 画像座標の ROI (x, y, w, h)) のリスト。
+        profile: (orientation, method)。指定した場合は ROI の profile の統計量にする。
+    """
+    text = "roi," + _roi_stats_header(profile)
+    for name, rect in rois:
+        text += "".join(f"{name},{line}" for line in _roi_stats_lines(images, rect, profile))
+    return text
+
+
+def _roi_stats_header(profile: tuple[str, str] | None) -> str:
+    profile_cols = "orientation,method," if profile else ""
+    return f"path,ch,x_sta,y_sta,width,hight,{profile_cols}mean,std,median,min,max,fano\n"
+
+
+def _roi_stats_lines(
+    images: list[tuple[str, np.ndarray]], rect: tuple[int, int, int, int], profile: tuple[str, str] | None
+) -> list[str]:
+    x, y, w, h = rect
+    lines = []
     for path, arr in images:
         height, width = arr.shape[:2]
         if x > width or (x + w) > width or y > height or (y + h) > height:
@@ -111,5 +162,5 @@ def roi_stats_csv(
                 data = compute_profile_1d(data, *profile)
                 prefix += f",{profile[0]},{profile[1]}"
             mean, std, median, min_, max_, fano = calc_stats(data)
-            text += f"{prefix},{mean},{std},{median},{min_},{max_},{fano}\n"
-    return text
+            lines.append(f"{prefix},{mean},{std},{median},{min_},{max_},{fano}\n")
+    return lines

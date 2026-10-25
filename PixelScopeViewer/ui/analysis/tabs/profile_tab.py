@@ -7,6 +7,7 @@ from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QComboBox, QHBoxLayout, QPushButton, QStackedWidget, QVBoxLayout, QWidget
 
 from PixelScopeViewer.ui.analysis.tabs.common import (
+    SPLIT_TITLE_SIZE,
     SplitPlotArea,
     StatsTable,
     create_channel_group,
@@ -76,7 +77,7 @@ class ProfileTab(QWidget):
         right.setContentsMargins(10, 10, 10, 10)
         right.setSpacing(8)
 
-        self.roi_group, self.roi_mode_combo, self.link_axes_check = create_roi_group()
+        self.roi_group, self.roi_mode_combo, self.link_axes_check, self.split_columns_combo = create_roi_group()
         right.addWidget(self.roi_group)
 
         channels_group, self.channel_list, self.roi_channel_panel = create_channel_group(self._on_checkbox_changed)
@@ -151,6 +152,7 @@ class ProfileTab(QWidget):
         x_mode: str,
         color_by_label: dict[str, tuple[int, int, int]],
         link_axes: bool,
+        n_cols: int,
     ):
         """登録 ROI ごとの profile を grid に並べて描画し、統計量の table を更新する。
 
@@ -160,12 +162,13 @@ class ProfileTab(QWidget):
             x_mode: 'relative' または 'absolute'。
             color_by_label: label から RGB への dict。
             link_axes: 全グラフの軸を連動させるか。
+            n_cols: grid の列数。
         """
-        items = self.split_area.plot_items([g[0] for g in groups])
+        items = self.split_area.plot_items([g[0] for g in groups], n_cols)
         for item, (_, title, title_color, series) in zip(items, groups, strict=True):
             item.clear()
             _plot_curves(item, series, color_by_label)
-            item.setTitle(title, color=title_color, size="11pt")
+            item.setTitle(title, color=title_color, size=SPLIT_TITLE_SIZE)
             item.setLabel("bottom", self._bottom_label(x_mode))
         self.split_area.set_linked(link_axes, [s for g in groups for s in g[3].values()])
         self.stats_table.set_rows(stats_rows, color_by_label)

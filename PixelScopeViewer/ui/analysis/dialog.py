@@ -46,7 +46,7 @@ from PixelScopeViewer.ui.analysis.plotting import apply_plot_settings as pg_appl
 from PixelScopeViewer.ui.analysis.plotting import connect_plot_controls as pg_connect_plot_controls
 from PixelScopeViewer.ui.analysis.plotting import save_viewbox_state as pg_save_viewbox_state
 from PixelScopeViewer.ui.analysis.state import AnalysisSettings
-from PixelScopeViewer.ui.analysis.tabs.common import ROI_MODES
+from PixelScopeViewer.ui.analysis.tabs.common import ROI_MODES, ROI_SPLIT_COLUMN_CHOICES
 from PixelScopeViewer.ui.analysis.tabs.histogram_tab import HistogramTab
 from PixelScopeViewer.ui.analysis.tabs.metadata_tab import MetadataTab
 from PixelScopeViewer.ui.analysis.tabs.profile_tab import ProfileTab
@@ -79,6 +79,7 @@ class AnalysisDialog(ToolDialog):
 
     window_key = "analysis"
     remember_geometry = True
+    maximizable = True
 
     def __init__(
         self,
@@ -193,6 +194,7 @@ class AnalysisDialog(ToolDialog):
         for tab in (self.profile_tab, self.hist_tab):
             tab.roi_mode_combo.currentIndexChanged.connect(self._on_roi_mode_changed)
             tab.link_axes_check.toggled.connect(self._on_link_axes_toggled)
+            tab.split_columns_combo.currentIndexChanged.connect(self._on_split_columns_changed)
             panel = tab.roi_channel_panel
             panel.group_checks_changed.connect(self._on_roi_checks_changed)
             panel.group_color_clicked.connect(self._on_roi_color_clicked)
@@ -434,11 +436,13 @@ class AnalysisDialog(ToolDialog):
         # Split: grid・log は編集中ROI 用の plot の設定を各グラフに揃えるため、先に plot 設定を適用する
         self._apply_plot_settings()
         link = self.settings.roi_link_axes
+        n_cols = self.settings.roi_split_columns
         self.hist_tab.update_split_plots(
             self._split_groups(targets, self.last_hist_data, overrides),
             hist_rows,
             self.channel_color_map,
             link,
+            n_cols,
             **hist_kwargs,
         )
         self.profile_tab.update_split_plots(
@@ -447,6 +451,7 @@ class AnalysisDialog(ToolDialog):
             self.settings.profile_x_mode,
             self.channel_color_map,
             link,
+            n_cols,
         )
 
     def _multi_hist_series(self, targets) -> tuple[dict, list[dict]]:
@@ -525,6 +530,11 @@ class AnalysisDialog(ToolDialog):
             with QSignalBlocker(tab.link_axes_check):
                 tab.link_axes_check.setChecked(self.settings.roi_link_axes)
             tab.link_axes_check.setEnabled(mode == "split")
+            with QSignalBlocker(tab.split_columns_combo):
+                tab.split_columns_combo.setCurrentIndex(
+                    tab.split_columns_combo.findData(self.settings.roi_split_columns)
+                )
+            tab.split_columns_combo.setEnabled(mode == "split")
             tab.set_roi_view(mode)
         self.update_window_title()
 
@@ -537,6 +547,10 @@ class AnalysisDialog(ToolDialog):
 
     def _on_link_axes_toggled(self, checked: bool):
         self.settings.roi_link_axes = bool(checked)
+        self.update_contents()
+
+    def _on_split_columns_changed(self, index: int):
+        self.settings.roi_split_columns = ROI_SPLIT_COLUMN_CHOICES[index]
         self.update_contents()
 
     def _on_roi_checks_changed(self, roi_id: int, checks: list[bool]):

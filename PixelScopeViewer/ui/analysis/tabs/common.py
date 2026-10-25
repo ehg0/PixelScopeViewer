@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QGroupBox,
+    QHBoxLayout,
     QHeaderView,
     QPushButton,
     QScrollArea,
@@ -25,8 +26,10 @@ from PixelScopeViewer.ui.common import theme
 
 STATS_HEADERS = ["ch", "Mean", "Std", "Median", "Min", "Max", "Fano"]
 
-
 ROI_MODES = (("active", "編集中ROI"), ("overlay", "登録ROI - Overlay"), ("split", "登録ROI - Split"))
+ROI_SPLIT_COLUMN_CHOICES = (1, 2, 3, 4, 5, 6)
+# Split のグラフの title。グラフが小さくなるため、編集中ROI・Overlay（12pt）より小さくする
+SPLIT_TITLE_SIZE = "9pt"
 
 
 def _style_plot_item(plot_item: pg.PlotItem, left_label: str, bottom_label: str):
@@ -63,7 +66,7 @@ def create_plot_widget(
 
 
 class SplitPlotArea(pg.GraphicsLayoutWidget):
-    """登録 ROI ごとの PlotItem を 2 列の grid に並べる。
+    """登録 ROI ごとの PlotItem を grid に並べる。
 
     PlotItem は ROI の id ごとに使い回し、ユーザーが設定した表示範囲を保つ。
     grid・log は source（編集中ROI・Overlay 用の PlotItem）の menu の設定に揃え、
@@ -76,7 +79,6 @@ class SplitPlotArea(pg.GraphicsLayoutWidget):
         on_status: マウス位置の値の文字列を受け取る callback。
     """
 
-    N_COLS = 2
     _CTRL_CHECKS = ("xGridCheck", "yGridCheck", "logXCheck", "logYCheck")
 
     def __init__(self, source: pg.PlotItem, left_label: str, bottom_label: str, on_status: Callable[[str], None]):
@@ -86,13 +88,17 @@ class SplitPlotArea(pg.GraphicsLayoutWidget):
         self._labels = (left_label, bottom_label)
         self._items: dict[int, pg.PlotItem] = {}
         self._order: list[int] = []
+        self._n_cols = 0
         # None は軸の連動を設定し直す必要がある状態
         self._linked: bool | None = None
         self.scene().sigMouseMoved.connect(lambda pos: on_status(self._mouse_text(pos)))
 
-    def plot_items(self, ids: list[int]) -> list[pg.PlotItem]:
-        """ids の順に PlotItem を返す。ROI の増減があったときだけ PlotItem を追加・削除して並べ直す。"""
-        if ids != self._order:
+    def plot_items(self, ids: list[int], n_cols: int) -> list[pg.PlotItem]:
+        """ids の順に PlotItem を返す。
+
+        ROI の増減か列数の変更があったときだけ、PlotItem を追加・削除して n_cols 列に並べ直す。
+        """
+        if ids != self._order or n_cols != self._n_cols:
             for item in list(self.ci.items):
                 self.ci.removeItem(item)
             for roi_id in [r for r in self._items if r not in ids]:
@@ -100,8 +106,9 @@ class SplitPlotArea(pg.GraphicsLayoutWidget):
             for n, roi_id in enumerate(ids):
                 if roi_id not in self._items:
                     self._items[roi_id] = self._make_item()
-                self.ci.addItem(self._items[roi_id], row=n // self.N_COLS, col=n % self.N_COLS)
+                self.ci.addItem(self._items[roi_id], row=n // n_cols, col=n % n_cols)
             self._order = list(ids)
+            self._n_cols = n_cols
             self._linked = None
         self.sync_controls()
         return [self._items[r] for r in ids]
@@ -212,21 +219,35 @@ def make_group_box(title: str) -> tuple[QGroupBox, QVBoxLayout]:
     return group, layout
 
 
-def create_roi_group() -> tuple[QGroupBox, QComboBox, QCheckBox]:
-    """解析対象の ROI（編集中ROI / 登録ROI の Overlay・Split）の combo と軸の連動の checkbox を持つ group を作る。"""
+def create_roi_group() -> tuple[QGroupBox, QComboBox, QCheckBox, QComboBox]:
+    """解析対象の ROI を選ぶ group を作る。
+
+    Returns:
+        (group, ROI の表示方法（編集中ROI / 登録ROI の Overlay・Split）の combo, 軸の連動の checkbox,
+        Split の列数の combo)。
+    """
     group, layout = make_group_box("ROI")
     combo = QComboBox()
     for mode, text in ROI_MODES:
         combo.addItem(text, mode)
-    combo.setToolTip("登録ROIはメイン画面の Info > ROI Area の ROI一覧で ☑ を付けた ROI です")
+    combo.setToolTip("登録ROIはメイン画面の Info > ROI List で ☑ を付けた ROI です")
     combo.setMinimumWidth(100)
     link_check = QCheckBox("軸を連動")
     link_check.setToolTip(
         "Split 表示で、全グラフの表示範囲を揃えます。OFF にすると各グラフの右クリックで個別に設定できます"
     )
+    columns_combo = QComboBox()
+    for n in ROI_SPLIT_COLUMN_CHOICES:
+        columns_combo.addItem(f"{n}列", n)
+    columns_combo.setToolTip("Split 表示で横に並べるグラフの数")
+    # dialog の高さを増やさないよう、軸の連動と同じ行に置く
+    split_row = QHBoxLayout()
+    split_row.addWidget(link_check)
+    split_row.addStretch()
+    split_row.addWidget(columns_combo)
     layout.addWidget(combo)
-    layout.addWidget(link_check)
-    return group, combo, link_check
+    layout.addLayout(split_row)
+    return group, combo, link_check, columns_combo
 
 
 def create_channel_group(

@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 )
 
 from PixelScopeViewer.ui.analysis.tabs.common import (
+    SPLIT_TITLE_SIZE,
     SplitPlotArea,
     StatsTable,
     create_channel_group,
@@ -114,7 +115,7 @@ class HistogramTab(QWidget):
         right.setContentsMargins(10, 10, 10, 10)
         right.setSpacing(8)
 
-        self.roi_group, self.roi_mode_combo, self.link_axes_check = create_roi_group()
+        self.roi_group, self.roi_mode_combo, self.link_axes_check, self.split_columns_combo = create_roi_group()
         right.addWidget(self.roi_group)
 
         channels_group, self.channel_list, self.roi_channel_panel = create_channel_group(self._on_checkbox_changed)
@@ -210,6 +211,7 @@ class HistogramTab(QWidget):
         stats_rows: list[dict],
         color_by_label: dict[str, tuple[int, int, int]],
         link_axes: bool,
+        n_cols: int,
         apply_log: bool = False,
         is_integer_type: bool = False,
         chart_kind: str = "Line",
@@ -222,17 +224,18 @@ class HistogramTab(QWidget):
             stats_rows: 全 ROI の統計量の行。
             color_by_label: label から RGB への dict。
             link_axes: 全グラフの軸を連動させるか。
+            n_cols: grid の列数。
             apply_log: Y 軸を log 表示するか。
             is_integer_type: 整数 dtype か。
             chart_kind: "Line" または "Bar"。
             bar_alpha: Bar 表示時の alpha。
         """
-        items = self.split_area.plot_items([g[0] for g in groups])
+        items = self.split_area.plot_items([g[0] for g in groups], n_cols)
         plotted = []
         for item, (_, title, title_color, series) in zip(items, groups, strict=True):
             item.clear()
             plotted += self._plot_series(item, series, color_by_label, apply_log, chart_kind, bar_alpha)
-            item.setTitle(title, color=title_color, size="11pt")
+            item.setTitle(title, color=title_color, size=SPLIT_TITLE_SIZE)
             if is_integer_type:
                 item.getAxis("bottom").setStyle(tickTextOffset=10)
         self.split_area.set_linked(link_axes, plotted)

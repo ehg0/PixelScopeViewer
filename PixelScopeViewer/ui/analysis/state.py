@@ -22,6 +22,7 @@ class AnalysisSettings:
     channel_checks: list[bool] = field(default_factory=list)
     roi_mode: str = defaults.ANALYSIS_ROI_MODE  # "active", "overlay", "split"
     roi_link_axes: bool = defaults.ANALYSIS_ROI_LINK_AXES
+    roi_split_columns: int = defaults.ANALYSIS_ROI_SPLIT_COLUMNS
     # 登録 ROI の id ごとの channel の表示 ON/OFF
     roi_channel_visibility: dict[int, list[bool]] = field(default_factory=dict)
 

@@ -7,10 +7,8 @@ import pyqtgraph as pg
 from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import (
     QColorDialog,
-    QHBoxLayout,
     QHeaderView,
     QLabel,
-    QPushButton,
     QScrollArea,
     QTableWidgetItem,
     QWidget,
@@ -30,7 +28,7 @@ from PixelScopeViewer.core.statistics import (
 )
 from PixelScopeViewer.ui.analysis.dialog import AnalysisDialog
 from PixelScopeViewer.ui.analysis.overlay import overlay_color
-from PixelScopeViewer.ui.analysis.tabs.channel_list import SELECT_BUTTON_WIDTH, ChannelListWidget
+from PixelScopeViewer.ui.analysis.tabs.channel_list import ChannelListWidget, make_select_buttons
 from PixelScopeViewer.ui.analysis.tabs.histogram_tab import make_hist_bar_item, plot_log_mode
 from PixelScopeViewer.ui.common import theme
 
@@ -422,13 +420,7 @@ class TilingAnalysisDialog(AnalysisDialog):
     def _make_select_buttons(self, scroll_area: QScrollArea) -> QWidget:
         """全 tile の channel を全選択・全解除する button の行を、scroll area の上に置く。"""
         row = QWidget(scroll_area.parent())
-        row_layout = QHBoxLayout(row)
-        row_layout.setContentsMargins(0, 0, 0, 0)
-        for text, value in (("全選択", True), ("全解除", False)):
-            btn = QPushButton(text, row)
-            btn.setMaximumWidth(SELECT_BUTTON_WIDTH)
-            btn.clicked.connect(lambda _checked=False, v=value: self._apply_all(v))
-            row_layout.addWidget(btn)
+        row.setLayout(make_select_buttons(self._apply_all))
 
         parent_layout = scroll_area.parent().layout()
         parent_layout.insertWidget(max(0, parent_layout.indexOf(scroll_area)), row)

@@ -1,13 +1,35 @@
 """解析 dialog の channel ごとの表示 ON/OFF と色の一覧。"""
 
+from collections.abc import Callable
+
 from PySide6.QtCore import Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QCheckBox, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from PixelScopeViewer.ui.common import defaults, theme
 
-# 全選択・全解除の button の幅（Channels group に 2 つ並べて収まる幅）
-SELECT_BUTTON_WIDTH = 60
+# 全選択・全解除の button の幅。Channels group の scroll area（幅 118 px 程度）に 2 つ並べて収まる幅にする
+SELECT_BUTTON_WIDTH = 46
+
+
+def make_select_buttons(on_select: Callable[[bool], None]) -> QHBoxLayout:
+    """全選択（True）・全解除（False）の button を詰めて並べた layout を返す。
+
+    狭い Channels group でも見切れないよう、font を 1pt 小さくし、button の間を詰める。
+    """
+    row = QHBoxLayout()
+    row.setContentsMargins(0, 0, 0, 0)
+    row.setSpacing(2)
+    for text, value in (("全選択", True), ("全解除", False)):
+        btn = QPushButton(text)
+        font = btn.font()
+        font.setPointSizeF(font.pointSizeF() - 1)
+        btn.setFont(font)
+        btn.setMaximumWidth(SELECT_BUTTON_WIDTH)
+        btn.clicked.connect(lambda _checked=False, v=value: on_select(v))
+        row.addWidget(btn)
+    row.addStretch()
+    return row
 
 
 class ChannelListWidget(QWidget):
@@ -110,14 +132,7 @@ class RoiChannelPanel(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(3)
-        buttons = QHBoxLayout()
-        for text, value in (("全選択", True), ("全解除", False)):
-            btn = QPushButton(text)
-            btn.setMaximumWidth(SELECT_BUTTON_WIDTH)
-            btn.clicked.connect(lambda _checked=False, v=value: self.all_checks_requested.emit(v))
-            buttons.addWidget(btn)
-        buttons.addStretch()
-        layout.addLayout(buttons)
+        layout.addLayout(make_select_buttons(self.all_checks_requested.emit))
         self._groups_layout = QVBoxLayout()
         self._groups_layout.setSpacing(3)
         layout.addLayout(self._groups_layout)

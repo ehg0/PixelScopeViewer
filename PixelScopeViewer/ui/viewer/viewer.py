@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QMainWindow,
     QMessageBox,
+    QPushButton,
     QScrollArea,
     QTabWidget,
     QVBoxLayout,
@@ -114,13 +115,19 @@ class ImageViewer(QMainWindow):
         display_info_widget = DisplayInfoWidget(self)
         self.info_tabs.addTab(display_info_widget, "Display Area")
 
-        # 編集中 ROI の座標の下に ROI 一覧を並べる
+        # 編集中 ROI の座標の下に、ROI 一覧への登録 button を置く
         roi_area = QWidget()
         roi_area_layout = QVBoxLayout(roi_area)
         roi_area_layout.setContentsMargins(0, 0, 0, 0)
         roi_area_layout.addWidget(ROIInfoWidget(self))
-        roi_area_layout.addWidget(RoiListWidget(self), 1)
+        add_roi_btn = QPushButton("ROI一覧に登録 (R)")
+        add_roi_btn.setToolTip("編集中ROIを ROI List tab の一覧の末尾に登録")
+        add_roi_btn.clicked.connect(lambda: self.roi_list.add_current())
+        roi_area_layout.addWidget(add_roi_btn)
+        roi_area_layout.addStretch(1)
         self.info_tabs.addTab(roi_area, "ROI Area")
+
+        self.info_tabs.addTab(RoiListWidget(self), "ROI List")
 
         self.info_dock.setWidget(self.info_tabs)
         self.addDockWidget(Qt.LeftDockWidgetArea, self.info_dock)

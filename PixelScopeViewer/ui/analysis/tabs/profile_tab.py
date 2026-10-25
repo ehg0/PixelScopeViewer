@@ -131,7 +131,7 @@ class ProfileTab(QWidget):
             x_mode: 'relative' または 'absolute'。
             method: 'mean', 'std', 'max', 'min', 'p2p', 'median' のいずれか。
             color_by_label: label（C{index} / I）から RGB への dict。
-            title_prefix: title の先頭（Overlay では "Profile Overlay (R1,R2)" など）。
+            title_prefix: title の先頭（Overlay では "Profile Overlay (R0,R1)" など）。
         """
         self.prof_widget.clear()
         _plot_curves(self.prof_widget, series, color_by_label)

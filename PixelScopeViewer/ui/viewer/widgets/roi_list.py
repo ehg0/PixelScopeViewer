@@ -4,9 +4,8 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView,
-    QHBoxLayout,
+    QGridLayout,
     QHeaderView,
-    QLabel,
     QMessageBox,
     QPushButton,
     QTableWidget,
@@ -21,7 +20,10 @@ _HEADERS = ["", "Name", "X", "Y", "W", "H"]
 
 
 class RoiListWidget(QWidget):
-    """ROI 一覧を表示し、登録・削除・保存・読み込み・☑・選択（編集中 ROI との連動）を viewer.roi_list に伝える。"""
+    """ROI 一覧を表示し、削除・保存・読み込み・☑・選択（編集中 ROI との連動）を viewer.roi_list に伝える。
+
+    登録は ROI Area tab の button と R キーで行う。
+    """
 
     def __init__(self, viewer):
         super().__init__()
@@ -30,28 +32,23 @@ class RoiListWidget(QWidget):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 4, 0, 0)
-        title = QLabel("ROI一覧")
-        title.setStyleSheet("font-weight: bold;")
-        layout.addWidget(title)
 
-        self.add_btn = QPushButton("登録(R)")
-        self.add_btn.setToolTip("編集中ROIを一覧の末尾に登録")
-        self.add_btn.clicked.connect(lambda: viewer.roi_list.add_current())
         self.remove_btn = QPushButton("削除")
         self.remove_btn.setToolTip("選択中のROIを一覧から削除")
         self.remove_btn.clicked.connect(self._remove_selected)
         self.clear_btn = QPushButton("全削除")
         self.clear_btn.clicked.connect(self._clear)
         self.save_btn = QPushButton("保存...")
+        self.save_btn.setToolTip("ROI一覧を CSV ファイルに保存")
         self.save_btn.clicked.connect(lambda: viewer.roi_list.save_dialog())
         self.load_btn = QPushButton("読込...")
+        self.load_btn.setToolTip("CSV ファイルの ROI一覧で今の一覧を置き換える")
         self.load_btn.clicked.connect(lambda: viewer.roi_list.load_dialog())
-        for buttons in ((self.add_btn, self.remove_btn, self.clear_btn), (self.save_btn, self.load_btn)):
-            row = QHBoxLayout()
-            for b in buttons:
-                row.addWidget(b)
-            row.addStretch()
-            layout.addLayout(row)
+        # 1 行に並べると Info dock の幅が広がるため、2 行に分ける
+        buttons = QGridLayout()
+        for i, b in enumerate((self.remove_btn, self.clear_btn, self.save_btn, self.load_btn)):
+            buttons.addWidget(b, i // 2, i % 2)
+        layout.addLayout(buttons)
 
         self.table = QTableWidget(0, len(_HEADERS))
         self.table.setHorizontalHeaderLabels(_HEADERS)
@@ -61,9 +58,12 @@ class RoiListWidget(QWidget):
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.table.setToolTip("選択した ROI は編集中ROIと連動します。☑ は解析ビューの「登録ROI」表示の対象です")
+        # ☑・Name は内容に合わせ、X・Y・W・H は残りの幅を等分して水平 scroll bar を出さない
+        self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         header = self.table.horizontalHeader()
-        header.setSectionResizeMode(QHeaderView.ResizeToContents)
-        header.setStretchLastSection(True)
+        header.setStretchLastSection(False)
+        for col in range(len(_HEADERS)):
+            header.setSectionResizeMode(col, QHeaderView.ResizeToContents if col < 2 else QHeaderView.Stretch)
         self.table.itemChanged.connect(self._on_item_changed)
         self.table.itemSelectionChanged.connect(self._on_selection_changed)
         layout.addWidget(self.table, 1)

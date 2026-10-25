@@ -30,7 +30,7 @@ from PixelScopeViewer.core.statistics import (
 )
 from PixelScopeViewer.ui.analysis.dialog import AnalysisDialog
 from PixelScopeViewer.ui.analysis.overlay import overlay_color
-from PixelScopeViewer.ui.analysis.tabs.channel_list import ChannelListWidget
+from PixelScopeViewer.ui.analysis.tabs.channel_list import SELECT_BUTTON_WIDTH, ChannelListWidget
 from PixelScopeViewer.ui.analysis.tabs.histogram_tab import make_hist_bar_item, plot_log_mode
 from PixelScopeViewer.ui.common import theme
 
@@ -426,7 +426,7 @@ class TilingAnalysisDialog(AnalysisDialog):
         row_layout.setContentsMargins(0, 0, 0, 0)
         for text, value in (("全選択", True), ("全解除", False)):
             btn = QPushButton(text, row)
-            btn.setMaximumWidth(80)
+            btn.setMaximumWidth(SELECT_BUTTON_WIDTH)
             btn.clicked.connect(lambda _checked=False, v=value: self._apply_all(v))
             row_layout.addWidget(btn)
 

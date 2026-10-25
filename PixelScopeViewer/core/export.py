@@ -79,7 +79,7 @@ def profile_csv(profile_data: dict[str, tuple[np.ndarray, np.ndarray]], orientat
 def grouped_profile_csv(profile_data: dict[str, tuple[np.ndarray, np.ndarray]], orientation: str) -> str:
     """長さの異なる profile を group ごとの x 列とともに並べた CSV を作成する。
 
-    label は "{group} {channel}"（"R1 C0" など）の形式。列は "R1 x address, R1 C0, R2 x address, ..." の順にし、
+    label は "{group} {channel}"（"R0 C0" など）の形式。列は "R0 x address, R0 C0, R1 x address, ..." の順にし、
     短い列は空欄で埋める。
     """
     axis = "x address" if orientation == "h" else "y address"

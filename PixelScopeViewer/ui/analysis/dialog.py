@@ -196,7 +196,7 @@ class AnalysisDialog(ToolDialog):
             panel = tab.roi_channel_panel
             panel.group_checks_changed.connect(self._on_roi_checks_changed)
             panel.group_color_clicked.connect(self._on_roi_color_clicked)
-            panel.group_reset_requested.connect(self._on_roi_color_reset)
+            panel.reset_requested.connect(lambda: self.viewer.roi_list.reset_color_overrides())
             panel.all_checks_requested.connect(self._on_roi_all_checks)
 
     def update_window_title(self, *args):
@@ -563,9 +563,6 @@ class AnalysisDialog(ToolDialog):
         color = QColorDialog.getColor(current, self, f"{label} の色を選択")
         if color.isValid():
             self.viewer.roi_list.set_color_override(label, color.name())
-
-    def _on_roi_color_reset(self, roi_id: int):
-        self.viewer.roi_list.reset_color_overrides(roi_id)
 
     def _update_metadata(self):
         """画像ファイルの metadata を metadata tab に表示する。"""

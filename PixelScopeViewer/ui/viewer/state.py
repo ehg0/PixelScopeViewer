@@ -41,10 +41,10 @@ class ViewerState:
     roi: QRect | None = None
     # ROI 一覧。画像を切り替えても保持する
     rois: list[RoiEntry] = field(default_factory=list)
-    next_roi_id: int = 1
+    next_roi_id: int = 0
     # 編集中 ROI の変更を反映する ROI 一覧の id（一覧で選択中の行）
     linked_roi_id: int | None = None
-    # 解析 dialog で個別に設定した ROI のグラフの色（"R1 C0" などから hex 文字列）。画像上の枠の色にも使う
+    # 解析 dialog で個別に設定した ROI のグラフの色（"R0 C0" などから hex 文字列）。画像上の枠の色にも使う
     roi_color_overrides: dict[str, str] = field(default_factory=dict)
     brightness: BrightnessParams = field(default_factory=lambda: BrightnessParams.for_dtype("uint8"))
     # 画像を切り替えても dtype（float/uint8/uint16）ごとに直前の設定を保つ

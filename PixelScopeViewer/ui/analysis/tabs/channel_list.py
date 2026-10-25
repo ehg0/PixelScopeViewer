@@ -6,6 +6,9 @@ from PySide6.QtWidgets import QCheckBox, QHBoxLayout, QLabel, QPushButton, QVBox
 
 from PixelScopeViewer.ui.common import defaults, theme
 
+# 全選択・全解除の button の幅（Channels group に 2 つ並べて収まる幅）
+SELECT_BUTTON_WIDTH = 60
+
 
 class ChannelListWidget(QWidget):
     """`[checkbox] label [色]` の行を並べ、表示 ON/OFF と色ボタンのクリックを signal で通知する。
@@ -91,14 +94,15 @@ class ChannelListWidget(QWidget):
 
 
 class RoiChannelPanel(QWidget):
-    """登録 ROI ごとの channel の一覧。全選択・全解除の button の下に、R{id} の見出しと ChannelListWidget を並べる。
+    """登録 ROI ごとの channel の一覧。
 
+    全選択・全解除の button の下に R{id} の見出しと ChannelListWidget を並べ、最後に全 ROI 共通の「色を戻す」を置く。
     ROI の組み合わせと channel 数が変わらない限り、ChannelListWidget を使い回す。
     """
 
     group_checks_changed = Signal(int, list)  # ROI の id, 表示 ON/OFF
     group_color_clicked = Signal(int, int)  # ROI の id, channel の index
-    group_reset_requested = Signal(int)  # ROI の id
+    reset_requested = Signal()  # 全 ROI の色を戻す
     all_checks_requested = Signal(bool)  # 全選択は True、全解除は False
 
     def __init__(self, parent=None):
@@ -109,7 +113,7 @@ class RoiChannelPanel(QWidget):
         buttons = QHBoxLayout()
         for text, value in (("全選択", True), ("全解除", False)):
             btn = QPushButton(text)
-            btn.setMaximumWidth(80)
+            btn.setMaximumWidth(SELECT_BUTTON_WIDTH)
             btn.clicked.connect(lambda _checked=False, v=value: self.all_checks_requested.emit(v))
             buttons.addWidget(btn)
         buttons.addStretch()
@@ -117,6 +121,11 @@ class RoiChannelPanel(QWidget):
         self._groups_layout = QVBoxLayout()
         self._groups_layout.setSpacing(3)
         layout.addLayout(self._groups_layout)
+        self.reset_button = QPushButton("色を戻す")
+        self.reset_button.setMaximumWidth(80)
+        self.reset_button.setToolTip("全ROIの色をパレットの色に戻す")
+        self.reset_button.clicked.connect(self.reset_requested)
+        layout.addWidget(self.reset_button)
         self._lists: dict[int, ChannelListWidget] = {}
         self._structure: list[tuple[int, int]] = []
 
@@ -144,7 +153,8 @@ class RoiChannelPanel(QWidget):
             channel_list = ChannelListWidget(max_rows=n)
             channel_list.checks_changed.connect(lambda checks, r=roi_id: self.group_checks_changed.emit(r, checks))
             channel_list.color_clicked.connect(lambda c, r=roi_id: self.group_color_clicked.emit(r, c))
-            channel_list.reset_requested.connect(lambda r=roi_id: self.group_reset_requested.emit(r))
+            # 色を戻す button は全 ROI 共通の 1 つにする
+            channel_list.reset_button.hide()
             self._groups_layout.addWidget(channel_list)
             self._lists[roi_id] = channel_list
         self._structure = structure

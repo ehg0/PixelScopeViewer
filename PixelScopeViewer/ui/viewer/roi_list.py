@@ -1,4 +1,4 @@
-"""ImageViewer の ROI 一覧の管理（登録・削除・連動・JSON の保存と読み込み）。"""
+"""ImageViewer の ROI 一覧の管理（登録・削除・連動・CSV の保存と読み込み）。"""
 
 from PySide6.QtCore import QRect
 from PySide6.QtWidgets import QFileDialog, QMessageBox
@@ -6,7 +6,7 @@ from PySide6.QtWidgets import QFileDialog, QMessageBox
 from PixelScopeViewer.core.roi_io import load_rois, save_rois
 from PixelScopeViewer.ui.viewer.state import RoiEntry
 
-_FILE_FILTER = "ROI list (*.json);;All Files (*.*)"
+_FILE_FILTER = "ROI list (*.csv);;All Files (*.*)"
 
 
 class RoiListManager:
@@ -58,7 +58,7 @@ class RoiListManager:
     def clear(self):
         """一覧を空にし、名前の連番と色の個別設定も初期化する。"""
         self._state.rois.clear()
-        self._state.next_roi_id = 1
+        self._state.next_roi_id = 0
         self._state.linked_roi_id = None
         self._state.roi_color_overrides.clear()
         self._changed()
@@ -78,9 +78,10 @@ class RoiListManager:
             self._state.roi_color_overrides[label] = color
         self._changed()
 
-    def reset_color_overrides(self, roi_id: int):
-        """ROI の全 channel の色の個別設定を消し、パレットの色に戻す。"""
-        if self._drop_color_overrides(f"R{roi_id}"):
+    def reset_color_overrides(self):
+        """全 ROI の色の個別設定を消し、パレットの色に戻す。"""
+        if self._state.roi_color_overrides:
+            self._state.roi_color_overrides.clear()
             self._changed()
 
     def _drop_color_overrides(self, name: str) -> bool:
@@ -117,11 +118,11 @@ class RoiListManager:
 
     # --- ファイル ---
     def save_dialog(self):
-        """ファイル選択 dialog で選んだ JSON ファイルに ROI 一覧を保存する。"""
+        """ファイル選択 dialog で選んだ CSV ファイルに ROI 一覧を保存する。色の個別設定は保存しない。"""
         if not self._state.rois:
             QMessageBox.information(self.viewer, "ROI一覧", "保存する ROI がありません。")
             return
-        path, _ = QFileDialog.getSaveFileName(self.viewer, "ROI一覧を保存", "rois.json", _FILE_FILTER)
+        path, _ = QFileDialog.getSaveFileName(self.viewer, "ROI一覧を保存", "rois.csv", _FILE_FILTER)
         if not path:
             return
         rois = [
@@ -136,12 +137,12 @@ class RoiListManager:
             for e in self._state.rois
         ]
         try:
-            save_rois(path, rois, self._state.roi_color_overrides)
+            save_rois(path, rois)
         except OSError as e:
             QMessageBox.warning(self.viewer, "ROI一覧", f"保存できませんでした。\n{e}")
 
     def load_dialog(self):
-        """ファイル選択 dialog で選んだ JSON ファイルの ROI 一覧で、今の一覧を置き換える。"""
+        """ファイル選択 dialog で選んだ CSV ファイルの ROI 一覧で、今の一覧を置き換える。"""
         path, _ = QFileDialog.getOpenFileName(self.viewer, "ROI一覧を読み込み", "", _FILE_FILTER)
         if not path:
             return
@@ -154,17 +155,20 @@ class RoiListManager:
         self.load(path)
 
     def load(self, path: str) -> bool:
-        """JSON ファイルの ROI 一覧で今の一覧を置き換える。失敗したら warning を表示して False を返す。"""
+        """CSV ファイルの ROI 一覧で今の一覧を置き換える。失敗したら warning を表示して False を返す。
+
+        色の個別設定は id の付き方が変わるため消す。
+        """
         try:
-            rois, overrides = load_rois(path)
+            rois = load_rois(path)
         except (OSError, ValueError) as e:
             QMessageBox.warning(self.viewer, "ROI一覧", f"読み込めませんでした。\n{e}")
             return False
         self._state.rois = [
             RoiEntry(r["id"], QRect(r["x"], r["y"], r["width"], r["height"]), r["enabled"]) for r in rois
         ]
-        self._state.next_roi_id = max((r["id"] for r in rois), default=0) + 1
+        self._state.next_roi_id = max((r["id"] for r in rois), default=-1) + 1
         self._state.linked_roi_id = None
-        self._state.roi_color_overrides = dict(overrides)
+        self._state.roi_color_overrides.clear()
         self._changed()
         return True

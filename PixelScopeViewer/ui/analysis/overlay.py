@@ -31,4 +31,5 @@ def roi_curve_label(roi_id: int, ch_index: int) -> str:
 
 def roi_color(roi_id: int, ch_index: int, overrides: dict[str, str]) -> QColor:
     """登録 ROI の曲線の色を返す。画像上の ROI の枠は C0 の色にする。"""
-    return overlay_color(roi_id, ch_index, overrides, roi_curve_label(roi_id, ch_index))
+    # id は 0 始まりのため、R0 を tile 1 と同じ色にする
+    return overlay_color(roi_id + 1, ch_index, overrides, roi_curve_label(roi_id, ch_index))

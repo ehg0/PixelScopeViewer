@@ -381,8 +381,8 @@ class TilingAnalysisDialog(AnalysisDialog):
 
     def _replace_tab_channel_ui(self, tab):
         """tab の scroll area の中身を tile ごとの channel 一覧にし、その上に全選択・全解除の button を置く。"""
-        # 削除済みの widget を参照しないよう、毎回 tab から探す
-        scroll_area = tab.findChild(QScrollArea)
+        # Channels group の scroll area（Split のグラフの scroll area とは別）
+        scroll_area = tab.channel_scroll
         if scroll_area is None or scroll_area.widget() is None or scroll_area.parent() is None:
             return
         if scroll_area.parent().layout() is None:

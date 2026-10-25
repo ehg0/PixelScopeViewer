@@ -70,6 +70,16 @@ class RoiListManager:
         entry.enabled = enabled
         self._changed()
 
+    def set_rect(self, roi_id: int, rect: QRect):
+        """ROI の範囲（画像座標）を変更する。連動中の ROI は編集中 ROI にも反映する。"""
+        entry = self.find(roi_id)
+        if entry is None or entry.rect == rect:
+            return
+        entry.rect = QRect(rect)
+        if self._state.linked_roi_id == roi_id:
+            self.viewer.set_roi_from_image_rect(QRect(rect))
+        self._changed()
+
     def set_color_override(self, label: str, color: str | None):
         """ROI の曲線の色を個別に設定する。None の場合は個別設定を消す。"""
         if color is None:

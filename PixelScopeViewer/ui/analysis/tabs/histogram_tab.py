@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 
 from PixelScopeViewer.ui.analysis.tabs.common import (
     SPLIT_TITLE_SIZE,
-    SplitPlotArea,
+    SplitPlotView,
     StatsTable,
     create_channel_group,
     create_export_group,
@@ -96,15 +96,16 @@ class HistogramTab(QWidget):
 
         root = QHBoxLayout(self)
 
-        # 左側: plot（編集中ROI・Overlay は hist_widget、Split は split_area）と統計量
+        # 左側: plot（編集中ROI・Overlay は hist_widget、Split は split_view）と統計量
         left = QVBoxLayout()
         self.hist_widget = create_plot_widget(
             "Count", "Intensity", on_save_viewbox_state, on_connect_plot_controls, self._on_mouse_over
         )
-        self.split_area = SplitPlotArea(self.hist_widget.getPlotItem(), "Count", "Intensity", self.status_changed.emit)
+        self.split_view = SplitPlotView(self.hist_widget.getPlotItem(), "Count", "Intensity", self.status_changed.emit)
+        self.split_area = self.split_view.area
         self.plot_stack = QStackedWidget()
         self.plot_stack.addWidget(self.hist_widget)
-        self.plot_stack.addWidget(self.split_area)
+        self.plot_stack.addWidget(self.split_view)
         left.addWidget(self.plot_stack, 3)
         self.stats_table = StatsTable(int_format=True)
         left.addWidget(self.stats_table, 0)
@@ -118,7 +119,9 @@ class HistogramTab(QWidget):
         self.roi_group, self.roi_mode_combo, self.link_axes_check, self.split_columns_combo = create_roi_group()
         right.addWidget(self.roi_group)
 
-        channels_group, self.channel_list, self.roi_channel_panel = create_channel_group(self._on_checkbox_changed)
+        channels_group, self.channel_scroll, self.channel_list, self.roi_channel_panel = create_channel_group(
+            self._on_checkbox_changed
+        )
         right.addWidget(channels_group)
 
         config_group, config_layout = make_group_box("Histgram config")
@@ -165,7 +168,7 @@ class HistogramTab(QWidget):
 
     def set_roi_view(self, mode: str):
         """ROI の表示方法（"active" / "overlay" / "split"）に合わせて plot と channel の一覧を切り替える。"""
-        self.plot_stack.setCurrentWidget(self.split_area if mode == "split" else self.hist_widget)
+        self.plot_stack.setCurrentWidget(self.split_view if mode == "split" else self.hist_widget)
         self.channel_list.setVisible(mode == "active")
         self.roi_channel_panel.setVisible(mode != "active")
 
@@ -230,7 +233,7 @@ class HistogramTab(QWidget):
             chart_kind: "Line" または "Bar"。
             bar_alpha: Bar 表示時の alpha。
         """
-        items = self.split_area.plot_items([g[0] for g in groups], n_cols)
+        items = self.split_view.plot_items([g[0] for g in groups], n_cols)
         plotted = []
         for item, (_, title, title_color, series) in zip(items, groups, strict=True):
             item.clear()

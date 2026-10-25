@@ -8,6 +8,7 @@ from pyqtgraph import PlotWidget
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QPixmap
 from PySide6.QtWidgets import (
+    QApplication,
     QCheckBox,
     QComboBox,
     QGroupBox,
@@ -17,6 +18,7 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QTableWidget,
     QTableWidgetItem,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -30,6 +32,13 @@ ROI_MODES = (("active", "編集中ROI"), ("overlay", "登録ROI - Overlay"), ("s
 ROI_SPLIT_COLUMN_CHOICES = (1, 2, 3, 4, 5, 6)
 # Split のグラフの title。グラフが小さくなるため、編集中ROI・Overlay（12pt）より小さくする
 SPLIT_TITLE_SIZE = "9pt"
+# Split の Fit で 1 枚がこれより小さくなる場合は scroll bar を出す (幅, 高さ)
+SPLIT_MIN_CELL = (160, 120)
+# [-] で小さくできる 1 枚の下限 (幅, 高さ)
+SPLIT_ZOOM_MIN_CELL = (80, 60)
+SPLIT_ZOOM_STEP = 1.25
+# Qt の QWIDGETSIZE_MAX（PySide6 からは import できない）
+_WIDGET_SIZE_MAX = (1 << 24) - 1
 
 
 def _style_plot_item(plot_item: pg.PlotItem, left_label: str, bottom_label: str):
@@ -65,6 +74,84 @@ def create_plot_widget(
     return widget
 
 
+class SplitPlotView(QWidget):
+    """SplitPlotArea を scroll area に入れ、左上の [Fit] [+] [-] で grid の 1 枚の大きさを変える。
+
+    Fit では表示エリアに合わせる。ただし 1 枚が SPLIT_MIN_CELL より小さくなる場合は scroll bar を出す。
+    [+] [-] では 1 枚の大きさを SPLIT_ZOOM_STEP 倍ずつ変え、表示エリアからはみ出す分は scroll する。
+
+    Args:
+        source: grid・log の設定を共有する PlotItem。
+        left_label: 縦軸の label。
+        bottom_label: 横軸の label。
+        on_status: マウス位置の値の文字列を受け取る callback。
+    """
+
+    def __init__(self, source: pg.PlotItem, left_label: str, bottom_label: str, on_status: Callable[[str], None]):
+        super().__init__()
+        self.area = SplitPlotArea(source, left_label, bottom_label, on_status)
+        # None は Fit（表示エリアに合わせる）。それ以外は 1 枚の (幅, 高さ)
+        self._cell_size: tuple[int, int] | None = None
+        self._grid = (1, 1)  # (行数, 列数)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(2)
+        buttons = QHBoxLayout()
+        buttons.setSpacing(2)
+        for text, tip, slot in (
+            ("Fit", "グラフを表示エリアに合わせる", self.fit),
+            ("+", "グラフを大きくする", lambda: self.zoom(SPLIT_ZOOM_STEP)),
+            ("-", "グラフを小さくする", lambda: self.zoom(1 / SPLIT_ZOOM_STEP)),
+        ):
+            btn = QToolButton()
+            btn.setText(text)
+            btn.setToolTip(tip)
+            btn.setMinimumWidth(28)
+            btn.clicked.connect(slot)
+            buttons.addWidget(btn)
+        buttons.addStretch()
+        layout.addLayout(buttons)
+
+        self.scroll = QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setWidget(self.area)
+        self.area.wheel_target = self.scroll.viewport()
+        layout.addWidget(self.scroll, 1)
+        self._apply_size()
+
+    def plot_items(self, ids: list[int], n_cols: int) -> list[pg.PlotItem]:
+        """SplitPlotArea.plot_items を呼び、行数・列数に合わせて grid の大きさを更新する。"""
+        items = self.area.plot_items(ids, n_cols)
+        grid = (max(1, -(-len(ids) // n_cols)), n_cols)
+        if grid != self._grid:
+            self._grid = grid
+            self._apply_size()
+        return items
+
+    def fit(self):
+        self._cell_size = None
+        self._apply_size()
+
+    def zoom(self, factor: float):
+        """1 枚の大きさを factor 倍にする。Fit 中は今の大きさを基準にする。"""
+        rows, cols = self._grid
+        w, h = self._cell_size or (self.area.width() / cols, self.area.height() / rows)
+        min_w, min_h = SPLIT_ZOOM_MIN_CELL
+        self._cell_size = (max(min_w, round(w * factor)), max(min_h, round(h * factor)))
+        self._apply_size()
+
+    def _apply_size(self):
+        rows, cols = self._grid
+        if self._cell_size is None:
+            min_w, min_h = SPLIT_MIN_CELL
+            self.area.setMinimumSize(cols * min_w, rows * min_h)
+            self.area.setMaximumSize(_WIDGET_SIZE_MAX, _WIDGET_SIZE_MAX)
+        else:
+            w, h = self._cell_size
+            self.area.setFixedSize(cols * w, rows * h)
+
+
 class SplitPlotArea(pg.GraphicsLayoutWidget):
     """登録 ROI ごとの PlotItem を grid に並べる。
 
@@ -89,6 +176,8 @@ class SplitPlotArea(pg.GraphicsLayoutWidget):
         self._items: dict[int, pg.PlotItem] = {}
         self._order: list[int] = []
         self._n_cols = 0
+        # wheel を渡す widget（SplitPlotView の scroll area の viewport）
+        self.wheel_target: QWidget | None = None
         # None は軸の連動を設定し直す必要がある状態
         self._linked: bool | None = None
         self.scene().sigMouseMoved.connect(lambda pos: on_status(self._mouse_text(pos)))
@@ -181,6 +270,14 @@ class SplitPlotArea(pg.GraphicsLayoutWidget):
             return None
         return float(xs_all.min()), float(xs_all.max()), float(ys_all.min()), float(ys_all.max())
 
+    def wheelEvent(self, event):
+        # mouse による拡大縮小は無効のため、wheel は外側の scroll area の scroll に使う。
+        # ViewBox は mouse が無効でも wheel を受け取って捨てるため、scene には渡さない
+        if self.wheel_target is not None:
+            QApplication.sendEvent(self.wheel_target, event)
+        else:
+            event.ignore()
+
     def _mouse_text(self, pos) -> str:
         for item in self._items.values():
             if item.sceneBoundingRect().contains(pos):
@@ -252,10 +349,13 @@ def create_roi_group() -> tuple[QGroupBox, QComboBox, QCheckBox, QComboBox]:
 
 def create_channel_group(
     on_checks_changed: Callable[[list], None],
-) -> tuple[QGroupBox, ChannelListWidget, RoiChannelPanel]:
+) -> tuple[QGroupBox, QScrollArea, ChannelListWidget, RoiChannelPanel]:
     """scroll area の中に ChannelListWidget と登録 ROI 用の RoiChannelPanel（初期は非表示）を置いた group を作る。
 
     複数画像比較の解析 dialog は scroll area の中身を tile ごとの一覧に置き換えるため、この構造を保つ。
+
+    Returns:
+        (group, scroll area, ChannelListWidget, RoiChannelPanel)。
     """
     group, layout = make_group_box("Channels")
     scroll = QScrollArea()
@@ -277,7 +377,7 @@ def create_channel_group(
     scroll_layout.addStretch()
     scroll.setWidget(scroll_widget)
     layout.addWidget(scroll)
-    return group, channel_list, roi_panel
+    return group, scroll, channel_list, roi_panel
 
 
 def create_export_group() -> tuple[QGroupBox, QPushButton, QPushButton, QCheckBox]:

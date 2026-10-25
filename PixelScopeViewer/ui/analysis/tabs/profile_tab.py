@@ -8,7 +8,7 @@ from PySide6.QtWidgets import QComboBox, QHBoxLayout, QPushButton, QStackedWidge
 
 from PixelScopeViewer.ui.analysis.tabs.common import (
     SPLIT_TITLE_SIZE,
-    SplitPlotArea,
+    SplitPlotView,
     StatsTable,
     create_channel_group,
     create_export_group,
@@ -55,17 +55,18 @@ class ProfileTab(QWidget):
 
         root = QHBoxLayout(self)
 
-        # 左側: plot（編集中ROI・Overlay は prof_widget、Split は split_area）と統計量
+        # 左側: plot（編集中ROI・Overlay は prof_widget、Split は split_view）と統計量
         left = QVBoxLayout()
         self.prof_widget = create_plot_widget(
             "Intensity", "Position", on_save_viewbox_state, on_connect_plot_controls, self._on_mouse_over
         )
-        self.split_area = SplitPlotArea(
+        self.split_view = SplitPlotView(
             self.prof_widget.getPlotItem(), "Intensity", "Position", self.status_changed.emit
         )
+        self.split_area = self.split_view.area
         self.plot_stack = QStackedWidget()
         self.plot_stack.addWidget(self.prof_widget)
-        self.plot_stack.addWidget(self.split_area)
+        self.plot_stack.addWidget(self.split_view)
         left.addWidget(self.plot_stack, 3)
         # profile は mean などの計算値のため、統計量は常に小数で表示する
         self.stats_table = StatsTable(int_format=False)
@@ -80,7 +81,9 @@ class ProfileTab(QWidget):
         self.roi_group, self.roi_mode_combo, self.link_axes_check, self.split_columns_combo = create_roi_group()
         right.addWidget(self.roi_group)
 
-        channels_group, self.channel_list, self.roi_channel_panel = create_channel_group(self._on_checkbox_changed)
+        channels_group, self.channel_scroll, self.channel_list, self.roi_channel_panel = create_channel_group(
+            self._on_checkbox_changed
+        )
         right.addWidget(channels_group)
 
         display_group, display_layout = make_group_box("Display Settings")
@@ -105,7 +108,7 @@ class ProfileTab(QWidget):
 
     def set_roi_view(self, mode: str):
         """ROI の表示方法（"active" / "overlay" / "split"）に合わせて plot と channel の一覧を切り替える。"""
-        self.plot_stack.setCurrentWidget(self.split_area if mode == "split" else self.prof_widget)
+        self.plot_stack.setCurrentWidget(self.split_view if mode == "split" else self.prof_widget)
         self.channel_list.setVisible(mode == "active")
         self.roi_channel_panel.setVisible(mode != "active")
 
@@ -164,7 +167,7 @@ class ProfileTab(QWidget):
             link_axes: 全グラフの軸を連動させるか。
             n_cols: grid の列数。
         """
-        items = self.split_area.plot_items([g[0] for g in groups], n_cols)
+        items = self.split_view.plot_items([g[0] for g in groups], n_cols)
         for item, (_, title, title_color, series) in zip(items, groups, strict=True):
             item.clear()
             _plot_curves(item, series, color_by_label)

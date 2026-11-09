@@ -2,6 +2,7 @@
 
 from collections.abc import Callable
 
+import numpy as np
 import pyqtgraph as pg
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QComboBox, QHBoxLayout, QPushButton, QStackedWidget, QVBoxLayout, QWidget
@@ -27,7 +28,8 @@ _METHOD_LABELS = {"mean": "Mean", "std": "Std", "max": "Max", "min": "Min", "p2p
 def _plot_curves(plot, series: dict, color_by_label: dict[str, tuple[int, int, int]]):
     for label, (xs, ys) in series.items():
         pen = pg.mkPen(color=label_color(label, color_by_label), width=2)
-        plot.plot(xs, ys, pen=pen, name=label if label != "I" else "Intensity", stepMode="left")
+        xs_edges = np.append(xs, xs[-1] + 1)
+        plot.plot(xs_edges, ys, pen=pen, name=label if label != "I" else "Intensity", stepMode="center")
 
 
 class ProfileTab(QWidget):

@@ -27,7 +27,7 @@ _METHOD_LABELS = {"mean": "Mean", "std": "Std", "max": "Max", "min": "Min", "p2p
 def _plot_curves(plot, series: dict, color_by_label: dict[str, tuple[int, int, int]]):
     for label, (xs, ys) in series.items():
         pen = pg.mkPen(color=label_color(label, color_by_label), width=2)
-        plot.plot(xs, ys, pen=pen, name=label if label != "I" else "Intensity")
+        plot.plot(xs, ys, pen=pen, name=label if label != "I" else "Intensity", stepMode="left")
 
 
 class ProfileTab(QWidget):

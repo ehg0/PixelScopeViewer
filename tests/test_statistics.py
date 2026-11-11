@@ -57,3 +57,17 @@ def test_hist_bins_max_value_has_own_bin():
     f = np.array([0.0, 0.25, 1.0], dtype=np.float32)
     bins = determine_hist_bins(f, 0.1)
     assert np.isclose(bins[-1], 1.1)
+
+
+def test_merge_hist_series_pads_by_bin_step():
+    from PixelScopeViewer.core.statistics import merge_hist_series
+
+    series = {"R0 C0": (np.array([0.15]), np.array([1])), "R1 C0": (np.array([0.15, 0.25]), np.array([2, 3]))}
+    merged = merge_hist_series(series, "Histogram", 0.1)
+    xs, ys = merged["R0 C0"]
+    assert np.allclose(xs, [0.05, 0.15, 0.25, 0.35]) and ys.tolist() == [0, 1, 0, 0]
+    assert merged["R1 C0"][1].tolist() == [0, 2, 3, 0]
+    # step を渡さない場合は従来どおり（1 点だけなら 1.0）
+    assert np.allclose(
+        merge_hist_series({"a": (np.array([0.15]), np.array([1]))}, "Histogram")["a"][0], [-0.85, 0.15, 1.15]
+    )

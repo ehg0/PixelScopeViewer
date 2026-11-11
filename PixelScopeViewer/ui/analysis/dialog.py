@@ -509,7 +509,9 @@ class AnalysisDialog(ToolDialog):
             tab.roi_channel_panel.set_groups(groups)
 
         hist_series, hist_rows = self._multi_hist_series(targets)
-        self.last_hist_data = merge_hist_series(hist_series, self.settings.hist_mode) if hist_series else {}
+        # 1 bin だけの系列でも前後の余白が bin 幅になるよう、Histogram は bin 幅を渡す
+        step = self.settings.hist_bin_step if self.settings.hist_mode == "Histogram" else None
+        self.last_hist_data = merge_hist_series(hist_series, self.settings.hist_mode, step) if hist_series else {}
         prof_series, prof_rows = self._multi_profile_series(targets)
         self.last_profile_data = prof_series
 

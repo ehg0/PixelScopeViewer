@@ -50,16 +50,21 @@ def crop_roi(arr: np.ndarray, rect: tuple[int, int, int, int] | None) -> np.ndar
 
 
 def merge_hist_series(
-    series: dict[str, tuple[np.ndarray, np.ndarray]], mode: str
+    series: dict[str, tuple[np.ndarray, np.ndarray]], mode: str, step: float | None = None
 ) -> dict[str, tuple[np.ndarray, np.ndarray]]:
     """複数の histogram / ECDF の系列を共通の x 軸に揃える。
 
     x 軸は全系列の x の和集合（前後 1 step を含む）。ECDF は前後の累積確率で補間し、Histogram は値のない x を 0 にする。
+
+    Args:
+        series: label から (x, y) への dict。
+        mode: "Histogram" または "ECDF"。
+        step: 前後に足す幅（histogram の bin 幅）。None の場合は系列の x の間隔（1 点だけなら 1.0）にする。
     """
     all_xs = []
     for xs, _ in series.values():
         xs = np.asarray(xs)
-        dx = xs[1] - xs[0] if len(xs) > 1 else 1.0
+        dx = step if step is not None else (xs[1] - xs[0] if len(xs) > 1 else 1.0)
         all_xs.append(np.concatenate([xs, xs - dx, xs + dx]))
     x_common = np.unique(np.concatenate(all_xs)) if all_xs else np.array([])
 

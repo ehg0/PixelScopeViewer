@@ -380,7 +380,8 @@ def create_roi_group() -> tuple[QGroupBox, QComboBox, QCheckBox, QComboBox, QCom
     for unit, text in ROI_SPLIT_UNITS:
         unit_combo.addItem(text, unit)
     unit_combo.setToolTip(
-        "タイル比較モードの Split 表示で、ROI ごとのグラフに全タイルを重ねるか、タイルごとのグラフに全 ROI を重ねるか"
+        "タイル比較モードの Split 表示で、ROI ごとのグラフに全タイルを重ねるか、"
+        "タイルごとのグラフに全 ROI（編集中ROI - Split では編集中ROI）を重ねるか"
     )
     unit_combo.setVisible(False)
     # dialog の高さを増やさないよう、軸の連動と同じ行に置く

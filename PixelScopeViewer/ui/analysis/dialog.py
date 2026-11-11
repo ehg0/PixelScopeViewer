@@ -64,8 +64,9 @@ from PixelScopeViewer.ui.common.channel_display import ChannelDisplay
 from PixelScopeViewer.ui.common.window import ToolDialog
 from PixelScopeViewer.ui.viewer.state import RoiEntry
 
-# Split をタイルごとにするときのグラフの id（登録 ROI の id と重ならないようにする）
+# Split をタイルごとにするときのグラフの id と、編集中ROI のグラフの id（登録 ROI の id と重ならないようにする）
 TILE_SPLIT_ID_OFFSET = 10_000
+EDIT_ROI_SPLIT_ID = -1
 
 
 def _channel_index(label: str) -> int:
@@ -602,17 +603,20 @@ class AnalysisDialog(ToolDialog):
         """Split 表示のグラフごとの (id, title, title の色, 系列) のリストを返す。
 
         ROI ごとのグラフには全タイル分を、タイルごとのグラフには全 ROI 分を重ねる。
+        編集中ROI の Split では、ROI ごとは全タイルを重ねた 1 つのグラフ、タイルごとはタイルごとのグラフになる。
         """
-        # 編集中ROI の Split は常にタイルごと
-        by_tile = bool(self._tile_sources) and (
-            self.settings.roi_split_unit == "tile" or self.settings.roi_mode == "active_split"
-        )
+        by_tile = bool(self._tile_sources) and self.settings.roi_split_unit == "tile"
         groups: dict[int, tuple[str, str, dict]] = {}
         for t in targets:
             if by_tile:
                 gid = TILE_SPLIT_ID_OFFSET + int(t.source.label[1:])
                 title = f"{t.source.label}: {Path(t.source.path).name}" if t.source.path else t.source.label
                 color = theme.PLOT_TEXT_COLOR
+            elif t.entry is None:
+                gid = EDIT_ROI_SPLIT_ID
+                r = t.rect
+                title = f"編集中ROI ({r.x()},{r.y()} {r.width()}×{r.height()})" if r is not None else "編集中ROI"
+                color = theme.ROI_COLOR
             else:
                 gid = t.entry.id
                 r = t.entry.rect
@@ -662,7 +666,7 @@ class AnalysisDialog(ToolDialog):
                     next(i for i, (u, _) in enumerate(ROI_SPLIT_UNITS) if u == self.settings.roi_split_unit)
                 )
             tab.split_unit_combo.setVisible(has_tiles)
-            tab.split_unit_combo.setEnabled(mode == "split")
+            tab.split_unit_combo.setEnabled(split)
             # タイル比較モードの編集中ROI もタイルごとの曲線を重ねるため、登録 ROI 用の channel の一覧を使う
             tab.set_roi_view("overlay" if has_tiles and mode == "active" else mode)
         self.update_window_title()

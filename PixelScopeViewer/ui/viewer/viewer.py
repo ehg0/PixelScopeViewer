@@ -344,10 +344,17 @@ class ImageViewer(QMainWindow):
             self.display_cache.put(img["id"], key, pixmap)
         return pixmap
 
-    def refresh_display(self):
-        """今の zoom 倍率と表示設定で、表示中の画像（タイル比較モードでは全タイル）を描き直す。"""
+    def refresh_display(self, defer_others: bool = False):
+        """今の zoom 倍率と表示設定で、表示中の画像（タイル比較モードでは全タイル）を描き直す。
+
+        Args:
+            defer_others: タイル比較モードで、active 以外のタイルの描き直しを少し待つか（slider 操作中など）。
+        """
         if self.state.tile_mode:
-            self.tiles.render()
+            if defer_others:
+                self.tiles.render_active_first()
+            else:
+                self.tiles.render()
         elif self.state.current_index is not None and self.images:
             self.image_label.set_image(self.display_pixmap(self.images[self.state.current_index]), self.state.scale)
         self.status_updater.update_status()

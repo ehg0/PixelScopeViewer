@@ -149,7 +149,7 @@ class BrightnessManager:
 
         self.viewer.status_updater.update_brightness_status()
 
-        self.viewer.refresh_display()
+        self.viewer.refresh_display(defer_others=True)
 
     def on_channels_changed(self, channels):
         # 再描画は channel_display の checks_changed を受けた viewer が行う

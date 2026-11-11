@@ -3,8 +3,11 @@
 from dataclasses import replace
 from pathlib import Path
 
+from PySide6.QtCore import QTimer
+
 from PixelScopeViewer.core.brightness import BrightnessParams, determine_dtype_group
 from PixelScopeViewer.core.tile_layout import Cell, TileLayout
+from PixelScopeViewer.ui.common import defaults
 from PixelScopeViewer.ui.viewer.widgets import ImagePane
 
 TILE_BRIGHTNESS_KEY = "tile"
@@ -21,6 +24,11 @@ class TileModeManager:
         self.viewer = viewer
         self._panes: dict[Cell, ImagePane] = {(0, 0): viewer.panes[0]}
         self._syncing = False
+        # brightness の slider 操作中は、active 以外のタイルの描き直しを操作が止まるまで待つ
+        self._deferred_render = QTimer()
+        self._deferred_render.setSingleShot(True)
+        self._deferred_render.setInterval(defaults.TILE_BRIGHTNESS_DEBOUNCE_MS)
+        self._deferred_render.timeout.connect(self.render)
 
     @property
     def layout(self) -> TileLayout:
@@ -207,8 +215,19 @@ class TileModeManager:
             return None
         return max(w for _, w in sizes), max(h for h, _ in sizes)
 
+    def render_active_first(self):
+        """active タイルだけをすぐに描き直し、残りのタイルは少し待ってからまとめて描き直す。"""
+        v = self.viewer
+        img = next((img for cell, img in self.visible_images() if cell == v.state.active_cell), None)
+        if img is not None:
+            v.active_pane.image_label.set_image(v.display_pixmap(img), v.state.scale)
+        self._deferred_render.start()
+
     def render(self):
         """全タイルを今の zoom 倍率と表示設定で描き、canvas と scroll 位置を揃える。"""
+        self._deferred_render.stop()
+        if not self.active:
+            return
         v = self.viewer
         scale = v.state.scale
         visible = self.visible_images()

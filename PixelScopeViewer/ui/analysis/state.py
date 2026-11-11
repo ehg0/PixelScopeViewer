@@ -20,7 +20,7 @@ class AnalysisSettings:
     # 画像を切り替えても保持する plot 設定（grid・log・auto range）
     plot_settings: dict = field(default_factory=lambda: copy.deepcopy(defaults.PLOT_SETTINGS))
     channel_checks: list[bool] = field(default_factory=list)
-    roi_mode: str = defaults.ANALYSIS_ROI_MODE  # "active", "overlay", "split"
+    roi_mode: str = defaults.ANALYSIS_ROI_MODE  # "active", "active_split", "overlay", "split"
     roi_link_axes: bool = defaults.ANALYSIS_ROI_LINK_AXES
     roi_split_columns: int = defaults.ANALYSIS_ROI_SPLIT_COLUMNS
     # タイル比較モードの Split の単位: "roi"（ROI ごとに全タイル）, "tile"（タイルごとに全 ROI）

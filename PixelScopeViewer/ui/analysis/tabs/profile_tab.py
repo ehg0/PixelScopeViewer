@@ -115,8 +115,11 @@ class ProfileTab(QWidget):
             self.on_channel_changed(checks)
 
     def set_roi_view(self, mode: str):
-        """ROI の表示方法（"active" / "overlay" / "split"）に合わせて plot と channel の一覧を切り替える。"""
-        self.plot_stack.setCurrentWidget(self.split_view if mode == "split" else self.prof_widget)
+        """ROI の表示方法（"active" / "overlay" / "split"）に合わせて plot と channel の一覧を切り替える。
+
+        "active_split" は "split" と同じ表示にする。
+        """
+        self.plot_stack.setCurrentWidget(self.split_view if mode in ("split", "active_split") else self.prof_widget)
         self.channel_list.setVisible(mode == "active")
         self.roi_channel_panel.setVisible(mode != "active")
 

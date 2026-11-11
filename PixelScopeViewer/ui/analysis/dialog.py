@@ -49,7 +49,13 @@ from PixelScopeViewer.ui.analysis.plotting import apply_plot_settings as pg_appl
 from PixelScopeViewer.ui.analysis.plotting import connect_plot_controls as pg_connect_plot_controls
 from PixelScopeViewer.ui.analysis.plotting import save_viewbox_state as pg_save_viewbox_state
 from PixelScopeViewer.ui.analysis.state import AnalysisSettings
-from PixelScopeViewer.ui.analysis.tabs.common import ROI_MODES, ROI_SPLIT_COLUMN_CHOICES, ROI_SPLIT_UNITS
+from PixelScopeViewer.ui.analysis.tabs.common import (
+    ACTIVE_ROI_MODES,
+    ROI_MODES,
+    ROI_SPLIT_COLUMN_CHOICES,
+    ROI_SPLIT_UNITS,
+    SPLIT_ROI_MODES,
+)
 from PixelScopeViewer.ui.analysis.tabs.histogram_tab import HistogramTab
 from PixelScopeViewer.ui.analysis.tabs.metadata_tab import MetadataTab
 from PixelScopeViewer.ui.analysis.tabs.profile_tab import ProfileTab
@@ -327,7 +333,7 @@ class AnalysisDialog(ToolDialog):
 
     def _roi_mode_active(self) -> bool:
         """登録 ROI（Overlay / Split）を表示中か。"""
-        return self.settings.roi_mode != "active" and bool(self.rois)
+        return self.settings.roi_mode not in ACTIVE_ROI_MODES and bool(self.rois)
 
     def _update_contents_active(self):
         """編集中 ROI で profile・histogram を更新する。ROI がない場合は左上 1 pixel を対象にする。"""
@@ -450,7 +456,7 @@ class AnalysisDialog(ToolDialog):
             sources = tiles
         targets = []
         for source in sources:
-            if self.settings.roi_mode == "active" or not self.rois:
+            if self.settings.roi_mode in ACTIVE_ROI_MODES or not self.rois:
                 rects = [(None, self.image_rect)]
             else:
                 rects = [(e, e.rect) for e in self.rois]
@@ -508,7 +514,7 @@ class AnalysisDialog(ToolDialog):
             "chart_kind": self.settings.hist_chart_kind,
             "bar_alpha": self.settings.hist_bar_alpha,
         }
-        if self.settings.roi_mode != "split":
+        if self.settings.roi_mode not in SPLIT_ROI_MODES:
             self.hist_tab.update_plot(
                 self.last_hist_data,
                 hist_rows,
@@ -597,7 +603,10 @@ class AnalysisDialog(ToolDialog):
 
         ROI ごとのグラフには全タイル分を、タイルごとのグラフには全 ROI 分を重ねる。
         """
-        by_tile = bool(self._tile_sources) and self.settings.roi_split_unit == "tile"
+        # 編集中ROI の Split は常にタイルごと
+        by_tile = bool(self._tile_sources) and (
+            self.settings.roi_split_unit == "tile" or self.settings.roi_mode == "active_split"
+        )
         groups: dict[int, tuple[str, str, dict]] = {}
         for t in targets:
             if by_tile:
@@ -620,36 +629,42 @@ class AnalysisDialog(ToolDialog):
     def _update_roi_controls(self):
         """ROI の combo・軸の連動・plot と channel 一覧の表示を、設定と登録 ROI の有無に合わせる。
 
-        登録 ROI がなくなった場合は編集中 ROI の表示に戻す。
+        登録 ROI がなくなった場合は編集中 ROI の表示に戻す。編集中ROI - Split はタイル比較モードだけで選べる。
         """
         has_rois = bool(self.rois)
-        if not has_rois:
+        has_tiles = bool(self._tile_sources)
+        if (not has_rois and self.settings.roi_mode not in ACTIVE_ROI_MODES) or (
+            not has_tiles and self.settings.roi_mode == "active_split"
+        ):
             self.settings.roi_mode = "active"
         mode = self.settings.roi_mode
+        split = mode in SPLIT_ROI_MODES
         index = next(i for i, (m, _) in enumerate(ROI_MODES) if m == mode)
         for tab in (self.profile_tab, self.hist_tab):
             model = tab.roi_mode_combo.model()
             for i, (m, _) in enumerate(ROI_MODES):
-                if m != "active":
+                if m == "active_split":
+                    model.item(i).setEnabled(has_tiles)
+                elif m != "active":
                     model.item(i).setEnabled(has_rois)
             with QSignalBlocker(tab.roi_mode_combo):
                 tab.roi_mode_combo.setCurrentIndex(index)
             with QSignalBlocker(tab.link_axes_check):
                 tab.link_axes_check.setChecked(self.settings.roi_link_axes)
-            tab.link_axes_check.setEnabled(mode == "split")
+            tab.link_axes_check.setEnabled(split)
             with QSignalBlocker(tab.split_columns_combo):
                 tab.split_columns_combo.setCurrentIndex(
                     tab.split_columns_combo.findData(self.settings.roi_split_columns)
                 )
-            tab.split_columns_combo.setEnabled(mode == "split")
+            tab.split_columns_combo.setEnabled(split)
             with QSignalBlocker(tab.split_unit_combo):
                 tab.split_unit_combo.setCurrentIndex(
                     next(i for i, (u, _) in enumerate(ROI_SPLIT_UNITS) if u == self.settings.roi_split_unit)
                 )
-            tab.split_unit_combo.setVisible(bool(self._tile_sources))
+            tab.split_unit_combo.setVisible(has_tiles)
             tab.split_unit_combo.setEnabled(mode == "split")
             # タイル比較モードの編集中ROI もタイルごとの曲線を重ねるため、登録 ROI 用の channel の一覧を使う
-            tab.set_roi_view("overlay" if self._tile_sources and mode == "active" else mode)
+            tab.set_roi_view("overlay" if has_tiles and mode == "active" else mode)
         self.update_window_title()
 
     def _on_roi_mode_changed(self, index: int):

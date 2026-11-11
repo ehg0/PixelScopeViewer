@@ -49,13 +49,7 @@ from PixelScopeViewer.ui.analysis.plotting import apply_plot_settings as pg_appl
 from PixelScopeViewer.ui.analysis.plotting import connect_plot_controls as pg_connect_plot_controls
 from PixelScopeViewer.ui.analysis.plotting import save_viewbox_state as pg_save_viewbox_state
 from PixelScopeViewer.ui.analysis.state import AnalysisSettings
-from PixelScopeViewer.ui.analysis.tabs.common import (
-    ACTIVE_ROI_MODES,
-    ROI_MODES,
-    ROI_SPLIT_COLUMN_CHOICES,
-    ROI_SPLIT_UNITS,
-    SPLIT_ROI_MODES,
-)
+from PixelScopeViewer.ui.analysis.tabs.common import ROI_MODES, ROI_SPLIT_COLUMN_CHOICES, ROI_SPLIT_UNITS
 from PixelScopeViewer.ui.analysis.tabs.histogram_tab import HistogramTab
 from PixelScopeViewer.ui.analysis.tabs.metadata_tab import MetadataTab
 from PixelScopeViewer.ui.analysis.tabs.profile_tab import ProfileTab
@@ -64,9 +58,8 @@ from PixelScopeViewer.ui.common.channel_display import ChannelDisplay
 from PixelScopeViewer.ui.common.window import ToolDialog
 from PixelScopeViewer.ui.viewer.state import RoiEntry
 
-# Split をタイルごとにするときのグラフの id と、編集中ROI のグラフの id（登録 ROI の id と重ならないようにする）
+# Split をタイルごとにするときのグラフの id（登録 ROI の id と重ならないようにする）
 TILE_SPLIT_ID_OFFSET = 10_000
-EDIT_ROI_SPLIT_ID = -1
 
 
 def _channel_index(label: str) -> int:
@@ -334,7 +327,18 @@ class AnalysisDialog(ToolDialog):
 
     def _roi_mode_active(self) -> bool:
         """登録 ROI（Overlay / Split）を表示中か。"""
-        return self.settings.roi_mode not in ACTIVE_ROI_MODES and bool(self.rois)
+        return self.settings.roi_mode != "active" and bool(self.rois)
+
+    def _split_view(self) -> bool:
+        """グラフを並べて表示するか。
+
+        登録ROI - Split と、タイル比較モードで単位がタイルごとの編集中ROI が該当する。
+        """
+        if self.settings.roi_mode == "split":
+            return True
+        return (
+            self.settings.roi_mode == "active" and bool(self._tile_sources) and self.settings.roi_split_unit == "tile"
+        )
 
     def _update_contents_active(self):
         """編集中 ROI で profile・histogram を更新する。ROI がない場合は左上 1 pixel を対象にする。"""
@@ -457,7 +461,7 @@ class AnalysisDialog(ToolDialog):
             sources = tiles
         targets = []
         for source in sources:
-            if self.settings.roi_mode in ACTIVE_ROI_MODES or not self.rois:
+            if self.settings.roi_mode == "active" or not self.rois:
                 rects = [(None, self.image_rect)]
             else:
                 rects = [(e, e.rect) for e in self.rois]
@@ -515,7 +519,7 @@ class AnalysisDialog(ToolDialog):
             "chart_kind": self.settings.hist_chart_kind,
             "bar_alpha": self.settings.hist_bar_alpha,
         }
-        if self.settings.roi_mode not in SPLIT_ROI_MODES:
+        if not self._split_view():
             self.hist_tab.update_plot(
                 self.last_hist_data,
                 hist_rows,
@@ -602,8 +606,7 @@ class AnalysisDialog(ToolDialog):
     ) -> list[tuple[int, str, str, dict]]:
         """Split 表示のグラフごとの (id, title, title の色, 系列) のリストを返す。
 
-        ROI ごとのグラフには全タイル分を、タイルごとのグラフには全 ROI 分を重ねる。
-        編集中ROI の Split では、ROI ごとは全タイルを重ねた 1 つのグラフ、タイルごとはタイルごとのグラフになる。
+        ROI ごとのグラフには全タイル分を、タイルごとのグラフには全 ROI（編集中ROI では編集中ROI）を重ねる。
         """
         by_tile = bool(self._tile_sources) and self.settings.roi_split_unit == "tile"
         groups: dict[int, tuple[str, str, dict]] = {}
@@ -612,11 +615,6 @@ class AnalysisDialog(ToolDialog):
                 gid = TILE_SPLIT_ID_OFFSET + int(t.source.label[1:])
                 title = f"{t.source.label}: {Path(t.source.path).name}" if t.source.path else t.source.label
                 color = theme.PLOT_TEXT_COLOR
-            elif t.entry is None:
-                gid = EDIT_ROI_SPLIT_ID
-                r = t.rect
-                title = f"編集中ROI ({r.x()},{r.y()} {r.width()}×{r.height()})" if r is not None else "編集中ROI"
-                color = theme.ROI_COLOR
             else:
                 gid = t.entry.id
                 r = t.entry.rect
@@ -633,23 +631,20 @@ class AnalysisDialog(ToolDialog):
     def _update_roi_controls(self):
         """ROI の combo・軸の連動・plot と channel 一覧の表示を、設定と登録 ROI の有無に合わせる。
 
-        登録 ROI がなくなった場合は編集中 ROI の表示に戻す。編集中ROI - Split はタイル比較モードだけで選べる。
+        登録 ROI がなくなった場合は編集中 ROI の表示に戻す。
+        タイル比較モードでは、編集中ROI と登録ROI - Split で単位（ROI ごと / タイルごと）を選べる。
         """
         has_rois = bool(self.rois)
         has_tiles = bool(self._tile_sources)
-        if (not has_rois and self.settings.roi_mode not in ACTIVE_ROI_MODES) or (
-            not has_tiles and self.settings.roi_mode == "active_split"
-        ):
+        if not has_rois:
             self.settings.roi_mode = "active"
         mode = self.settings.roi_mode
-        split = mode in SPLIT_ROI_MODES
+        split = self._split_view()
         index = next(i for i, (m, _) in enumerate(ROI_MODES) if m == mode)
         for tab in (self.profile_tab, self.hist_tab):
             model = tab.roi_mode_combo.model()
             for i, (m, _) in enumerate(ROI_MODES):
-                if m == "active_split":
-                    model.item(i).setEnabled(has_tiles)
-                elif m != "active":
+                if m != "active":
                     model.item(i).setEnabled(has_rois)
             with QSignalBlocker(tab.roi_mode_combo):
                 tab.roi_mode_combo.setCurrentIndex(index)
@@ -666,9 +661,12 @@ class AnalysisDialog(ToolDialog):
                     next(i for i, (u, _) in enumerate(ROI_SPLIT_UNITS) if u == self.settings.roi_split_unit)
                 )
             tab.split_unit_combo.setVisible(has_tiles)
-            tab.split_unit_combo.setEnabled(split)
-            # タイル比較モードの編集中ROI もタイルごとの曲線を重ねるため、登録 ROI 用の channel の一覧を使う
-            tab.set_roi_view("overlay" if has_tiles and mode == "active" else mode)
+            tab.split_unit_combo.setEnabled(mode in ("active", "split"))
+            # タイル比較モードの編集中ROI もタイルごとの曲線を扱うため、登録 ROI 用の channel の一覧を使う
+            if split:
+                tab.set_roi_view("split")
+            else:
+                tab.set_roi_view("overlay" if has_tiles and mode == "active" else mode)
         self.update_window_title()
 
     def _on_roi_mode_changed(self, index: int):

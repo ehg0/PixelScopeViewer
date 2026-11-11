@@ -28,16 +28,7 @@ from PixelScopeViewer.ui.common import theme
 
 STATS_HEADERS = ["ch", "Mean", "Std", "Median", "Min", "Max", "Fano"]
 
-# "active_split" はタイル比較モードで編集中ROI をタイルごとのグラフに並べる
-ROI_MODES = (
-    ("active", "編集中ROI"),
-    ("active_split", "編集中ROI - Split"),
-    ("overlay", "登録ROI - Overlay"),
-    ("split", "登録ROI - Split"),
-)
-# 編集中ROI を解析する表示方法と、グラフを並べる表示方法
-ACTIVE_ROI_MODES = ("active", "active_split")
-SPLIT_ROI_MODES = ("active_split", "split")
+ROI_MODES = (("active", "編集中ROI"), ("overlay", "登録ROI - Overlay"), ("split", "登録ROI - Split"))
 ROI_SPLIT_COLUMN_CHOICES = (1, 2, 3, 4, 5, 6)
 ROI_SPLIT_UNITS = (("roi", "ROIごと"), ("tile", "タイルごと"))
 # Split のグラフの title。グラフが小さくなるため、編集中ROI・Overlay（12pt）より小さくする
@@ -363,10 +354,7 @@ def create_roi_group() -> tuple[QGroupBox, QComboBox, QCheckBox, QComboBox, QCom
     combo = QComboBox()
     for mode, text in ROI_MODES:
         combo.addItem(text, mode)
-    combo.setToolTip(
-        "登録ROIはメイン画面の Info > ROI List で ☑ を付けた ROI です。"
-        "編集中ROI - Split はタイル比較モードでタイルごとにグラフを並べます"
-    )
+    combo.setToolTip("登録ROIはメイン画面の Info > ROI List で ☑ を付けた ROI です")
     combo.setMinimumWidth(100)
     link_check = QCheckBox("軸を連動")
     link_check.setToolTip(
@@ -379,10 +367,7 @@ def create_roi_group() -> tuple[QGroupBox, QComboBox, QCheckBox, QComboBox, QCom
     unit_combo = QComboBox()
     for unit, text in ROI_SPLIT_UNITS:
         unit_combo.addItem(text, unit)
-    unit_combo.setToolTip(
-        "タイル比較モードの Split 表示で、ROI ごとのグラフに全タイルを重ねるか、"
-        "タイルごとのグラフに全 ROI（編集中ROI - Split では編集中ROI）を重ねるか"
-    )
+    unit_combo.setToolTip("タイル比較モードで、ROI ごとのグラフに全タイルを重ねるか、タイルごとのグラフに並べるか")
     unit_combo.setVisible(False)
     # dialog の高さを増やさないよう、軸の連動と同じ行に置く
     split_row = QHBoxLayout()

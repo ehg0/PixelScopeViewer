@@ -38,6 +38,13 @@ class TileModeManager:
     def cell_of(self, pane: ImagePane) -> Cell | None:
         return next((cell for cell, p in self._panes.items() if p is pane), None)
 
+    def cell_at(self, widget, pos) -> Cell | None:
+        """widget 座標 pos にある表示中のタイルのマスを返す。タイルの外の場合は None。"""
+        for pane in self.viewer.panes:
+            if pane.rect().contains(pane.mapFrom(widget, pos)):
+                return self.cell_of(pane)
+        return None
+
     # --- 切り替え ---
     def enter(self):
         """タイル比較モードにする。初めての場合は fit し、brightness を最初のタイルの画像の dtype の初期値にする。"""

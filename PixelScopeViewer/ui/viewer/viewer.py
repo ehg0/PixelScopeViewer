@@ -14,6 +14,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QApplication,
+    QDialog,
     QDockWidget,
     QGridLayout,
     QHBoxLayout,
@@ -47,6 +48,7 @@ from PixelScopeViewer.ui.viewer.roi_list import RoiListManager
 from PixelScopeViewer.ui.viewer.state import ViewerState
 from PixelScopeViewer.ui.viewer.status_updater import StatusUpdater
 from PixelScopeViewer.ui.viewer.tile_mode import TILE_BRIGHTNESS_KEY, TileModeManager
+from PixelScopeViewer.ui.viewer.tile_register_dialog import TileRegisterDialog
 from PixelScopeViewer.ui.viewer.widgets import (
     DisplayInfoWidget,
     ImageLabel,
@@ -405,6 +407,36 @@ class ImageViewer(QMainWindow):
         bring_to_front(dlg)
         self._annotations_dialog = self.child_dialogs.track(dlg, lambda: setattr(self, "_annotations_dialog", None))
 
+    # タイル比較モード
+    def toggle_tile_mode(self):
+        """タイル比較モードと 1 枚表示を切り替える。登録がない場合は先に登録 dialog を開く。"""
+        if self.state.tile_mode:
+            self.tiles.exit()
+        elif self.state.tile_layout.has_visible_images() or self.show_tile_register_dialog(enter=False):
+            self.tiles.enter()
+        self.tile_mode_action.setChecked(self.state.tile_mode)
+
+    def show_tile_register_dialog(self, enter: bool = True) -> bool:
+        """タイルへの画像登録 dialog を開き、OK なら登録内容を反映する。
+
+        Args:
+            enter: OK のときタイル比較モードにするか。
+
+        Returns:
+            OK で閉じたか。
+        """
+        if not self.images:
+            QMessageBox.information(self, "タイル比較", "画像が読み込まれていません。")
+            return False
+        dlg = TileRegisterDialog(self, self.images, self.state.tile_layout)
+        if dlg.exec() != QDialog.Accepted or dlg.result_layout is None:
+            return False
+        self.state.tile_layout = dlg.result_layout
+        if enter or self.state.tile_mode:
+            self.tiles.enter()
+            self.tile_mode_action.setChecked(True)
+        return True
+
     # 現在値のコピーと再起動
     def collect_state(self) -> dict:
         """viewer・channel 表示設定と、開いている解析 dialog の現在値を集める。"""
@@ -506,7 +538,12 @@ class ImageViewer(QMainWindow):
         image_files = [f for f in files if is_image_file(f)]
         annotation_files = [f for f in files if Path(f).suffix.lower() in (".json", ".csv")]
 
-        self.image_list.add_and_show(image_files)
+        # タイル比較モードでタイルの上に drop した画像は、そのマスの登録リストの末尾にも追加する
+        cell = self.tiles.cell_at(self, e.position().toPoint()) if self.state.tile_mode else None
+        added = self.image_list.add_and_show(image_files)
+        if cell is not None and added > 0:
+            self.state.tile_layout.append(cell, [img["id"] for img in self.images[-added:]])
+            self.show_current_image()
         self.activateWindow()
 
         if annotation_files:

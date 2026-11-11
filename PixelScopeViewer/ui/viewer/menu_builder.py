@@ -103,6 +103,13 @@ def create_menus(viewer):
     analysis.addAction(viewer.show_annotations_action)
     analysis.addSeparator()
     analysis.addAction(QAction("差分画像表示", viewer, triggered=lambda: viewer.image_list.show_diff_dialog()))
+    analysis.addSeparator()
+    viewer.tile_mode_action = QAction("タイル比較モード", viewer, shortcut="Shift+T", checkable=True)
+    viewer.tile_mode_action.setShortcutContext(Qt.WindowShortcut)
+    viewer.tile_mode_action.triggered.connect(lambda _checked: viewer.toggle_tile_mode())
+    viewer.addAction(viewer.tile_mode_action)
+    analysis.addAction(viewer.tile_mode_action)
+    analysis.addAction(QAction("タイルへの画像登録...", viewer, triggered=lambda: viewer.show_tile_register_dialog()))
 
     help_menu = menubar.addMenu("ヘルプ")
     help_menu.addAction(QAction("ヘルプ / ショートカット", viewer, triggered=viewer.help_dialog.show))

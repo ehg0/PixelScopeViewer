@@ -401,6 +401,7 @@ class AnalysisDialog(ToolDialog):
             is_integer_type=is_integer_type,
             chart_kind=self.settings.hist_chart_kind,
             bar_alpha=self.settings.hist_bar_alpha,
+            step=self.settings.hist_mode == "Histogram",
         )
 
         # profile
@@ -518,6 +519,7 @@ class AnalysisDialog(ToolDialog):
             "is_integer_type": all(np.issubdtype(t.sub.dtype, np.integer) for t in targets) and bool(targets),
             "chart_kind": self.settings.hist_chart_kind,
             "bar_alpha": self.settings.hist_bar_alpha,
+            "step": self.settings.hist_mode == "Histogram",
         }
         if not self._split_view():
             self.hist_tab.update_plot(

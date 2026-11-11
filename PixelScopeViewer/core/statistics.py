@@ -6,11 +6,16 @@ import numpy as np
 
 
 def determine_hist_bins(arr: np.ndarray, bin_step: float) -> np.ndarray:
-    """データの範囲を bin_step 刻みで覆う histogram の bin 境界を返す。"""
+    """データの範囲を bin_step 刻みで覆う histogram の bin 境界を返す。
+
+    最大値も自分の bin [k * step, (k + 1) * step) に入るよう、右端は最大値を含む bin の次の境界にする。
+    値が 1 種類だけでも 1 bin になる。
+    """
     step = bin_step
     data_min = np.floor(arr.min() / step) * step
-    data_max = np.ceil(arr.max() / step) * step
-    return np.arange(data_min, data_max + step, step)
+    data_max = (np.floor(arr.max() / step) + 1) * step
+    # 浮動小数の誤差で右端の境界が落ちないよう、半 step 先まで並べる
+    return np.arange(data_min, data_max + step / 2, step)
 
 
 def determine_hist_bins_auto(arr: np.ndarray) -> np.ndarray | int:
@@ -72,6 +77,35 @@ def merge_hist_series(
             ys_new[indices[valid]] = ys[valid]
         merged[label] = (x_common, ys_new)
     return merged
+
+
+def histogram_step_edges(xs: np.ndarray, width: float, *, log_x: bool = False) -> tuple[np.ndarray, np.ndarray]:
+    """histogram を step（bin の区間で水平な線）で描くための bin の境界と、描く bin の mask を返す。
+
+    x（昇順）を bin の中心とし、隣り合う x の中点を境界、両端は width の半分だけ広げる。1 bin だけの場合も同じ。
+    log_x の場合は Bar と同じく x <= 0 の bin を描かず、0 以下になる左端は x を中心に右端を log 上で鏡映する。
+
+    Args:
+        xs: bin の中心（昇順）。
+        width: bin の幅。
+        log_x: x 軸を log 表示するか。
+
+    Returns:
+        (境界（描く bin の数 + 1 個）, 描く bin の mask)。描く bin がない場合の境界は空。
+    """
+    xs = np.asarray(xs, dtype=float)
+    keep = xs > 0 if log_x else np.ones(xs.shape, dtype=bool)
+    if not keep.any():
+        return np.array([]), keep
+    edges = np.empty(xs.size + 1)
+    edges[1:-1] = (xs[:-1] + xs[1:]) / 2
+    edges[0] = xs[0] - width / 2
+    edges[-1] = xs[-1] + width / 2
+    first = int(np.argmax(keep))
+    edges = edges[first:]
+    if log_x and edges[0] <= 0:
+        edges[0] = xs[first] ** 2 / edges[1]
+    return edges, keep
 
 
 def _iter_channels(arr: np.ndarray) -> list[tuple[int, str, np.ndarray]]:

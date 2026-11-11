@@ -6,10 +6,16 @@ from PySide6.QtCore import QRect
 
 from PixelScopeViewer.core.brightness import BrightnessParams
 from PixelScopeViewer.core.constants import DTYPE_DEFAULTS
+from PixelScopeViewer.core.tile_layout import Cell, TileLayout
+from PixelScopeViewer.ui.common import defaults
 
 
 def _brightness_by_dtype() -> dict[str, BrightnessParams]:
     return {key: BrightnessParams.for_dtype(key) for key in DTYPE_DEFAULTS}
+
+
+def _tile_layout() -> TileLayout:
+    return TileLayout(*defaults.TILE_MAX_GRID, *defaults.TILE_GRID_SIZE)
 
 
 @dataclass
@@ -47,5 +53,12 @@ class ViewerState:
     # 解析 dialog で個別に設定した ROI のグラフの色（"R0 C0" などから hex 文字列）。画像上の枠の色にも使う
     roi_color_overrides: dict[str, str] = field(default_factory=dict)
     brightness: BrightnessParams = field(default_factory=lambda: BrightnessParams.for_dtype("uint8"))
-    # 画像を切り替えても dtype（float/uint8/uint16）ごとに直前の設定を保つ
+    # 画像を切り替えても dtype（float/uint8/uint16）ごとに直前の設定を保つ。タイル比較モードは "tile" に保つ
     brightness_by_dtype: dict[str, BrightnessParams] = field(default_factory=_brightness_by_dtype)
+    # タイル比較モード
+    tile_mode: bool = False
+    # 一度でもタイル比較モードにしたか（初回だけ fit する）
+    tile_initialized: bool = False
+    tile_layout: TileLayout = field(default_factory=_tile_layout)
+    # 最後にクリックしたタイルのマス
+    active_cell: Cell = (0, 0)

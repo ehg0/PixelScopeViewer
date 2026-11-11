@@ -41,7 +41,7 @@ class ImageLabel(BaseImageLabel):
         return self._image_rect_to_widget(roi) if roi is not None else None
 
     def _image_size(self) -> tuple[int, int]:
-        return self._qimage.width(), self._qimage.height()
+        return self._img_w, self._img_h
 
     def full_image_rect(self) -> QRect | None:
         """表示中の画像全体を画像座標で返す。画像がない場合は None。"""
@@ -191,7 +191,7 @@ class ImageLabel(BaseImageLabel):
         self._set_roi(move_rect(roi.getRect(), dx * step, dy * step, *self._image_size()))
 
     def wheelEvent(self, event: QWheelEvent):
-        if not self.showing or self.viewer.state.current_index is None:
+        if not self.viewer.has_image():
             event.ignore()
             return
 

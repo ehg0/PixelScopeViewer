@@ -20,13 +20,14 @@ class ImagePane(QFrame):
         super().__init__(parent)
         self.viewer = viewer
         self.image_id: int | None = None
+        self.setObjectName("tilePane")
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
         self.title_label = QLabel()
-        self.title_label.setStyleSheet(theme.TILE_FILENAME_STYLESHEET)
+        self.title_label.setStyleSheet(theme.TILE_TITLE_STYLESHEET)
         self.title_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
         layout.addWidget(self.title_label)
 
@@ -37,7 +38,7 @@ class ImagePane(QFrame):
         layout.addWidget(self.scroll_area, 1)
 
         self.status_label = QLabel()
-        self.status_label.setStyleSheet(theme.TILE_PIXEL_VALUE_STYLESHEET)
+        self.status_label.setStyleSheet(theme.TILE_STATUS_ROW_STYLESHEET)
         layout.addWidget(self.status_label)
 
         self.scroll_area.horizontalScrollBar().valueChanged.connect(lambda _v: viewer.on_pane_view_changed(self))
@@ -52,7 +53,6 @@ class ImagePane(QFrame):
         self.status_label.setVisible(tile_mode)
         if not tile_mode:
             self.setStyleSheet("")
-            self.setFrameShape(QFrame.NoFrame)
 
     def set_active(self, active: bool):
         """タイル比較モードの active タイルの枠を付ける。"""

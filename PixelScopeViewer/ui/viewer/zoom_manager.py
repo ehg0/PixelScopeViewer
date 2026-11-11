@@ -13,8 +13,7 @@ class ZoomManager:
 
     def apply_zoom_and_update_display(self, scale: float):
         self.viewer.state.scale = scale
-        arr = self.viewer.images[self.viewer.state.current_index]["array"]
-        self.viewer.display_image(arr)
+        self.viewer.refresh_display()
 
     def calculate_viewport_center_in_image_coords(self) -> tuple[float, float]:
         """viewport の中心を画像座標で返す。"""
@@ -56,7 +55,7 @@ class ZoomManager:
 
     def set_zoom(self, scale: float):
         """viewport の中心を保ったまま zoom する。"""
-        if self.viewer.state.current_index is None:
+        if not self.viewer.has_image():
             self.viewer.state.scale = scale
             return
 
@@ -78,7 +77,7 @@ class ZoomManager:
 
         マウス座標がない場合は viewport の中心を保って zoom する。
         """
-        if self.viewer.state.current_index is None:
+        if not self.viewer.has_image():
             self.viewer.state.scale = scale
             return
 
@@ -99,7 +98,7 @@ class ZoomManager:
 
     def set_zoom_at_coords(self, scale: float, image_coords: tuple[float, float]):
         """画像座標 image_coords を viewport の中心にして zoom する。"""
-        if self.viewer.state.current_index is None:
+        if not self.viewer.has_image():
             self.viewer.state.scale = scale
             return
 
@@ -116,10 +115,10 @@ class ZoomManager:
 
     def fit_to_window(self):
         """画像全体が window に収まる倍率のうち、最も近い 2 の累乗の倍率で表示する。"""
-        if self.viewer.state.current_index is None:
+        size = self.viewer.content_size()
+        if size is None:
             return
-        img = self.viewer.images[self.viewer.state.current_index]["array"]
-        h, w = img.shape[:2]
+        w, h = size
         viewport = self.viewer.scroll_area.viewport()
         vh = viewport.height()
         wh = viewport.width()
@@ -133,7 +132,7 @@ class ZoomManager:
 
     def toggle_fit_zoom(self):
         """window に合わせた倍率と、直前の倍率・表示位置を切り替える。"""
-        if self.viewer.state.current_index is None:
+        if not self.viewer.has_image():
             return
         if (
             self.viewer.state.fit_zoom_scale is not None

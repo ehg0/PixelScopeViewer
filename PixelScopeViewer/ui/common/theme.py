@@ -75,8 +75,8 @@ DIALOG_BACKGROUND = "#fafafa"
 # --- tile（タイル比較モード）---
 TILE_ACTIVE_BORDER = "#0078d4"
 TILE_INACTIVE_BORDER = "#cccccc"
-TILE_STATUS_BACKGROUND = "rgba(50, 50, 50, 200)"
-TILE_STATUS_TEXT = "#ffffff"
+# タイルのタイトル行・ステータス行の背景
+TILE_ROW_BACKGROUND = "#eeeeee"
 
 # --- slider ---
 SLIDER_GROOVE = "#dddddd"
@@ -106,17 +106,8 @@ SLIDER_STYLESHEET = f"""
     QSlider::handle:horizontal:hover {{ background: {SLIDER_HANDLE_HOVER}; }}
 """
 
-TILE_STATUS_STYLESHEET = f"QWidget {{ background-color: {TILE_STATUS_BACKGROUND}; }}"
-TILE_FILENAME_STYLESHEET = (
-    f"QLabel {{ color: {TILE_STATUS_TEXT}; font-size: 11pt; font-weight: bold;"
-    " background-color: transparent; border: none; }"
-)
-TILE_PIXEL_VALUE_STYLESHEET = (
-    f"QLabel {{ color: {TILE_STATUS_TEXT}; font-size: 11pt; background-color: transparent; border: none; }}"
-)
-TILE_ACTIVE_FRAME_STYLESHEET = (
-    f"QFrame {{ border: 2px solid {TILE_ACTIVE_BORDER}; background-color: palette(window); }}"
-)
-TILE_INACTIVE_FRAME_STYLESHEET = (
-    f"QFrame {{ border: 2px solid {TILE_INACTIVE_BORDER}; background-color: palette(window); }}"
-)
+# タイルの枠は object name で指定し、中の scroll area・label（QFrame）に枠線が付かないようにする
+TILE_ACTIVE_FRAME_STYLESHEET = f"#tilePane {{ border: 2px solid {TILE_ACTIVE_BORDER}; }}"
+TILE_INACTIVE_FRAME_STYLESHEET = f"#tilePane {{ border: 2px solid {TILE_INACTIVE_BORDER}; }}"
+TILE_TITLE_STYLESHEET = f"QLabel {{ font-weight: bold; padding: 2px 4px; background-color: {TILE_ROW_BACKGROUND}; }}"
+TILE_STATUS_ROW_STYLESHEET = f"QLabel {{ padding: 1px 4px; background-color: {TILE_ROW_BACKGROUND}; }}"

@@ -63,6 +63,10 @@ class ImageListManager:
         if new_count <= 0:
             return new_count
         state = self.viewer.state
+        # タイル比較モードでは表示を変えず、画像一覧に追加するだけにする
+        if state.tile_mode:
+            self.update_menu()
+            return new_count
         state.current_index = 0 if state.current_index is None else len(self.viewer.images) - new_count
         self.viewer.show_current_image()
         self.update_menu()
@@ -170,7 +174,9 @@ class ImageListManager:
 
     # --- 切り替え ---
     def show_image(self, idx: int):
-        """idx 番目の画像を表示する。"""
+        """idx 番目の画像を表示する。タイル比較モードでは何もしない。"""
+        if self.viewer.state.tile_mode:
+            return
         self.viewer.state.current_index = idx
         if 0 <= idx < len(self.viewer.images):
             self.viewer.show_current_image()
@@ -179,12 +185,18 @@ class ImageListManager:
             self.update_menu()
 
     def next_image(self):
+        if self.viewer.state.tile_mode:
+            self.viewer.tiles.step(1)
+            return
         if not self.viewer.images:
             return
         self.viewer.state.current_index = (self.viewer.state.current_index + 1) % len(self.viewer.images)
         self.viewer.show_current_image()
 
     def prev_image(self):
+        if self.viewer.state.tile_mode:
+            self.viewer.tiles.step(-1)
+            return
         if not self.viewer.images:
             return
         self.viewer.state.current_index = (self.viewer.state.current_index - 1) % len(self.viewer.images)
@@ -203,6 +215,8 @@ class ImageListManager:
         for i, info in enumerate(v.images):
             act = QAction(info["path"], v)
             act.setCheckable(True)
+            # タイル比較モードでは一覧の表示だけにする
+            act.setEnabled(not v.state.tile_mode)
             # triggered が発火しないよう、connect の前に check 状態と icon を設定する
             if i == v.state.current_index:
                 act.setChecked(True)
@@ -228,6 +242,8 @@ class ImageListManager:
         img_data.pop("array", None)
         img_data.pop("base_array", None)
         del v.images[v.state.current_index]
+        v.display_cache.drop(img_data["id"])
+        v.tiles.remove_images([img_data["id"]])
         if not v.images:
             v.state.current_index = None
             v.image_label.clear()
@@ -242,7 +258,9 @@ class ImageListManager:
         for img_data in v.images:
             img_data.pop("array", None)
             img_data.pop("base_array", None)
+        v.tiles.remove_images([img["id"] for img in v.images])
         v.images.clear()
+        v.display_cache.clear()
         v.state.current_index = None
         v.image_label.clear()
         v.show_current_image()

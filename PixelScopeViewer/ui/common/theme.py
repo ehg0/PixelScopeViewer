@@ -26,7 +26,7 @@ PLOT_INTENSITY_COLOR = "#000000"
 PLOT_FALLBACK_CHANNEL_COLORS = ("#ff0000", "#00c800", "#0066ff", "#7f7f7f")
 PLOT_FALLBACK_COLOR = "#7f7f7f"
 
-# 複数画像比較の重ね描きの色（Tableau 20）。灰色系はグラフ上では黒で描く
+# 重ね描きの曲線の色（Tableau 20）。灰色系はグラフ上では黒で描く
 OVERLAY_PALETTE: tuple[str, ...] = (
     "#1f77b4",
     "#aec7e8",
@@ -72,7 +72,7 @@ COLOR_BUTTON_BORDER = "#999999"
 GROUP_BOX_BORDER = "#cccccc"
 DIALOG_BACKGROUND = "#fafafa"
 
-# --- tile（複数画像比較）---
+# --- tile（タイル比較モード）---
 TILE_ACTIVE_BORDER = "#0078d4"
 TILE_INACTIVE_BORDER = "#cccccc"
 TILE_STATUS_BACKGROUND = "rgba(50, 50, 50, 200)"

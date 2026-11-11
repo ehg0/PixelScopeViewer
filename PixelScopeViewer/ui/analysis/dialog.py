@@ -91,8 +91,7 @@ class AnalysisDialog(ToolDialog):
         rois: list[RoiEntry] | None = None,
     ):
         super().__init__(parent)
-        # グラフの色の持ち主。表示色・個別設定のどちらが変わっても再描画する。
-        # None は色を自前で決める複数画像比較の解析 dialog（TilingAnalysisDialog）のみ
+        # グラフの色の持ち主。表示色・個別設定のどちらが変わっても再描画する
         self.channel_display = channel_display
         if channel_display is not None:
             channel_display.colors_changed.connect(self._on_channel_colors_changed)
@@ -210,8 +209,7 @@ class AnalysisDialog(ToolDialog):
             self.setWindowTitle(f"{base_title} | ROIs={names}")
             return
 
-        # 複数画像比較の window が親の場合は status_updater がないため、既定の title にする
-        if self.viewer and hasattr(self.viewer, "status_updater"):
+        if self.viewer is not None:
             roi_text = self.viewer.status_updater.roi_label.text()
             if roi_text:
                 self.setWindowTitle(f"{base_title} | ROI={roi_text}")
@@ -290,6 +288,22 @@ class AnalysisDialog(ToolDialog):
         arr = crop_roi(arr, self.image_rect.getRect() if self.image_rect is not None else None)
 
         self._update_metadata()
+
+        # 画像を切り替えて ROI が画像の範囲外になった場合は、空のグラフにする
+        if arr.size == 0:
+            self.last_hist_data = {}
+            self.last_profile_data = {}
+            self.hist_tab.update_plot({}, [], {}, title="ROI is out of image")
+            self.profile_tab.update_plot(
+                {},
+                [],
+                self.settings.profile_orientation,
+                self.settings.profile_x_mode,
+                self.settings.profile_method,
+                {},
+                title_prefix="ROI is out of image",
+            )
+            return
 
         # channel_checks の長さを channel 数に合わせる
         nch = arr.shape[2] if arr.ndim == 3 and arr.shape[2] > 1 else 1

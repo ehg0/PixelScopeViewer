@@ -35,7 +35,6 @@ from PixelScopeViewer.ui.common.channel_display import MODE_1CH_JET, MODE_2CH_FL
 from PixelScopeViewer.ui.common.qt_image import numpy_to_qimage
 from PixelScopeViewer.ui.common.state_dump import to_jsonable
 from PixelScopeViewer.ui.common.window import ChildDialogs, bring_to_front
-from PixelScopeViewer.ui.tiling import TilingDialog
 from PixelScopeViewer.ui.viewer.brightness_manager import BrightnessManager
 from PixelScopeViewer.ui.viewer.help_dialog import HelpDialog
 from PixelScopeViewer.ui.viewer.image_list import ImageListManager
@@ -157,7 +156,6 @@ class ImageViewer(QMainWindow):
         self.setAcceptDrops(True)
         # modeless dialog が GC されないよう参照を保持する
         self._analysis_dialog = None
-        self._tiling_dialog = None
 
     # channel の表示設定（channel_display から表示中の画像の channel 数に対応する値を読む）
     def _current_n_channels(self) -> int:
@@ -338,31 +336,15 @@ class ImageViewer(QMainWindow):
         bring_to_front(dlg)
         self._annotations_dialog = self.child_dialogs.track(dlg, lambda: setattr(self, "_annotations_dialog", None))
 
-    def show_tiling_comparison_dialog(self):
-        """複数画像比較 dialog を表示する。"""
-        if len(self.images) < 2:
-            QMessageBox.information(self, "複数画像比較", "比較する画像が2枚以上必要です。")
-            return
-        # modeless で開き、GC されないよう参照を保持する
-        if self._tiling_dialog is None:
-            self._tiling_dialog = TilingDialog(self, image_list=self.images)
-            self._tiling_dialog.finished.connect(lambda: setattr(self, "_tiling_dialog", None))
-
-        bring_to_front(self._tiling_dialog)
-
     # 現在値のコピーと再起動
     def collect_state(self) -> dict:
-        """viewer・channel 表示設定と、開いている解析 dialog・複数画像比較の現在値を集める。"""
+        """viewer・channel 表示設定と、開いている解析 dialog の現在値を集める。"""
         state = {
             "viewer": self.state,
             "channel_display": self.channel_display.snapshot(),
         }
         if self._analysis_dialog is not None:
             state["analysis"] = self._analysis_dialog.settings
-        tiling = self._tiling_dialog
-        # 画像選択を cancel した dialog は state を持たない
-        if tiling is not None and hasattr(tiling, "state"):
-            state["tiling"] = tiling.state
         return to_jsonable(state)
 
     def copy_state_to_clipboard(self):
@@ -517,11 +499,8 @@ class ImageViewer(QMainWindow):
     def closeEvent(self, event):
         # 子 window が残って操作不能にならないよう、modeless dialog をすべて閉じる
         self.child_dialogs.close_all()
-        # 複数画像比較と help は最小化の連動の対象外のため、個別に閉じる
+        # help は最小化の連動の対象外のため、個別に閉じる
         with contextlib.suppress(RuntimeError):  # Qt 側で削除済み
-            if self._tiling_dialog is not None:
-                self._tiling_dialog.close()
-        with contextlib.suppress(RuntimeError):
             if self.help_dialog and self.help_dialog.isVisible():
                 self.help_dialog.close()
         event.accept()

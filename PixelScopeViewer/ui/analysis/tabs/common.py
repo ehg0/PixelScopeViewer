@@ -378,8 +378,6 @@ def create_channel_group(
 ) -> tuple[QGroupBox, QScrollArea, ChannelListWidget, RoiChannelPanel]:
     """scroll area の中に ChannelListWidget と登録 ROI 用の RoiChannelPanel（初期は非表示）を置いた group を作る。
 
-    複数画像比較の解析 dialog は scroll area の中身を tile ごとの一覧に置き換えるため、この構造を保つ。
-
     Returns:
         (group, scroll area, ChannelListWidget, RoiChannelPanel)。
     """

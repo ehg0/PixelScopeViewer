@@ -17,10 +17,23 @@ from PixelScopeViewer.ui.diff import DiffDialog
 
 
 class ImageListManager:
-    """viewer.images（読み込んだ画像の dict のリスト）への追加・削除と、表示する画像の切り替えを行う。"""
+    """viewer.images（読み込んだ画像の dict のリスト）への追加・削除と、表示する画像の切り替えを行う。
+
+    各画像の dict には、閉じても他の画像で再利用しない id を持たせる。
+    """
 
     def __init__(self, viewer):
         self.viewer = viewer
+        self._next_id = 0
+
+    def _new_id(self) -> int:
+        image_id = self._next_id
+        self._next_id += 1
+        return image_id
+
+    def index_of(self, image_id: int) -> int | None:
+        """id の画像の viewer.images での index を返す。見つからない場合は None。"""
+        return next((i for i, img in enumerate(self.viewer.images) if img["id"] == image_id), None)
 
     # --- 読み込み ---
     def open_files(self):
@@ -111,7 +124,13 @@ class ImageListManager:
 
         thumb_qimg = numpy_to_qimage(self.viewer.prepare_thumbnail_array(arr))
         thumb_pixmap = QPixmap.fromImage(thumb_qimg).scaled(200, 200, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-        return {"path": path, "array": arr, "base_array": arr.copy(), "thumbnail_pixmap": thumb_pixmap}
+        return {
+            "id": self._new_id(),
+            "path": path,
+            "array": arr,
+            "base_array": arr.copy(),
+            "thumbnail_pixmap": thumb_pixmap,
+        }
 
     def _show_load_error(self, path: str, arr=None, error_msg: str = ""):
         """ファイルの詳細を添えて読み込みエラーを表示する。"""
@@ -259,6 +278,7 @@ class ImageListManager:
         )
         v.images.append(
             {
+                "id": self._new_id(),
                 "path": f"diff:{a_idx + 1}-{b_idx + 1}",
                 "array": diff,
                 "base_array": diff.copy(),

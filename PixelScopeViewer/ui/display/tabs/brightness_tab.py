@@ -2,11 +2,10 @@
 
 import math
 
-import numpy as np
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QVBoxLayout, QWidget
 
-from PixelScopeViewer.core.brightness import BrightnessParams, determine_dtype_defaults
+from PixelScopeViewer.core.brightness import BrightnessParams, autoscale_range, determine_dtype_defaults
 from PixelScopeViewer.core.constants import get_dtype_defaults
 from PixelScopeViewer.ui.common.widgets import set_value_silently
 from PixelScopeViewer.ui.display.tabs.logic import brightness_builder as builder
@@ -421,18 +420,18 @@ class BrightnessTab(QWidget):
             self._apply_autoscale()
 
     def _apply_autoscale(self):
-        """表示中の channel の最小値・最大値を offset・upper level にする。ROI 使用時は ROI 内で求める。"""
-        if self.roi is not None and self.use_roi_cb.isChecked():
-            x, y, w, h = self.roi
-            data = self.image_array[y : y + h, x : x + w, ...]
-        else:
-            data = self.image_array
+        """表示中の channel の最小値・最大値を offset・upper level にする。ROI 使用時は ROI 内で求める。
 
-        if self.image_array.ndim > 2:
-            ch = self.viewer.channel_checks
-            data = data[..., ch]
-        val_min = np.min(data)
-        val_max = np.max(data)
+        ROI が画像の範囲外などで計算できない場合は、直前の値を引き継ぐ。
+        """
+        if self.image_array is None:
+            return
+        roi = self.roi if self.use_roi_cb.isChecked() else None
+        checks = self.viewer.channel_checks if self.image_array.ndim > 2 else None
+        result = autoscale_range(self.image_array, roi, checks)
+        if result is None:
+            return
+        val_min, val_max = result
 
         self._apply_values(val_min, 1.0, val_max, clamp=True)
         self._emit_brightness_changed()

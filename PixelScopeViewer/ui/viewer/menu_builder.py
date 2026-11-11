@@ -103,9 +103,6 @@ def create_menus(viewer):
     analysis.addAction(viewer.show_annotations_action)
     analysis.addSeparator()
     analysis.addAction(QAction("差分画像表示", viewer, triggered=lambda: viewer.image_list.show_diff_dialog()))
-    analysis.addAction(
-        QAction("複数画像比較", viewer, shortcut="Shift+T", triggered=lambda: viewer.show_tiling_comparison_dialog())
-    )
 
     help_menu = menubar.addMenu("ヘルプ")
     help_menu.addAction(QAction("ヘルプ / ショートカット", viewer, triggered=viewer.help_dialog.show))

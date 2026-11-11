@@ -31,7 +31,7 @@ from PixelScopeViewer.core.brightness import apply_brightness_adjustment as appl
 from PixelScopeViewer.core.brightness import determine_dtype_group
 from PixelScopeViewer.core.image_io import is_image_file
 from PixelScopeViewer.core.render import render_display, render_thumbnail
-from PixelScopeViewer.ui.analysis import AnalysisDialog
+from PixelScopeViewer.ui.analysis import AnalysisDialog, AnalysisSource
 from PixelScopeViewer.ui.annotations import AnnotationsDialog
 from PixelScopeViewer.ui.annotations.model import AnnotationStore
 from PixelScopeViewer.ui.common import defaults
@@ -384,7 +384,7 @@ class ImageViewer(QMainWindow):
         # QAction.triggered(bool) から渡される bool は無視する
         if isinstance(tab, bool):
             tab = None
-        if self.state.current_index is None:
+        if not self.has_image():
             QMessageBox.information(self, "解析", "画像が選択されていません。")
             return
 
@@ -394,17 +394,19 @@ class ImageViewer(QMainWindow):
             self._analysis_dialog.set_current_tab(tab)
             return
 
-        img = self.images[self.state.current_index]
-        arr = img.get("base_array", img.get("array"))
-        sel = self.state.roi
-        img_path = img.get("path")
+        arr, img_path = None, None
+        if self.state.current_index is not None:
+            img = self.images[self.state.current_index]
+            arr = img.get("base_array", img.get("array"))
+            img_path = img.get("path")
         dlg = AnalysisDialog(
             self,
             image_array=arr,
-            image_rect=sel,
+            image_rect=self.state.roi,
             image_path=img_path,
             channel_display=self.channel_display,
             rois=self.roi_list.enabled_rois(),
+            sources=self._analysis_sources(),
         )
         bring_to_front(dlg)
         self._analysis_dialog = self.child_dialogs.track(dlg, lambda: setattr(self, "_analysis_dialog", None))
@@ -487,13 +489,25 @@ class ImageViewer(QMainWindow):
         if self._analysis_dialog is None:
             return
         rois = self.roi_list.enabled_rois()
+        sources = self._analysis_sources()
         if self.state.current_index is None:
-            self._analysis_dialog.set_image_and_rect(None, None, rois=rois)
+            self._analysis_dialog.set_image_and_rect(None, self.state.roi, rois=rois, sources=sources)
             return
         img = self.images[self.state.current_index]
         self._analysis_dialog.set_image_and_rect(
-            img.get("base_array", img["array"]), self.state.roi, img.get("path"), rois=rois
+            img.get("base_array", img["array"]), self.state.roi, img.get("path"), rois=rois, sources=sources
         )
+
+    def _analysis_sources(self) -> list[AnalysisSource]:
+        """解析 dialog に渡すタイル比較モードの全タイルの画像を返す（空欄のタイルは除く）。1 枚表示では空。"""
+        if not self.state.tile_mode:
+            return []
+        layout = self.state.tile_layout
+        return [
+            AnalysisSource(f"T{layout.tile_number(cell)}", img.get("base_array", img["array"]), img.get("path"))
+            for cell, img in self.tiles.visible_images()
+            if img is not None
+        ]
 
     def copy_roi_to_clipboard(self):
         """表示中の画像の ROI（ROI がなければ全体）を表示倍率で clipboard にコピーする。"""

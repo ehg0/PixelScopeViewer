@@ -116,7 +116,13 @@ class HistogramTab(QWidget):
         right.setContentsMargins(10, 10, 10, 10)
         right.setSpacing(8)
 
-        self.roi_group, self.roi_mode_combo, self.link_axes_check, self.split_columns_combo = create_roi_group()
+        (
+            self.roi_group,
+            self.roi_mode_combo,
+            self.link_axes_check,
+            self.split_columns_combo,
+            self.split_unit_combo,
+        ) = create_roi_group()
         right.addWidget(self.roi_group)
 
         channels_group, self.channel_scroll, self.channel_list, self.roi_channel_panel = create_channel_group(

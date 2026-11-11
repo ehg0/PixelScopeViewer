@@ -30,6 +30,8 @@ ANALYSIS_ROI_MODE = "active"
 ANALYSIS_ROI_LINK_AXES = True
 # Split 表示で横に並べるグラフの数（1〜6）
 ANALYSIS_ROI_SPLIT_COLUMNS = 2
+# タイル比較モードの Split の単位: "roi"（ROI ごとに全タイル）, "tile"（タイルごとに全 ROI）
+ANALYSIS_ROI_SPLIT_UNIT = "roi"
 # channel の checkbox の最大数
 MAX_CHANNEL_CHECKBOXES = 8
 

@@ -30,6 +30,7 @@ STATS_HEADERS = ["ch", "Mean", "Std", "Median", "Min", "Max", "Fano"]
 
 ROI_MODES = (("active", "編集中ROI"), ("overlay", "登録ROI - Overlay"), ("split", "登録ROI - Split"))
 ROI_SPLIT_COLUMN_CHOICES = (1, 2, 3, 4, 5, 6)
+ROI_SPLIT_UNITS = (("roi", "ROIごと"), ("tile", "タイルごと"))
 # Split のグラフの title。グラフが小さくなるため、編集中ROI・Overlay（12pt）より小さくする
 SPLIT_TITLE_SIZE = "9pt"
 # Split の Fit で 1 枚がこれより小さくなる場合は scroll bar を出す (幅, 高さ)
@@ -342,12 +343,12 @@ def make_group_box(title: str) -> tuple[QGroupBox, QVBoxLayout]:
     return group, layout
 
 
-def create_roi_group() -> tuple[QGroupBox, QComboBox, QCheckBox, QComboBox]:
+def create_roi_group() -> tuple[QGroupBox, QComboBox, QCheckBox, QComboBox, QComboBox]:
     """解析対象の ROI を選ぶ group を作る。
 
     Returns:
         (group, ROI の表示方法（編集中ROI / 登録ROI の Overlay・Split）の combo, 軸の連動の checkbox,
-        Split の列数の combo)。
+        Split の列数の combo, タイル比較モードの Split の単位の combo)。
     """
     group, layout = make_group_box("ROI")
     combo = QComboBox()
@@ -363,14 +364,22 @@ def create_roi_group() -> tuple[QGroupBox, QComboBox, QCheckBox, QComboBox]:
     for n in ROI_SPLIT_COLUMN_CHOICES:
         columns_combo.addItem(f"{n}列", n)
     columns_combo.setToolTip("Split 表示で横に並べるグラフの数")
+    unit_combo = QComboBox()
+    for unit, text in ROI_SPLIT_UNITS:
+        unit_combo.addItem(text, unit)
+    unit_combo.setToolTip(
+        "タイル比較モードの Split 表示で、ROI ごとのグラフに全タイルを重ねるか、タイルごとのグラフに全 ROI を重ねるか"
+    )
+    unit_combo.setVisible(False)
     # dialog の高さを増やさないよう、軸の連動と同じ行に置く
     split_row = QHBoxLayout()
     split_row.addWidget(link_check)
     split_row.addStretch()
+    split_row.addWidget(unit_combo)
     split_row.addWidget(columns_combo)
     layout.addWidget(combo)
     layout.addLayout(split_row)
-    return group, combo, link_check, columns_combo
+    return group, combo, link_check, columns_combo, unit_combo
 
 
 def create_channel_group(

@@ -96,7 +96,8 @@ class RoiListManager:
 
     def _drop_color_overrides(self, name: str) -> bool:
         overrides = self._state.roi_color_overrides
-        labels = [k for k in overrides if k.startswith(f"{name} ")]
+        # "R0 C0" と、タイル比較モードの "T1 R0 C0" の両方を対象にする
+        labels = [k for k in overrides if k.split(" ")[-2:-1] == [name]]
         for label in labels:
             del overrides[label]
         return bool(labels)

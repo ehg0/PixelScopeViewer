@@ -36,12 +36,16 @@ def apply_brightness_adjustment(arr: np.ndarray, offset: float, gain: float, upp
 
     Returns:
         [0, 255] に clip した uint8 の配列。upper_level が 0 の場合は arr をそのまま返す。
+        upper_level と offset が等しい場合（一様な領域の auto scale など）は、幅を 1 として計算する。
     """
     # 0 除算を避ける
     if upper_level == 0:
         return arr
 
-    adjusted = gain * (arr.astype(np.float32) - offset) / (upper_level - offset) * 255
+    span = upper_level - offset
+    if span == 0:
+        span = 1
+    adjusted = gain * (arr.astype(np.float32) - offset) / span * 255
 
     return np.clip(adjusted, 0, 255).astype(np.uint8)
 
@@ -79,6 +83,22 @@ def autoscale_range(
     if data.size == 0:
         return None
     return float(np.min(data)), float(np.max(data))
+
+
+def merged_dtype_defaults(dtype_keys: Sequence[str]) -> dict:
+    """複数の dtype の入力範囲をすべて含む brightness の設定を返す。
+
+    初期値は先頭の dtype のものにする。小数の入力は、どれかが float なら有効にする。
+
+    Args:
+        dtype_keys: get_dtype_defaults の key（'float', 'uint8', 'uint16'）。空の場合は uint8 とみなす。
+    """
+    all_defaults = [get_dtype_defaults(k) for k in dtype_keys] or [get_dtype_defaults("uint8")]
+    result = dict(all_defaults[0])
+    result["is_float_type"] = any(d["is_float_type"] for d in all_defaults)
+    for key in ("offset_range", "upper_level_range"):
+        result[key] = (min(d[key][0] for d in all_defaults), max(d[key][1] for d in all_defaults))
+    return result
 
 
 def determine_dtype_defaults(image_array=None, image_path=None):

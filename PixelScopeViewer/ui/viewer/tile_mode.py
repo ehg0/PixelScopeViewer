@@ -52,6 +52,7 @@ class TileModeManager:
         st = v.state
         if st.tile_mode:
             self.apply_layout()
+            v.brightness_manager.sync_tile_mode()
             v.show_current_image()
             return
         center = v.zoom_manager.calculate_viewport_center_in_image_coords() if v.has_image() else None
@@ -64,6 +65,7 @@ class TileModeManager:
             st.brightness_by_dtype[TILE_BRIGHTNESS_KEY] = BrightnessParams.for_dtype(group)
         st.brightness = replace(st.brightness_by_dtype[TILE_BRIGHTNESS_KEY])
         self.apply_layout()
+        v.brightness_manager.sync_tile_mode()
         v.show_current_image()
         v.status_updater.update_brightness_status()
         if first or center is None:
@@ -93,9 +95,22 @@ class TileModeManager:
         v.active_pane = single
         if st.current_index is None and v.images:
             st.current_index = 0
+        v.brightness_manager.sync_tile_mode()
         v.show_current_image()
         if center is not None and v.has_image():
             v.zoom_manager.set_zoom_at_coords(st.scale, center)
+
+    def registered_dtype_groups(self) -> list[str]:
+        """表示中のマスに登録されている画像の dtype の group を返す。先頭は最初のタイルの画像の dtype。"""
+        v = self.viewer
+        first = self._first_visible_image()
+        groups = [determine_dtype_group(first["array"])] if first is not None else []
+        for cell in self.layout.visible_cells():
+            for image_id in self.layout.stack(cell):
+                idx = v.image_list.index_of(image_id)
+                if idx is not None and (g := determine_dtype_group(v.images[idx]["array"])) not in groups:
+                    groups.append(g)
+        return groups
 
     def _first_visible_image(self) -> dict | None:
         for image_id in self.layout.visible_image_ids():
@@ -138,24 +153,29 @@ class TileModeManager:
             p.set_active(p is pane)
 
     # --- active タイル ---
-    def set_active_cell(self, cell: Cell):
-        """active タイルを変え、active な画像が変わったことを viewer に通知する。"""
+    def set_active_cell(self, cell: Cell) -> bool:
+        """active タイルを変え、active な画像が変わったことを viewer に通知する。
+
+        Returns:
+            active タイルが変わったか。
+        """
         v = self.viewer
         if not self.active or not self.layout.is_visible(cell):
-            return
+            return False
         pane = self.pane(cell)
         if cell == v.state.active_cell and pane is v.active_pane:
-            return
+            return False
         v.state.active_cell = cell
         self._set_active_pane(pane)
         self.sync_current_index()
         v.notify_active_image_changed()
+        return True
 
-    def on_label_pressed(self, label):
+    def on_label_pressed(self, label) -> bool:
+        """クリックされたタイルを active にする。active タイルが変わったら True を返す。"""
         pane = next((p for p in self.viewer.panes if p.image_label is label), None)
         cell = self.cell_of(pane) if pane is not None else None
-        if cell is not None:
-            self.set_active_cell(cell)
+        return cell is not None and self.set_active_cell(cell)
 
     def sync_current_index(self):
         """active タイルの画像の index を current_index に入れる。空欄の場合は None。"""

@@ -5,7 +5,12 @@ import math
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QVBoxLayout, QWidget
 
-from PixelScopeViewer.core.brightness import BrightnessParams, autoscale_range, determine_dtype_defaults
+from PixelScopeViewer.core.brightness import (
+    BrightnessParams,
+    autoscale_range,
+    determine_dtype_defaults,
+    merged_dtype_defaults,
+)
 from PixelScopeViewer.core.constants import get_dtype_defaults
 from PixelScopeViewer.ui.common.widgets import set_value_silently
 from PixelScopeViewer.ui.display.tabs.logic import brightness_builder as builder
@@ -24,13 +29,14 @@ class BrightnessTab(QWidget):
         self.image_array = image_array
         self.image_path = image_path
 
-        self.roi = self._get_roi()
-        # 親で ROI が変わったら auto scale 用の ROI を更新する
+        # 親で ROI が変わったら auto scale をやり直す
         if self.viewer and hasattr(self.viewer, "roi_changed"):
             self.viewer.roi_changed.connect(self._on_roi_changed)
 
         # dtype ごとの (offset, gain, upper_level)
         self.dtype_params = {}
+        # タイル比較モードでは brightness を全タイル共通の "tile" に保存する
+        self.tile_mode = False
 
         # 画像の dtype から初期値を決める
         defaults = determine_dtype_defaults(image_array)
@@ -270,10 +276,9 @@ class BrightnessTab(QWidget):
         self.dtype_params[self.current_dtype] = current_params
 
     def _sync_to_manager(self):
-        """現在の dtype の設定を viewer の brightness_manager に反映する。"""
+        """表示中の値（auto scale の結果を含む）を viewer の現在の dtype の設定に反映する。"""
         if self.viewer is not None:
-            offset, gain, upper_level = self.dtype_params.get(self.current_dtype, (0, 1.0, 255))
-            self.viewer.state.brightness_by_dtype[self.current_dtype] = BrightnessParams(offset, gain, upper_level)
+            self.viewer.state.brightness_by_dtype[self.current_dtype] = BrightnessParams(*self.get_parameters())
 
     def _reset_gain_to_default(self):
         set_value_silently(self.gain_spinbox, 1.0)
@@ -346,14 +351,62 @@ class BrightnessTab(QWidget):
             self.upper_level_spinbox.value(),
         )
 
+    def set_tile_mode(self, dtype_keys: list[str] | None, params: BrightnessParams | None = None):
+        """タイル比較モードの入力範囲と値にする。dtype_keys が None の場合は表示中の画像の dtype に戻す。
+
+        Args:
+            dtype_keys: 登録されている画像の dtype（先頭は初期値に使う最初のタイルの画像の dtype）。
+            params: 全タイル共通の brightness。
+        """
+        if dtype_keys is None:
+            if not self.tile_mode:
+                return
+            self.tile_mode = False
+            self.dtype_combo.setEnabled(True)
+            self.dtype_combo.setToolTip("")
+            self.current_dtype = None
+            self.update_for_new_image(self.image_array, self.image_path, keep_settings=True)
+            return
+
+        self.tile_mode = True
+        merged = merged_dtype_defaults(dtype_keys)
+        self.current_dtype = "tile"
+        self.is_float_type = merged["is_float_type"]
+        self.initial_offset = merged["initial_offset"]
+        self.initial_gain = merged["initial_gain"]
+        self.initial_upper_level = merged["initial_upper_level"]
+        self.offset_range = merged["offset_range"]
+        self.upper_level_range = merged["upper_level_range"]
+        self.dtype_combo.setEnabled(False)
+        self.dtype_combo.setToolTip("タイル比較モードでは全タイル共通の値を使います")
+        self._configure_offset_widgets()
+        self._configure_gain_widgets()
+        self._configure_upper_level_widgets()
+        if params is None:
+            params = BrightnessParams(self.initial_offset, self.initial_gain, self.initial_upper_level)
+        self.dtype_params["tile"] = self._apply_values(params.offset, params.gain, params.upper_level, clamp=True)
+        if self.auto_scale_cb.isChecked():
+            self._apply_autoscale()
+        else:
+            self._emit_brightness_changed()
+
     def update_for_new_image(self, image_array=None, image_path=None, keep_settings=True):
         """新しい画像の dtype に合わせて入力範囲と値を更新する。
 
+        タイル比較モードでは入力範囲と値を変えず、auto scale の対象の画像だけを替える。
+
         Args:
-            image_array: 画像配列。
+            image_array: 画像配列。None は画像がない（空欄のタイルが active）場合。
             image_path: 画像ファイルのパス。
             keep_settings: dtype ごとに保存した設定を使うか。False の場合は初期値に戻す。
         """
+        if self.tile_mode:
+            self.image_array = image_array
+            self.image_path = image_path
+            if self.auto_scale_cb.isChecked():
+                self._apply_autoscale()
+            return
+
         old_dtype = self.current_dtype
         old_params = (
             self.offset_spinbox.value(),
@@ -378,7 +431,7 @@ class BrightnessTab(QWidget):
         self.offset_range = defaults["offset_range"]
         self.upper_level_range = defaults["upper_level_range"]
 
-        if keep_settings:
+        if keep_settings and old_dtype is not None:
             self.dtype_params[old_dtype] = old_params
 
         self.dtype_combo.blockSignals(True)
@@ -416,7 +469,6 @@ class BrightnessTab(QWidget):
 
     def _on_roi_changed(self, *args):
         if self.auto_scale_cb.isChecked() and self.use_roi_cb.isChecked():
-            self.roi = self._get_roi()
             self._apply_autoscale()
 
     def _apply_autoscale(self):
@@ -426,7 +478,8 @@ class BrightnessTab(QWidget):
         """
         if self.image_array is None:
             return
-        roi = self.roi if self.use_roi_cb.isChecked() else None
+        # ROI は控えずに毎回 viewer から読む（auto scale を ON にする前に作った ROI も使う）
+        roi = self._get_roi() if self.use_roi_cb.isChecked() else None
         checks = self.viewer.channel_checks if self.image_array.ndim > 2 else None
         result = autoscale_range(self.image_array, roi, checks)
         if result is None:

@@ -190,10 +190,13 @@ class ImageViewer(QMainWindow):
         if pane is self.active_pane:
             self.view_changed.emit()
 
-    def on_label_pressed(self, label: ImageLabel):
-        """画像表示 widget のクリックを受け取る。タイル比較モードではそのタイルを active にする。"""
-        if self.state.tile_mode:
-            self.tiles.on_label_pressed(label)
+    def on_label_pressed(self, label: ImageLabel) -> bool:
+        """画像表示 widget のクリックを受け取る。タイル比較モードではそのタイルを active にする。
+
+        Returns:
+            active タイルが変わったか。
+        """
+        return self.state.tile_mode and self.tiles.on_label_pressed(label)
 
     def on_label_mouse_moved(self, label: ImageLabel, pos: QPoint | None):
         """画像表示 widget 上のマウス位置（widget 座標）を受け取る。widget の外に出た場合は None。"""
@@ -276,6 +279,9 @@ class ImageViewer(QMainWindow):
         self.status_updater.update_roi_status()
 
         if self.state.current_index is None:
+            # 空欄のタイルが active の場合は auto scale の対象をなくす
+            if self.brightness_dialog is not None:
+                self.brightness_dialog.update_for_new_image(None, None)
             self._update_analysis_dialog()
             return
         img = self.images[self.state.current_index]

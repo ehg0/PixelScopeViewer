@@ -7,7 +7,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QMessageBox
 
-from PixelScopeViewer.core.brightness import BrightnessParams, determine_dtype_defaults
+from PixelScopeViewer.core.brightness import BrightnessParams, determine_dtype_defaults, merged_dtype_defaults
 from PixelScopeViewer.core.brightness import apply_brightness_adjustment as apply_brightness_core
 from PixelScopeViewer.core.constants import GAIN_STEP
 from PixelScopeViewer.ui.common.qt_image import numpy_to_qimage
@@ -60,6 +60,7 @@ class BrightnessManager:
             self.viewer.child_dialogs.track(
                 self.viewer.brightness_dialog, lambda: setattr(self.viewer, "brightness_dialog", None)
             )
+            self.sync_tile_mode()
             params = self.viewer.brightness_dialog.get_brightness()
             self.viewer.state.brightness.offset = params[0]
             self.viewer.state.brightness.gain = params[1]
@@ -81,6 +82,19 @@ class BrightnessManager:
         if not self.viewer.brightness_dialog.isVisible():
             self.viewer.brightness_dialog.restore_geometry()
         bring_to_front(self.viewer.brightness_dialog)
+
+    def sync_tile_mode(self):
+        """表示設定 dialog の brightness の入力範囲と値を、タイル比較モードか 1 枚表示かに合わせる。"""
+        dlg = self.viewer.brightness_dialog
+        if dlg is None:
+            return
+        st = self.viewer.state
+        if st.tile_mode:
+            dlg.brightness_tab.set_tile_mode(
+                self.viewer.tiles.registered_dtype_groups(), st.brightness_by_dtype[TILE_BRIGHTNESS_KEY]
+            )
+        else:
+            dlg.brightness_tab.set_tile_mode(None)
 
     def _default_upper_level_for_dtype(self, dtype, current):
         """dtype に合う upper level を返す。
@@ -105,12 +119,15 @@ class BrightnessManager:
             self.viewer.brightness_dialog.reset_parameters()
             handled_by_dialog = True
         else:
-            # 画像がない場合は uint8 の既定値にする
+            # 画像がない場合は uint8 の既定値にする。タイル比較モードは最初のタイルの画像の dtype の既定値にする
             base_arr = None
             if self.viewer.state.current_index is not None:
                 img = self.viewer.images[self.viewer.state.current_index]
                 base_arr = img.get("base_array", img["array"])
-            d = determine_dtype_defaults(base_arr)
+            if self.viewer.state.tile_mode:
+                d = merged_dtype_defaults(self.viewer.tiles.registered_dtype_groups())
+            else:
+                d = determine_dtype_defaults(base_arr)
             self.viewer.state.brightness = BrightnessParams(
                 d["initial_offset"], d["initial_gain"], d["initial_upper_level"]
             )

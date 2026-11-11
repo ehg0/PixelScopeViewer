@@ -44,3 +44,29 @@ def test_float_ignores_nan_and_inf():
     arr = np.array([[np.nan, 0.5], [np.inf, 0.25]], dtype=np.float32)
     assert autoscale_range(arr) == (0.25, 0.5)
     assert autoscale_range(np.full((2, 2), np.nan, dtype=np.float32)) is None
+
+
+def test_merged_dtype_defaults():
+    from PixelScopeViewer.core.brightness import merged_dtype_defaults
+
+    merged = merged_dtype_defaults(["uint8", "float", "uint16"])
+    assert merged["initial_upper_level"] == 255
+    assert merged["is_float_type"] is True
+    assert merged["offset_range"] == (-32768, 1e5)
+    assert merged["upper_level_range"] == (0, 1e5)
+    single = merged_dtype_defaults(["uint16"])
+    assert single["is_float_type"] is False
+    assert single["upper_level_range"] == (1, 65535)
+    assert merged_dtype_defaults([])["initial_upper_level"] == 255
+
+
+def test_apply_brightness_with_zero_span():
+    import warnings
+
+    from PixelScopeViewer.core.brightness import apply_brightness_adjustment
+
+    arr = np.array([[5, 6]], dtype=np.uint16)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        out = apply_brightness_adjustment(arr, 5, 1.0, 5)
+    assert out.tolist() == [[0, 255]]

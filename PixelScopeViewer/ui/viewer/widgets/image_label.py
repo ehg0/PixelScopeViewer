@@ -98,8 +98,8 @@ class ImageLabel(BaseImageLabel):
             painter.drawText(text_rect, Qt.AlignCenter, entry.name)
 
     def mousePressEvent(self, ev):
-        self.viewer.on_label_pressed(self)
-        if not self.showing:
+        # active でないタイルへのクリックは、そのタイルを active にするだけにする（ROI を作り直さない）
+        if self.viewer.on_label_pressed(self) or not self.showing:
             return
 
         pos = ev.position().toPoint()

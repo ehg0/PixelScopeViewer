@@ -39,8 +39,8 @@ class StatusUpdater:
         return container
 
     def update_mouse_status(self, pos):
-        """マウス位置（widget 座標）の pixel 値を表示する。"""
-        if self.viewer.state.current_index is None or not self.viewer.images:
+        """マウス位置（widget 座標）の pixel 値を表示する。pos が None の場合は消す。"""
+        if pos is None or self.viewer.state.current_index is None or not self.viewer.images:
             self.pixel_label.setText("")
             self.viewer.current_mouse_image_coords = None
             return

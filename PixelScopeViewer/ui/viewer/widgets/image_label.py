@@ -1,7 +1,7 @@
 """ROI 操作に対応した画像表示 widget。"""
 
 from PySide6.QtCore import QPoint, QRect, Qt
-from PySide6.QtGui import QColor, QImage, QPainter, QPen, QWheelEvent
+from PySide6.QtGui import QColor, QPainter, QPen, QWheelEvent
 
 from PixelScopeViewer.core.constants import MAX_ZOOM_SCALE, MIN_ZOOM_SCALE, ZOOM_STEP
 from PixelScopeViewer.core.roi import hit_test_edge, move_rect, rect_from_points, resize_rect
@@ -15,12 +15,11 @@ class ImageLabel(BaseImageLabel):
     """pixel 単位に吸着する ROI の作成・移動・リサイズに対応した画像表示 widget。
 
     左 drag で作成、右 drag で移動、辺・角の左 drag でリサイズ、矢印キーで 1 pixel（Shift で 10 pixel）移動する。
-    roi_rect は widget 座標で持つ。
+    ROI は viewer.state.roi（画像座標）を読み書きし、自分では持たない。移動・リサイズは表示中の画像の範囲内に収める。
     """
 
     def __init__(self, viewer, parent=None):
         super().__init__(viewer, parent)
-        self.roi_rect: QRect | None = None
         self.dragging = False
         # drag の種類: 'create', 'move', 'resize' のいずれか
         self._drag_mode = None
@@ -29,48 +28,36 @@ class ImageLabel(BaseImageLabel):
         self._drag_start_img = None
         self._drag_orig_img_rect: QRect | None = None
 
-    def set_image(self, qimg: QImage, scale: float = 1.0):
-        """画像を表示する。ROI は画像座標を保ったまま新しい倍率に合わせる。"""
-        prev_sel_img = None
-        if self.roi_rect and self._qimage is not None and not self._qimage.isNull():
-            prev_sel_img = self.get_roi_in_image_coords()
-
-        super().set_image(qimg, scale)
-
-        self.roi_rect = self._image_rect_to_widget(prev_sel_img) if prev_sel_img is not None else None
-
-    def clear(self):
-        super().clear()
-        self.roi_rect = None
-
     # --- ROI ---
-    def get_roi_in_image_coords(self) -> QRect | None:
-        """ROI を画像座標で返す。ROI がない場合は None。"""
-        if not self.roi_rect:
-            return None
-        return self._widget_rect_to_image(self.roi_rect)
+    @property
+    def _roi(self) -> QRect | None:
+        roi = self.viewer.state.roi
+        return roi if roi is not None and not roi.isEmpty() else None
 
-    def set_roi_full(self):
-        """画像全体を ROI にする。"""
+    @property
+    def roi_widget_rect(self) -> QRect | None:
+        """ROI を widget 座標で返す。ROI がない場合は None。"""
+        roi = self._roi
+        return self._image_rect_to_widget(roi) if roi is not None else None
+
+    def _image_size(self) -> tuple[int, int]:
+        return self._qimage.width(), self._qimage.height()
+
+    def full_image_rect(self) -> QRect | None:
+        """表示中の画像全体を画像座標で返す。画像がない場合は None。"""
         if not self.showing:
-            return
-        disp_w = int(self._orig_pixmap.width() * self.scale) if not self._orig_pixmap.isNull() else 0
-        disp_h = int(self._orig_pixmap.height() * self.scale) if not self._orig_pixmap.isNull() else 0
-        self.roi_rect = QRect(0, 0, max(1, disp_w), max(1, disp_h))
-        self.update()
+            return None
+        return QRect(0, 0, *self._image_size())
 
     def _get_resize_edge(self, pos: QPoint) -> str | None:
         """cursor 付近にある ROI の辺・角を返す。"""
-        if not self.roi_rect:
+        rect = self.roi_widget_rect
+        if rect is None:
             return None
-        return hit_test_edge(pos.x(), pos.y(), self.roi_rect.getRect(), inclusive=True)
+        return hit_test_edge(pos.x(), pos.y(), rect.getRect(), inclusive=True)
 
-    def _set_roi_from_image_rect(self, rect: tuple[int, int, int, int]):
-        self.roi_rect = self._image_rect_to_widget(QRect(*rect))
-
-    def _notify_roi_changed(self):
-        if self.viewer and self.roi_rect:
-            self.viewer.on_roi_changed(self.roi_rect)
+    def _set_roi(self, rect: tuple[int, int, int, int]):
+        self.viewer.set_roi_from_image_rect(QRect(*rect))
 
     # --- event ---
     def paintEvent(self, event):
@@ -80,10 +67,11 @@ class ImageLabel(BaseImageLabel):
             return
         painter = QPainter(self)
         self._paint_roi_list(painter)
-        if self.roi_rect:
+        rect = self.roi_widget_rect
+        if rect is not None:
             painter.setPen(QPen(QColor(theme.ROI_COLOR), 1))
             painter.setBrush(Qt.NoBrush)
-            painter.drawRect(self.roi_rect)
+            painter.drawRect(rect)
 
     def _paint_roi_list(self, painter: QPainter):
         """ROI 一覧の枠と名前を描く。解析対象は C0 のグラフの色の実線、対象外は灰色の破線にする。"""
@@ -110,12 +98,14 @@ class ImageLabel(BaseImageLabel):
             painter.drawText(text_rect, Qt.AlignCenter, entry.name)
 
     def mousePressEvent(self, ev):
+        self.viewer.on_label_pressed(self)
         if not self.showing:
             return
 
         pos = ev.position().toPoint()
         edge = self._get_resize_edge(pos)
         img_pt = self._widget_to_image_point(pos)
+        roi_rect = self.roi_widget_rect
 
         if ev.button() == Qt.LeftButton:
             self.dragging = True
@@ -123,59 +113,49 @@ class ImageLabel(BaseImageLabel):
             if edge:
                 self._drag_mode = "resize"
                 self._resize_edge = edge
-                self._drag_orig_img_rect = self.get_roi_in_image_coords()
+                self._drag_orig_img_rect = QRect(self._roi)
             else:
                 self._drag_mode = "create"
                 # 新しい ROI は ROI 一覧の選択中の ROI に反映しない
                 self.viewer.roi_list.unlink()
                 # クリック直後から 1 pixel の ROI を表示する
                 if img_pt is not None:
-                    self.roi_rect = QRect(self._image_to_widget_x(img_pt[0]), self._image_to_widget_y(img_pt[1]), 1, 1)
-        elif ev.button() == Qt.RightButton and self.roi_rect and self.roi_rect.contains(pos) and not edge:
+                    self._set_roi((img_pt[0], img_pt[1], 1, 1))
+        elif ev.button() == Qt.RightButton and roi_rect is not None and roi_rect.contains(pos) and not edge:
             # ROI の内側（辺以外）を右クリックしたときのみ移動を開始する
             self.dragging = True
             self._drag_mode = "move"
             self._drag_start_img = img_pt
-            self._drag_orig_img_rect = self.get_roi_in_image_coords()
+            self._drag_orig_img_rect = QRect(self._roi)
 
     def mouseMoveEvent(self, ev):
         pos = ev.position().toPoint()
+        self.viewer.on_label_mouse_moved(self, pos)
         # ROI の辺に hover したら cursor を変える
-        if self.showing and not self.dragging and self.roi_rect:
+        if self.showing and not self.dragging and self._roi is not None:
             self.setCursor(edge_cursor(self._get_resize_edge(pos)))
 
         if self.showing and self.dragging:
             cur_img = self._widget_to_image_point(pos)
-            if cur_img is None:
-                return
-            self._apply_drag(cur_img)
-            self.update()
-            self._notify_roi_changed()
-
-        # 親に画像範囲内へ clamp したマウス位置を通知する
-        if hasattr(self.parent(), "on_mouse_move"):
-            if self.showing and not self._orig_pixmap.isNull():
-                disp_w = int(self._orig_pixmap.width() * self.scale)
-                disp_h = int(self._orig_pixmap.height() * self.scale)
-                pos = QPoint(max(0, min(pos.x(), max(0, disp_w - 1))), max(0, min(pos.y(), max(0, disp_h - 1))))
-            self.parent().on_mouse_move(pos)
+            if cur_img is not None:
+                self._apply_drag(cur_img)
 
     def _apply_drag(self, cur_img: tuple[int, int]):
         """drag 中のマウス位置（画像座標）に合わせて ROI を作成・移動・リサイズする。"""
         if self._drag_mode == "create":
             if self._drag_start_img is not None:
-                self._set_roi_from_image_rect(rect_from_points(self._drag_start_img, cur_img))
+                self._set_roi(rect_from_points(self._drag_start_img, cur_img))
             return
         if self._drag_start_img is None or self._drag_orig_img_rect is None:
             return
         orig = self._drag_orig_img_rect.getRect()
-        img_w, img_h = self._qimage.width(), self._qimage.height()
+        img_w, img_h = self._image_size()
         if self._drag_mode == "resize":
-            self._set_roi_from_image_rect(resize_rect(orig, self._resize_edge, *cur_img, img_w, img_h))
+            self._set_roi(resize_rect(orig, self._resize_edge, *cur_img, img_w, img_h))
         elif self._drag_mode == "move":
             dx = cur_img[0] - self._drag_start_img[0]
             dy = cur_img[1] - self._drag_start_img[1]
-            self._set_roi_from_image_rect(move_rect(orig, dx, dy, img_w, img_h))
+            self._set_roi(move_rect(orig, dx, dy, img_w, img_h))
 
     def mouseReleaseEvent(self, ev):
         if not self.showing:
@@ -193,38 +173,22 @@ class ImageLabel(BaseImageLabel):
         self._resize_edge = None
         self._drag_start_img = None
         self._drag_orig_img_rect = None
-        self.update()
-        self._notify_roi_changed()
+
+    def leaveEvent(self, event):
+        self.viewer.on_label_mouse_moved(self, None)
+        super().leaveEvent(event)
 
     def keyPressEvent(self, e):
         # 矢印キーで ROI を 1 pixel（Shift で 10 pixel）移動する
         offsets = {Qt.Key_Left: (-1, 0), Qt.Key_Right: (1, 0), Qt.Key_Up: (0, -1), Qt.Key_Down: (0, 1)}
-        if not self.roi_rect or e.key() not in offsets:
+        roi = self._roi
+        if roi is None or not self.showing or e.key() not in offsets:
             super().keyPressEvent(e)
             return
 
-        # 画像 pixel 単位の移動量を表示 pixel に換算する
-        img_delta = 10 if e.modifiers() & Qt.ShiftModifier else 1
-        delta = max(1, int(img_delta * self.scale))
+        step = 10 if e.modifiers() & Qt.ShiftModifier else 1
         dx, dy = offsets[e.key()]
-        new_rect = self.roi_rect.translated(dx * delta, dy * delta)
-
-        # 画像の範囲内に収める
-        disp_w = int(self._orig_pixmap.width() * self.scale) if not self._orig_pixmap.isNull() else 0
-        disp_h = int(self._orig_pixmap.height() * self.scale) if not self._orig_pixmap.isNull() else 0
-        if new_rect.left() < 0:
-            new_rect.moveLeft(0)
-        if new_rect.top() < 0:
-            new_rect.moveTop(0)
-        if new_rect.right() >= disp_w:
-            new_rect.moveRight(disp_w - 1)
-        if new_rect.bottom() >= disp_h:
-            new_rect.moveBottom(disp_h - 1)
-
-        self.roi_rect = new_rect
-        self.update()
-        if self.viewer:
-            self.viewer.on_roi_changed(self.roi_rect)
+        self._set_roi(move_rect(roi.getRect(), dx * step, dy * step, *self._image_size()))
 
     def wheelEvent(self, event: QWheelEvent):
         if not self.showing or self.viewer.state.current_index is None:

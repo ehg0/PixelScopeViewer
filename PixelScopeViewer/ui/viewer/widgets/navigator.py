@@ -26,10 +26,7 @@ class NavigatorWidget(QGroupBox):
         self.viewer.scale_changed.connect(self.update_thumbnail)
         self.viewer.image_changed.connect(self.update_thumbnail)
         # scroll や viewport の resize でも更新する
-        sa = self.viewer.scroll_area
-        sa.horizontalScrollBar().valueChanged.connect(self.update_thumbnail)
-        sa.verticalScrollBar().valueChanged.connect(self.update_thumbnail)
-        sa.viewport().installEventFilter(self)
+        self.viewer.view_changed.connect(self.update_thumbnail)
 
         # クリックで表示領域を移動する
         self.thumbnail_label.installEventFilter(self)
@@ -38,11 +35,7 @@ class NavigatorWidget(QGroupBox):
         self.update_thumbnail()
 
     def eventFilter(self, obj, event):
-        if obj is self.viewer.scroll_area.viewport() and event.type() == QEvent.Resize:
-            self.update_thumbnail()
-        elif (
-            obj is self.thumbnail_label and event.type() == QEvent.MouseButtonPress and event.button() == Qt.LeftButton
-        ):
+        if obj is self.thumbnail_label and event.type() == QEvent.MouseButtonPress and event.button() == Qt.LeftButton:
             self.handle_mouse_press(event)
         return super().eventFilter(obj, event)
 

@@ -6,7 +6,7 @@ from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
-from PySide6.QtCore import QEvent, QRect, Qt, Signal
+from PySide6.QtCore import QPoint, QRect, Qt, Signal
 from PySide6.QtGui import (
     QColor,
     QGuiApplication,
@@ -14,6 +14,7 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QApplication,
     QDockWidget,
+    QGridLayout,
     QHBoxLayout,
     QMainWindow,
     QMessageBox,
@@ -45,6 +46,7 @@ from PixelScopeViewer.ui.viewer.status_updater import StatusUpdater
 from PixelScopeViewer.ui.viewer.widgets import (
     DisplayInfoWidget,
     ImageLabel,
+    ImagePane,
     NavigatorWidget,
     ROIInfoWidget,
     RoiListWidget,
@@ -68,6 +70,8 @@ class ImageViewer(QMainWindow):
     roi_changed = Signal()
     # ROI 一覧（登録・削除・☑・連動・色の個別設定）の変更
     rois_changed = Signal()
+    # active な pane の scroll・viewport の resize
+    view_changed = Signal()
 
     def __init__(self):
         super().__init__()
@@ -92,12 +96,14 @@ class ImageViewer(QMainWindow):
         self.setCentralWidget(central)
         h_layout = QHBoxLayout(central)
 
-        self.scroll_area = QScrollArea()
-        self.scroll_area.setWidgetResizable(True)
-        self.image_label = ImageLabel(self, self)
-        self.scroll_area.setWidget(self.image_label)
-        h_layout.addWidget(self.scroll_area)
-        self.image_label.installEventFilter(self)
+        # 画像の表示枠。1 枚表示は 1 つ、タイル比較モードはタイルの数だけ並べる
+        self.pane_area = QWidget()
+        self.pane_grid = QGridLayout(self.pane_area)
+        self.pane_grid.setContentsMargins(0, 0, 0, 0)
+        self.panes = [ImagePane(self)]
+        self.active_pane = self.panes[0]
+        self.pane_grid.addWidget(self.active_pane, 0, 0)
+        h_layout.addWidget(self.pane_area)
 
         # 左側の dock
         self.navigator_dock = QDockWidget("Navigator")
@@ -156,6 +162,32 @@ class ImageViewer(QMainWindow):
         self.setAcceptDrops(True)
         # modeless dialog が GC されないよう参照を保持する
         self._analysis_dialog = None
+
+    @property
+    def scroll_area(self) -> QScrollArea:
+        """active な pane の scroll area。"""
+        return self.active_pane.scroll_area
+
+    @property
+    def image_label(self) -> ImageLabel:
+        """active な pane の画像表示 widget。"""
+        return self.active_pane.image_label
+
+    def refresh_overlays(self):
+        """全 pane の ROI の描画を更新する。"""
+        for pane in self.panes:
+            pane.image_label.update()
+
+    def on_pane_view_changed(self, pane: ImagePane):
+        if pane is self.active_pane:
+            self.view_changed.emit()
+
+    def on_label_pressed(self, label: ImageLabel):
+        """画像表示 widget のクリックを受け取る。"""
+
+    def on_label_mouse_moved(self, label: ImageLabel, pos: QPoint | None):
+        """画像表示 widget 上のマウス位置（widget 座標）を受け取る。widget の外に出た場合は None。"""
+        self.status_updater.update_mouse_status(pos)
 
     # channel の表示設定（channel_display から表示中の画像の channel 数に対応する値を読む）
     def _current_n_channels(self) -> int:
@@ -218,17 +250,6 @@ class ImageViewer(QMainWindow):
                 initial_mode_1ch=self.channel_display.mode_1ch,
                 initial_mode_2ch=self.channel_display.mode_2ch,
             )
-
-        if self.state.roi:
-            s = self.state.scale
-            rect = QRect(
-                int(self.state.roi.x() * s),
-                int(self.state.roi.y() * s),
-                int(self.state.roi.width() * s),
-                int(self.state.roi.height() * s),
-            )
-            self.image_label.roi_rect = rect
-            self.image_label.update()
 
         self._update_analysis_dialog()
 
@@ -364,24 +385,9 @@ class ImageViewer(QMainWindow):
         """画像全体を ROI にする。"""
         if self.state.current_index is None or not self.images:
             return
-        self.image_label.set_roi_full()
-        if self.image_label.roi_rect:
-            self.on_roi_changed(self.image_label.roi_rect)
-
-    def on_roi_changed(self, rect: QRect):
-        """widget 座標の ROI を画像座標に変換して保存し、関連する widget と dialog に通知する。"""
-        s = self.state.scale
-        self.state.roi = QRect(
-            int(rect.x() / s),
-            int(rect.y() / s),
-            int(rect.width() / s),
-            int(rect.height() / s),
-        )
-        self.roi_list.sync_linked()
-        self.status_updater.update_roi_status()
-        self._update_analysis_dialog()
-
-        self.roi_changed.emit()
+        rect = self.image_label.full_image_rect()
+        if rect is not None:
+            self.set_roi_from_image_rect(rect)
 
     def _update_analysis_dialog(self):
         """表示中の画像・ROI・解析対象の ROI 一覧を解析 dialog に反映する。画像がない場合は解析 dialog を空にする。"""
@@ -431,18 +437,13 @@ class ImageViewer(QMainWindow):
         else:
             QMessageBox.information(self, "コピー", "クリップボードにコピーする画像を作成できませんでした。")
 
-    def set_roi_from_image_rect(self, rect_img: QRect):
-        """画像座標で ROI を設定する。
-
-        widget 座標を経由しないため、zoom 中でも丸め誤差なく反映される。
-        """
-        self.state.roi = rect_img
+    def set_roi_from_image_rect(self, rect_img: QRect | None):
+        """画像座標で編集中 ROI を設定し、関連する widget と dialog に通知する。None の場合は ROI を解除する。"""
+        if rect_img == self.state.roi:
+            return
+        self.state.roi = QRect(rect_img) if rect_img is not None else None
         self.roi_list.sync_linked()
-        s = self.state.scale
-        self.image_label.roi_rect = QRect(
-            int(rect_img.x() * s), int(rect_img.y() * s), int(rect_img.width() * s), int(rect_img.height() * s)
-        )
-        self.image_label.update()
+        self.refresh_overlays()
         self.status_updater.update_roi_status()
         self._update_analysis_dialog()
         self.roi_changed.emit()
@@ -481,17 +482,10 @@ class ImageViewer(QMainWindow):
         self.child_dialogs.raise_visible()
         super().mousePressEvent(event)
 
-    def eventFilter(self, obj, event):
-        if obj is self.image_label and event.type() == QEvent.MouseMove:
-            self.status_updater.update_mouse_status(event.position().toPoint())
-            return False
-        return super().eventFilter(obj, event)
-
     def keyPressEvent(self, e):
         # Esc で ROI を解除する
         if e.key() == Qt.Key_Escape:
-            self.image_label.roi_rect = None
-            self.image_label.update()
+            self.set_roi_from_image_rect(None)
             return
 
         super().keyPressEvent(e)

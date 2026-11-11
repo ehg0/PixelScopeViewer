@@ -30,7 +30,7 @@ class RoiListManager:
         return next((e for e in self._state.rois if e.id == roi_id), None)
 
     def _changed(self):
-        self.viewer.image_label.update()
+        self.viewer.refresh_overlays()
         self.viewer.rois_changed.emit()
 
     # --- 登録・削除 ---

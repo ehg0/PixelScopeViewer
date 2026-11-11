@@ -1,6 +1,6 @@
 """表示領域の情報を表示する widget。"""
 
-from PySide6.QtCore import QEvent, Qt
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QGroupBox, QMenu, QTableWidget, QTableWidgetItem, QVBoxLayout
 
@@ -45,10 +45,7 @@ class DisplayInfoWidget(QGroupBox):
         self.viewer.scale_changed.connect(self.update_info)
         self.viewer.image_changed.connect(self.update_info)
         # scroll や viewport の resize でも更新する
-        sa = self.viewer.scroll_area
-        sa.horizontalScrollBar().valueChanged.connect(self.update_info)
-        sa.verticalScrollBar().valueChanged.connect(self.update_info)
-        sa.viewport().installEventFilter(self)
+        self.viewer.view_changed.connect(self.update_info)
 
         self.update_info()
 
@@ -60,11 +57,6 @@ class DisplayInfoWidget(QGroupBox):
             + 2 * self.table.frameWidth()
         )
         self.table.setFixedHeight(total)
-
-    def eventFilter(self, obj, event):
-        if obj is self.viewer.scroll_area.viewport() and event.type() == QEvent.Resize:
-            self.update_info()
-        return super().eventFilter(obj, event)
 
     def update_info(self):
         """表示領域の情報を更新する。"""

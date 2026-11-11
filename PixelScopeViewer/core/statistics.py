@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 import numpy as np
 
 
@@ -113,6 +115,25 @@ def histogram_step_edges(xs: np.ndarray, width: float, *, log_x: bool = False) -
     return edges, keep
 
 
+def _channel_on(channels: Sequence[bool] | None, idx: int, label: str) -> bool:
+    """channel が表示 ON か。channels が None・1ch・channels より後ろの channel は ON とみなす。"""
+    return channels is None or label == "I" or idx >= len(channels) or bool(channels[idx])
+
+
+def visible_channels(arr: np.ndarray, channels: Sequence[bool] | None) -> np.ndarray:
+    """表示 ON の channel だけの配列を返す。
+
+    多 channel でない・channels が None・表示 ON の channel がない場合は arr をそのまま返す。
+    histogram の bin の範囲を表示中の channel だけで決めるために使う。
+    """
+    if channels is None or arr.ndim != 3 or arr.shape[2] <= 1:
+        return arr
+    indices = [i for i in range(arr.shape[2]) if _channel_on(channels, i, f"C{i}")]
+    if not indices or len(indices) == arr.shape[2]:
+        return arr
+    return arr[..., indices]
+
+
 def _iter_channels(arr: np.ndarray) -> list[tuple[int, str, np.ndarray]]:
     """(channel index, label, 2 次元配列) のリストを返す。label は多 channel なら 'C{index}'、1ch なら 'I'。"""
     if arr.ndim == 3 and arr.shape[2] > 1:
@@ -120,8 +141,15 @@ def _iter_channels(arr: np.ndarray) -> list[tuple[int, str, np.ndarray]]:
     return [(0, "I", arr if arr.ndim == 2 else arr[:, :, 0])]
 
 
-def histogram_series(arr: np.ndarray, *, bins: np.ndarray | None = None) -> dict[str, tuple[np.ndarray, np.ndarray]]:
+def histogram_series(
+    arr: np.ndarray, *, bins: np.ndarray | None = None, channels: Sequence[bool] | None = None
+) -> dict[str, tuple[np.ndarray, np.ndarray]]:
     """channel ごとの histogram を計算する。
+
+    Args:
+        arr: 画像配列。
+        bins: bin の境界。None の場合は dtype に応じて決める。
+        channels: 計算する channel の ON/OFF。None の場合は全 channel。1ch は常に計算する。
 
     Returns:
         label から (x, 度数) への dict。label は多 channel なら 'C{index}'、1ch なら 'I'。
@@ -129,13 +157,17 @@ def histogram_series(arr: np.ndarray, *, bins: np.ndarray | None = None) -> dict
     if bins is None:
         # 複数画像解析用
         bins = determine_hist_bins_auto(arr)
+    # 整数で bin の数を渡す場合は、全 channel 共通の範囲で 1 刻みの bin にする（境界を渡す場合は使わない）
+    int_range = (arr.min(), arr.max() + 1) if np.isscalar(bins) and np.issubdtype(arr.dtype, np.integer) else None
 
     out: dict[str, tuple[np.ndarray, np.ndarray]] = {}
-    for _, label, channel in _iter_channels(arr):
+    for idx, label, channel in _iter_channels(arr):
+        if not _channel_on(channels, idx, label):
+            continue
         data = channel.ravel()
         if np.issubdtype(data.dtype, np.integer):
-            # 整数は全 channel 共通の範囲で 1 刻みの bin にし、x は bin の左端
-            hist, edges = np.histogram(data, bins=bins, range=(arr.min(), arr.max() + 1))
+            # 整数の x は bin の左端
+            hist, edges = np.histogram(data, bins=bins, range=int_range)
             xs = edges[:-1]
         else:
             hist, edges = np.histogram(data, bins=bins)

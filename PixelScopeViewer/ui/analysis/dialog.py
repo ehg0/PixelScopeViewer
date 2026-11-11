@@ -43,6 +43,7 @@ from PixelScopeViewer.core.statistics import (
     merge_hist_series,
     profile_series,
     profile_stats,
+    visible_channels,
 )
 from PixelScopeViewer.ui.analysis.overlay import overlay_color, roi_color
 from PixelScopeViewer.ui.analysis.plotting import apply_plot_settings as pg_apply_plot_settings
@@ -157,6 +158,8 @@ class AnalysisDialog(ToolDialog):
             self.viewer.roi_changed.connect(self.update_window_title)
 
         self.last_hist_data = {}
+        # 編集中ROI の Histogram のコピーで全 channel を計算し直すための、切り出した配列
+        self._hist_copy_source: np.ndarray | None = None
         self.last_metadata: list[tuple[str, str]] = []
         # 表示中の画像の channel 数（2 次元画像は 1）
         self._n_plot = 0
@@ -320,10 +323,14 @@ class AnalysisDialog(ToolDialog):
     def update_contents(self):
         """現在の画像・ROI・設定で全 tab を更新する。"""
         self._update_roi_controls()
-        if self._roi_mode_active() or self._tile_sources:
+        if self._multi_view_active():
             self._update_contents_multi()
         else:
             self._update_contents_active()
+
+    def _multi_view_active(self) -> bool:
+        """登録 ROI・タイルの表示（_update_contents_multi）中か。"""
+        return self._roi_mode_active() or bool(self._tile_sources)
 
     def _roi_mode_active(self) -> bool:
         """登録 ROI（Overlay / Split）を表示中か。"""
@@ -353,6 +360,7 @@ class AnalysisDialog(ToolDialog):
         # 画像を切り替えて ROI が画像の範囲外になった場合は、空のグラフにする
         if arr.size == 0:
             self.last_hist_data = {}
+            self._hist_copy_source = None
             self.last_profile_data = {}
             self.hist_tab.update_plot({}, [], {}, title="ROI is out of image")
             self.profile_tab.update_plot(
@@ -371,13 +379,17 @@ class AnalysisDialog(ToolDialog):
         if nch > 1:
             self.settings.fit_channel_checks(nch)
 
-        # histogram
+        # histogram。bin の範囲は表示中の channel だけで決め、非表示の channel の値に引っ張られないようにする
+        checks = self.settings.channel_checks if nch > 1 else None
         if self.settings.hist_mode == "Histogram":
-            bins = determine_hist_bins(arr, self.settings.hist_bin_step)
-            hist_series = histogram_series(arr, bins=bins)
+            bins = determine_hist_bins(visible_channels(arr, checks), self.settings.hist_bin_step)
+            hist_series = histogram_series(arr, bins=bins, channels=checks)
+            # コピーは全 channel を出すため、コピーのときに計算し直す
+            self._hist_copy_source = arr
         elif self.settings.hist_mode == "ECDF":
             hist_series = ecdf_series(arr)
-        self.last_hist_data = hist_series  # コピー用に全 channel を保持する
+            self._hist_copy_source = None
+        self.last_hist_data = hist_series
         hist_stats = histogram_stats(arr.astype(np.float64), self.settings.channel_checks)
         apply_log = self.settings.plot_settings.get("hist", {}).get("log", False)
         is_integer_type = np.issubdtype(arr.dtype, np.integer)
@@ -570,7 +582,9 @@ class AnalysisDialog(ToolDialog):
         rows = []
         for t in targets:
             if self.settings.hist_mode == "Histogram":
-                s = histogram_series(t.sub, bins=determine_hist_bins(t.sub, self.settings.hist_bin_step))
+                # bin の範囲は表示中の channel だけで決める
+                bins = determine_hist_bins(visible_channels(t.sub, t.vis), self.settings.hist_bin_step)
+                s = histogram_series(t.sub, bins=bins, channels=t.vis)
             else:
                 s = ecdf_series(t.sub)
             for label, data in s.items():
@@ -829,11 +843,18 @@ class AnalysisDialog(ToolDialog):
         QGuiApplication.clipboard().setText(metadata_csv(self.last_metadata))
 
     def copy_histogram_to_clipboard(self):
-        """histogram（または ECDF）のデータを CSV で clipboard にコピーする。"""
-        if not self.last_hist_data:
+        """histogram（または ECDF）のデータを CSV で clipboard にコピーする。
+
+        編集中ROI の Histogram は、表示していない channel も含めて全 channel の範囲の bin で出す。
+        """
+        data = self.last_hist_data
+        source = self._hist_copy_source
+        if source is not None and self.settings.hist_mode == "Histogram" and not self._multi_view_active():
+            data = histogram_series(source, bins=determine_hist_bins(source, self.settings.hist_bin_step))
+        if not data:
             QMessageBox.information(self, "Copy", "No data.")
             return
-        QGuiApplication.clipboard().setText(histogram_csv(self.last_hist_data, self.settings.hist_mode))
+        QGuiApplication.clipboard().setText(histogram_csv(data, self.settings.hist_mode))
 
     def copy_profile_to_clipboard(self):
         """profile のデータを CSV で clipboard にコピーする。"""
@@ -841,7 +862,7 @@ class AnalysisDialog(ToolDialog):
             QMessageBox.information(self, "Copy", "No data.")
             return
         # 登録 ROI・タイルは ROI ごとに長さが違うため、x の列も ROI ごとに出力する
-        to_csv = grouped_profile_csv if self._roi_mode_active() or self._tile_sources else profile_csv
+        to_csv = grouped_profile_csv if self._multi_view_active() else profile_csv
         QGuiApplication.clipboard().setText(to_csv(self.last_profile_data, self.settings.profile_orientation))
 
     def copy_hist_stats_to_clipboard(self):

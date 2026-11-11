@@ -71,3 +71,29 @@ def test_merge_hist_series_pads_by_bin_step():
     assert np.allclose(
         merge_hist_series({"a": (np.array([0.15]), np.array([1]))}, "Histogram")["a"][0], [-0.85, 0.15, 1.15]
     )
+
+
+def test_histogram_series_channels_and_visible_channels():
+    from PixelScopeViewer.core.statistics import determine_hist_bins, histogram_series, visible_channels
+
+    a = np.dstack([np.full((2, 2), 0.05), np.full((2, 2), 0.95)]).astype(np.float32)
+    checks = [True, False]
+    bins = determine_hist_bins(visible_channels(a, checks), 0.1)
+    s = histogram_series(a, bins=bins, channels=checks)
+    assert list(s) == ["C0"]
+    xs, ys = s["C0"]
+    # 非表示の C1（0.95）に引っ張られず、C0 の 1 bin だけになる
+    assert np.allclose(xs, [0.05]) and ys.tolist() == [4]
+    # 表示 ON がない・全 ON・channels なしは元の配列
+    assert visible_channels(a, [False, False]) is a and visible_channels(a, [True, True]) is a
+    assert visible_channels(a, None) is a
+    # 1ch は channels に関わらず計算する
+    assert list(histogram_series(a[..., 0], bins=bins, channels=[False])) == ["I"]
+
+
+def test_histogram_series_int_bins_count_uses_common_range():
+    from PixelScopeViewer.core.statistics import histogram_series
+
+    a = np.dstack([np.array([[0, 1]]), np.array([[2, 3]])]).astype(np.uint8)
+    s = histogram_series(a, bins=4)
+    assert s["C0"][0].tolist() == [0, 1, 2, 3] and s["C0"][1].tolist() == [1, 1, 0, 0]

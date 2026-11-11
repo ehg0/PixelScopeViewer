@@ -135,8 +135,7 @@ class TileRegisterDialog(QDialog):
         self._layout = deepcopy(layout)
         self._images_by_id = {img["id"]: img for img in images}
         # 閉じた画像の id は登録から外す
-        for stack_index, stack in enumerate(self._layout.stacks):
-            self._layout.stacks[stack_index] = [i for i in stack if i in self._images_by_id]
+        self._layout.retain_images(self._images_by_id)
         self._cells: dict[Cell, tuple[QGroupBox, _CellList]] = {}
         self.result_layout: TileLayout | None = None
 

@@ -1,16 +1,15 @@
 """ImageViewer のタイル比較モード（切り替え・タイルの表示・scroll の同期・active タイル）。"""
 
 from dataclasses import replace
-from pathlib import Path
 
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QPoint, QTimer
 
 from PixelScopeViewer.core.brightness import BrightnessParams, determine_dtype_group
+from PixelScopeViewer.core.pixel import pixel_value_text
 from PixelScopeViewer.core.tile_layout import Cell, TileLayout
 from PixelScopeViewer.ui.common import defaults
+from PixelScopeViewer.ui.viewer.state import TILE_BRIGHTNESS_KEY
 from PixelScopeViewer.ui.viewer.widgets import ImagePane
-
-TILE_BRIGHTNESS_KEY = "tile"
 
 
 class TileModeManager:
@@ -89,17 +88,9 @@ class TileModeManager:
             return
         center = v.zoom_manager.calculate_viewport_center_in_image_coords() if v.has_image() else None
         st.tile_mode = False
-        grid = v.pane_grid
-        for pane in list(self._panes.values()):
-            grid.removeWidget(pane)
-            pane.hide()
+        self._arrange([(0, 0)], tile_mode=False)
         single = self._panes[(0, 0)]
-        single.set_tile_mode(False)
         single.image_label.set_canvas_size(None)
-        grid.addWidget(single, 0, 0)
-        self._set_stretch(1, 1)
-        single.show()
-        v.panes = [single]
         v.active_pane = single
         if st.current_index is None and v.images:
             st.current_index = 0
@@ -110,50 +101,47 @@ class TileModeManager:
 
     def registered_dtype_groups(self) -> list[str]:
         """表示中のマスに登録されている画像の dtype の group を返す。先頭は最初のタイルの画像の dtype。"""
-        v = self.viewer
+        find = self.viewer.image_list.find
         first = self._first_visible_image()
         groups = [determine_dtype_group(first["array"])] if first is not None else []
         for cell in self.layout.visible_cells():
             for image_id in self.layout.stack(cell):
-                idx = v.image_list.index_of(image_id)
-                if idx is not None and (g := determine_dtype_group(v.images[idx]["array"])) not in groups:
+                img = find(image_id)
+                if img is not None and (g := determine_dtype_group(img["array"])) not in groups:
                     groups.append(g)
         return groups
 
     def _first_visible_image(self) -> dict | None:
-        for image_id in self.layout.visible_image_ids():
-            idx = self.viewer.image_list.index_of(image_id)
-            if idx is not None:
-                return self.viewer.images[idx]
-        return None
+        find = self.viewer.image_list.find
+        return next((img for i in self.layout.visible_image_ids() if (img := find(i)) is not None), None)
 
     # --- グリッド ---
     def apply_layout(self):
         """表示するマスの pane をグリッドに並べ、active タイルを決める。"""
         v = self.viewer
-        layout = self.layout
-        grid = v.pane_grid
-        for pane in list(self._panes.values()):
-            grid.removeWidget(pane)
-            pane.hide()
-        cells = layout.visible_cells()
-        for cell in cells:
-            pane = self.pane(cell)
-            pane.set_tile_mode(True)
-            grid.addWidget(pane, *cell)
-            pane.show()
-        self._set_stretch(layout.rows, layout.cols)
-        v.panes = [self.pane(cell) for cell in cells]
-        if not layout.is_visible(v.state.active_cell):
+        self._arrange(self.layout.visible_cells(), tile_mode=True)
+        if not self.layout.is_visible(v.state.active_cell):
             v.state.active_cell = (0, 0)
         self._set_active_pane(self.pane(v.state.active_cell))
 
-    def _set_stretch(self, rows: int, cols: int):
+    def _arrange(self, cells: list[Cell], tile_mode: bool):
+        """cells の pane だけをグリッドに並べて viewer.panes にする。他の pane は隠す。"""
         grid = self.viewer.pane_grid
+        for pane in list(self._panes.values()):
+            grid.removeWidget(pane)
+            pane.hide()
+        for cell in cells:
+            pane = self.pane(cell)
+            pane.set_tile_mode(tile_mode)
+            grid.addWidget(pane, *cell)
+            pane.show()
+        rows = max(r for r, _ in cells) + 1
+        cols = max(c for _, c in cells) + 1
         for r in range(self.layout.max_rows):
             grid.setRowStretch(r, 1 if r < rows else 0)
         for c in range(self.layout.max_cols):
             grid.setColumnStretch(c, 1 if c < cols else 0)
+        self.viewer.panes = [self.pane(cell) for cell in cells]
 
     def _set_active_pane(self, pane: ImagePane):
         self.viewer.active_pane = pane
@@ -188,7 +176,7 @@ class TileModeManager:
     def sync_current_index(self):
         """active タイルの画像の index を current_index に入れる。空欄の場合は None。"""
         image_id = self.layout.image_at(self.viewer.state.active_cell)
-        self.viewer.state.current_index = self.viewer.image_list.index_of(image_id) if image_id is not None else None
+        self.viewer.state.current_index = self.viewer.image_list.index_of(image_id)
 
     # --- 表示 ---
     def step(self, delta: int):
@@ -200,13 +188,8 @@ class TileModeManager:
 
     def visible_images(self) -> list[tuple[Cell, dict | None]]:
         """表示中のマスと、そこに表示する画像の dict（空欄は None）を行優先で返す。"""
-        v = self.viewer
-        result = []
-        for cell in self.layout.visible_cells():
-            image_id = self.layout.image_at(cell)
-            idx = v.image_list.index_of(image_id) if image_id is not None else None
-            result.append((cell, v.images[idx] if idx is not None else None))
-        return result
+        find = self.viewer.image_list.find
+        return [(cell, find(self.layout.image_at(cell))) for cell in self.layout.visible_cells()]
 
     def canvas_size(self) -> tuple[int, int] | None:
         """表示中の画像の最大の幅・高さを返す。画像がない場合は None。"""
@@ -220,7 +203,7 @@ class TileModeManager:
         v = self.viewer
         img = next((img for cell, img in self.visible_images() if cell == v.state.active_cell), None)
         if img is not None:
-            v.active_pane.image_label.set_image(v.display_pixmap(img), v.state.scale)
+            v.active_pane.image_label.set_image(v.renderer.pixmap(img), v.state.scale)
         self._deferred_render.start()
 
     def render(self):
@@ -232,19 +215,8 @@ class TileModeManager:
         scale = v.state.scale
         visible = self.visible_images()
         for cell, img in visible:
-            pane = self.pane(cell)
-            number = self.layout.tile_number(cell)
-            if img is None:
-                pane.image_id = None
-                pane.image_label.clear()
-                pane.title_label.setText(f"T{number}: （なし）")
-                pane.title_label.setToolTip("")
-                pane.status_label.setText("")
-                continue
-            pane.image_id = img["id"]
-            pane.image_label.set_image(v.display_pixmap(img), scale)
-            pane.title_label.setText(f"T{number}: {Path(img['path']).name}")
-            pane.title_label.setToolTip(img["path"])
+            pixmap = v.renderer.pixmap(img) if img is not None else None
+            self.pane(cell).show_tile(self.layout.tile_number(cell), img, pixmap, scale)
         canvas = self.canvas_size()
         for cell, _ in visible:
             self.pane(cell).image_label.set_canvas_size(canvas, scale)
@@ -266,7 +238,24 @@ class TileModeManager:
         finally:
             self._syncing = False
 
-    # --- 画像の削除 ---
-    def remove_images(self, image_ids: list[int]):
-        for image_id in image_ids:
-            self.layout.remove_image(image_id)
+    # --- マウス位置の pixel 値 ---
+    def show_pixel_values(self, pos: QPoint | None) -> tuple[int, int] | None:
+        """マウス位置（widget 座標）の画像座標を求め、各タイルのステータス行に同じ座標の pixel 値を出す。
+
+        Returns:
+            canvas の範囲内の画像座標。範囲外や pos が None の場合は None。
+        """
+        canvas = self.canvas_size()
+        point = None
+        if pos is not None and canvas is not None:
+            s = self.viewer.state.scale if self.viewer.state.scale > 0 else 1.0
+            ix, iy = int(pos.x() / s), int(pos.y() / s)
+            if 0 <= ix < canvas[0] and 0 <= iy < canvas[1]:
+                point = (ix, iy)
+        for cell, img in self.visible_images():
+            text = ""
+            if point is not None and img is not None:
+                val = pixel_value_text(img.get("base_array", img.get("array")), *point)
+                text = f"val={val}" if val is not None else ""
+            self.pane(cell).status_label.setText(text)
+        return point

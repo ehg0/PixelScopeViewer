@@ -6,24 +6,7 @@ import numpy as np
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QStatusBar, QWidget
 
 from PixelScopeViewer.core.image_io import format_file_size
-
-
-def _format_scalar(x, dtype) -> str:
-    if np.issubdtype(dtype, np.floating):
-        return f"{float(x):.3f}"
-    # 整数と bool は整数で表示する（complex などはそのまま）
-    return str(int(x)) if np.issubdtype(dtype, np.integer) or dtype == np.bool_ else str(x)
-
-
-def pixel_value_text(arr: np.ndarray, ix: int, iy: int) -> str | None:
-    """画像座標 (ix, iy) の pixel 値の表示用の文字列を返す。画像の範囲外の場合は None。"""
-    h, w = arr.shape[:2]
-    if not (0 <= iy < h and 0 <= ix < w):
-        return None
-    v = arr[iy, ix]
-    if np.ndim(v) == 0:
-        return _format_scalar(v, arr.dtype)
-    return "(" + ",".join(_format_scalar(x, arr.dtype) for x in np.ravel(v)) + ")"
+from PixelScopeViewer.core.pixel import pixel_value_text
 
 
 class StatusUpdater:
@@ -78,21 +61,9 @@ class StatusUpdater:
         # zoom の中心として使う
         self.viewer.current_mouse_image_coords = (ix, iy)
 
-    def update_tile_mouse_status(self, pos):
-        """マウス位置の座標を status bar に、各タイルの同じ座標の pixel 値をタイルのステータス行に表示する。"""
-        tiles = self.viewer.tiles
-        canvas = tiles.canvas_size()
-        point = self._image_point(pos) if pos is not None and canvas is not None else None
-        if point is not None and not (0 <= point[0] < canvas[0] and 0 <= point[1] < canvas[1]):
-            point = None
-        self.viewer.current_mouse_image_coords = point
+    def show_mouse_point(self, point: tuple[int, int] | None):
+        """マウス位置の画像座標だけを表示する（タイル比較モード）。None の場合は消す。"""
         self.pixel_label.setText(f"x={point[0]} y={point[1]}" if point is not None else "")
-        for cell, img in tiles.visible_images():
-            text = ""
-            if point is not None and img is not None:
-                val = pixel_value_text(img.get("base_array", img.get("array")), *point)
-                text = f"val={val}" if val is not None else ""
-            tiles.pane(cell).status_label.setText(text)
 
     def update_roi_status(self) -> None:
         """ROI の範囲を表示する。"""

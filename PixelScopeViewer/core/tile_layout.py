@@ -94,8 +94,20 @@ class TileLayout:
 
     def remove_image(self, image_id: int):
         """全マスの登録リストから画像 id を消す。"""
+        self.remove_images([image_id])
+
+    def remove_images(self, image_ids):
+        """全マスの登録リストから画像 id を消す。"""
+        removed = set(image_ids)
         for s in self.stacks:
-            s[:] = [i for i in s if i != image_id]
+            s[:] = [i for i in s if i not in removed]
+        self._clamp_frame()
+
+    def retain_images(self, image_ids):
+        """全マスの登録リストから、image_ids にない画像 id を消す。"""
+        kept = set(image_ids)
+        for s in self.stacks:
+            s[:] = [i for i in s if i in kept]
         self._clamp_frame()
 
     def has_visible_images(self) -> bool:

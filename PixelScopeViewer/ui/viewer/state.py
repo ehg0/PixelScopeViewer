@@ -2,12 +2,16 @@
 
 from dataclasses import dataclass, field
 
+import numpy as np
 from PySide6.QtCore import QRect
 
-from PixelScopeViewer.core.brightness import BrightnessParams
+from PixelScopeViewer.core.brightness import BrightnessParams, determine_dtype_group
 from PixelScopeViewer.core.constants import DTYPE_DEFAULTS
 from PixelScopeViewer.core.tile_layout import Cell, TileLayout
 from PixelScopeViewer.ui.common import defaults
+
+# タイル比較モードで全タイル共通の brightness を保存する brightness_by_dtype の key
+TILE_BRIGHTNESS_KEY = "tile"
 
 
 def _brightness_by_dtype() -> dict[str, BrightnessParams]:
@@ -62,3 +66,12 @@ class ViewerState:
     tile_layout: TileLayout = field(default_factory=_tile_layout)
     # 最後にクリックしたタイルのマス
     active_cell: Cell = (0, 0)
+
+    def brightness_key(self, arr: np.ndarray | None) -> str | None:
+        """arr の brightness を保存する brightness_by_dtype の key を返す。
+
+        タイル比較モードでは dtype によらず共通の key にする。1 枚表示で arr が None の場合は None。
+        """
+        if self.tile_mode:
+            return TILE_BRIGHTNESS_KEY
+        return determine_dtype_group(arr) if arr is not None else None

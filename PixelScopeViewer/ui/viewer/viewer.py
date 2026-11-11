@@ -10,7 +10,6 @@ from PySide6.QtCore import QPoint, QRect, Qt, Signal
 from PySide6.QtGui import (
     QColor,
     QGuiApplication,
-    QPixmap,
 )
 from PySide6.QtWidgets import (
     QApplication,
@@ -27,27 +26,24 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from PixelScopeViewer.core.brightness import apply_brightness_adjustment as apply_brightness_core
-from PixelScopeViewer.core.brightness import determine_dtype_group
 from PixelScopeViewer.core.image_io import is_image_file
-from PixelScopeViewer.core.render import render_display, render_thumbnail
 from PixelScopeViewer.ui.analysis import AnalysisDialog, AnalysisSource
 from PixelScopeViewer.ui.annotations import AnnotationsDialog
 from PixelScopeViewer.ui.annotations.model import AnnotationStore
 from PixelScopeViewer.ui.common import defaults
-from PixelScopeViewer.ui.common.channel_display import MODE_1CH_JET, MODE_2CH_FLOW_HSV, ChannelDisplay
+from PixelScopeViewer.ui.common.channel_display import ChannelDisplay
 from PixelScopeViewer.ui.common.qt_image import numpy_to_qimage
 from PixelScopeViewer.ui.common.state_dump import to_jsonable
 from PixelScopeViewer.ui.common.window import ChildDialogs, bring_to_front
 from PixelScopeViewer.ui.viewer.brightness_manager import BrightnessManager
-from PixelScopeViewer.ui.viewer.display_cache import DisplayCache
+from PixelScopeViewer.ui.viewer.display_renderer import DisplayRenderer
 from PixelScopeViewer.ui.viewer.help_dialog import HelpDialog
 from PixelScopeViewer.ui.viewer.image_list import ImageListManager
 from PixelScopeViewer.ui.viewer.menu_builder import create_menus
 from PixelScopeViewer.ui.viewer.roi_list import RoiListManager
 from PixelScopeViewer.ui.viewer.state import ViewerState
 from PixelScopeViewer.ui.viewer.status_updater import StatusUpdater
-from PixelScopeViewer.ui.viewer.tile_mode import TILE_BRIGHTNESS_KEY, TileModeManager
+from PixelScopeViewer.ui.viewer.tile_mode import TileModeManager
 from PixelScopeViewer.ui.viewer.tile_register_dialog import TileRegisterDialog
 from PixelScopeViewer.ui.viewer.widgets import (
     DisplayInfoWidget,
@@ -93,9 +89,6 @@ class ImageViewer(QMainWindow):
 
         # zoom の中心に使うマウス位置（画像座標）
         self.current_mouse_image_coords = None
-
-        # 画像ごとの表示用 QPixmap の cache
-        self.display_cache = DisplayCache(defaults.TILE_DISPLAY_CACHE_MB)
 
         central = QWidget(self)
         self.setCentralWidget(central)
@@ -161,6 +154,8 @@ class ImageViewer(QMainWindow):
         self.channel_display.colors_changed.connect(self._on_channel_display_changed)
         self.channel_display.checks_changed.connect(self._on_channel_display_changed)
         self.channel_display.modes_changed.connect(self._on_channel_display_changed)
+        # 表示用の画像と thumbnail を作る。表示用 QPixmap の cache を持つ
+        self.renderer = DisplayRenderer(self.state, self.channel_display)
 
         self.rois_changed.connect(self._update_analysis_dialog)
 
@@ -199,9 +194,14 @@ class ImageViewer(QMainWindow):
         return self.state.tile_mode and self.tiles.on_label_pressed(label)
 
     def on_label_mouse_moved(self, label: ImageLabel, pos: QPoint | None):
-        """画像表示 widget 上のマウス位置（widget 座標）を受け取る。widget の外に出た場合は None。"""
+        """画像表示 widget 上のマウス位置（widget 座標）を受け取る。widget の外に出た場合は None。
+
+        タイル比較モードでは各タイルのステータス行にその座標の pixel 値を出し、status bar には座標だけを出す。
+        """
         if self.state.tile_mode:
-            self.status_updater.update_tile_mouse_status(pos)
+            point = self.tiles.show_pixel_values(pos)
+            self.current_mouse_image_coords = point
+            self.status_updater.show_mouse_point(point)
         else:
             self.status_updater.update_mouse_status(pos)
 
@@ -219,10 +219,6 @@ class ImageViewer(QMainWindow):
             return None
         h, w = self.images[self.state.current_index]["array"].shape[:2]
         return w, h
-
-    def brightness_key(self, arr: np.ndarray) -> str:
-        """arr の brightness を保存する brightness_by_dtype の key を返す。タイル比較モードでは dtype によらず共通。"""
-        return TILE_BRIGHTNESS_KEY if self.state.tile_mode else determine_dtype_group(arr)
 
     # channel の表示設定（channel_display から表示中の画像の channel 数に対応する値を読む）
     def _current_n_channels(self) -> int:
@@ -264,7 +260,7 @@ class ImageViewer(QMainWindow):
 
         arr = self.images[self.state.current_index]["array"]
         # dtype が切り替わった場合のみ、その dtype で保存した brightness を読み込む
-        stored_params = self.state.brightness_by_dtype[self.brightness_key(arr)]
+        stored_params = self.state.brightness_by_dtype[self.state.brightness_key(arr)]
         if stored_params != self.state.brightness:
             self.state.brightness = replace(stored_params)
             self.status_updater.update_brightness_status()
@@ -301,48 +297,11 @@ class ImageViewer(QMainWindow):
 
         self._update_analysis_dialog()
 
-    def _render_array(self, arr: np.ndarray) -> tuple[np.ndarray, tuple]:
-        """brightness・channel 合成・colormap を適用した表示用の配列と、表示に影響する設定の tuple を返す。"""
-        b = self.state.brightness_by_dtype[self.brightness_key(arr)]
-        opts = self._render_options(arr)
-        result = render_display(
-            arr,
-            lambda a: apply_brightness_core(a, b.offset, b.gain, b.upper_level),
-            brightness_changed=(b.offset, b.gain, b.upper_level) != (0, 1.0, 255),
-            **opts,
-        )
-        return result, self._render_key(arr)
-
-    def _render_key(self, arr: np.ndarray) -> tuple:
-        """arr の表示に影響する brightness・表示モード・channel の表示 ON/OFF と色の tuple を返す。"""
-        b = self.state.brightness_by_dtype[self.brightness_key(arr)]
-        opts = self._render_options(arr)
-        return (
-            b.offset,
-            b.gain,
-            b.upper_level,
-            opts["jet"],
-            opts["flow_hsv"],
-            tuple(opts["checks"]),
-            tuple(tuple(c) for c in opts["colors_rgb"]),
-        )
-
     def _get_displayed_array(self) -> np.ndarray | None:
         """current_index の画像の表示用の配列を返す。"""
         if self.state.current_index is None:
             return None
-        return self._render_array(self.images[self.state.current_index]["array"])[0]
-
-    def display_pixmap(self, img: dict) -> QPixmap:
-        """画像の表示用 QPixmap を返す。表示設定が同じなら cache を使う。"""
-        arr = img["array"]
-        key = self._render_key(arr)
-        pixmap = self.display_cache.get(img["id"], key)
-        if pixmap is None:
-            result, key = self._render_array(arr)
-            pixmap = QPixmap.fromImage(numpy_to_qimage(result))
-            self.display_cache.put(img["id"], key, pixmap)
-        return pixmap
+        return self.renderer.array(self.images[self.state.current_index]["array"])
 
     def refresh_display(self, defer_others: bool = False):
         """今の zoom 倍率と表示設定で、表示中の画像（タイル比較モードでは全タイル）を描き直す。
@@ -356,23 +315,8 @@ class ImageViewer(QMainWindow):
             else:
                 self.tiles.render()
         elif self.state.current_index is not None and self.images:
-            self.image_label.set_image(self.display_pixmap(self.images[self.state.current_index]), self.state.scale)
+            self.image_label.set_image(self.renderer.pixmap(self.images[self.state.current_index]), self.state.scale)
         self.status_updater.update_status()
-
-    def _render_options(self, arr: np.ndarray) -> dict:
-        """表示モードと、arr の channel 数に対応する channel の表示 ON/OFF・色を返す。"""
-        n = arr.shape[2] if arr.ndim >= 3 else 0
-        d = self.channel_display
-        return {
-            "jet": d.mode_1ch == MODE_1CH_JET,
-            "flow_hsv": d.mode_2ch == MODE_2CH_FLOW_HSV,
-            "checks": d.checks(n),
-            "colors_rgb": [c.getRgb()[:3] for c in d.colors(n)],
-        }
-
-    def prepare_thumbnail_array(self, arr: np.ndarray) -> np.ndarray:
-        """現在の 1ch/2ch 表示モードに合わせた thumbnail 用の配列を返す。"""
-        return render_thumbnail(arr, self.brightness_manager.apply_brightness_adjustment, **self._render_options(arr))
 
     # 子 dialog の起動
     def show_analysis_dialog(self, tab: str | None = None):

@@ -8,12 +8,10 @@ from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QMessageBox
 
 from PixelScopeViewer.core.brightness import BrightnessParams, determine_dtype_defaults, merged_dtype_defaults
-from PixelScopeViewer.core.brightness import apply_brightness_adjustment as apply_brightness_core
 from PixelScopeViewer.core.constants import GAIN_STEP
 from PixelScopeViewer.ui.common.qt_image import numpy_to_qimage
 from PixelScopeViewer.ui.common.window import bring_to_front
 from PixelScopeViewer.ui.display import BrightnessDialog
-from PixelScopeViewer.ui.viewer.tile_mode import TILE_BRIGHTNESS_KEY
 
 
 class BrightnessManager:
@@ -91,7 +89,7 @@ class BrightnessManager:
         st = self.viewer.state
         if st.tile_mode:
             dlg.brightness_tab.set_tile_mode(
-                self.viewer.tiles.registered_dtype_groups(), st.brightness_by_dtype[TILE_BRIGHTNESS_KEY]
+                self.viewer.tiles.registered_dtype_groups(), st.brightness_by_dtype[st.brightness_key(None)]
             )
         else:
             dlg.brightness_tab.set_tile_mode(None)
@@ -176,29 +174,20 @@ class BrightnessManager:
         base_arr = img.get("base_array", img.get("array"))
         if not applies(base_arr):
             return
-        thumb = numpy_to_qimage(self.viewer.prepare_thumbnail_array(base_arr))
+        thumb = numpy_to_qimage(self.viewer.renderer.thumbnail_array(base_arr))
         img["thumbnail_pixmap"] = QPixmap.fromImage(thumb).scaled(250, 250, Qt.KeepAspectRatio, Qt.SmoothTransformation)
         self.viewer.navigator_widget.update_thumbnail()
 
-    def apply_brightness_adjustment(self, arr: np.ndarray) -> np.ndarray:
-        """dtype ごとに保存した brightness を適用し、uint8 の配列を返す。
-
-        変換式: gain * (x - offset) / (upper_level - offset) * 255
-        """
-        self.viewer.state.brightness = replace(self.viewer.state.brightness_by_dtype[self.viewer.brightness_key(arr)])
-        b = self.viewer.state.brightness
-        return apply_brightness_core(arr, b.offset, b.gain, b.upper_level)
-
     def _save_current_dtype_params(self) -> None:
-        # タイル比較モードは active タイルが空欄でも共通の値として保存する
-        if self.viewer.state.tile_mode:
-            self.viewer.state.brightness_by_dtype[TILE_BRIGHTNESS_KEY] = replace(self.viewer.state.brightness)
-            return
-        if self.viewer.state.current_index is None:
-            return
-        img = self.viewer.images[self.viewer.state.current_index]
-        key = self.viewer.brightness_key(img.get("base_array", img["array"]))
-        self.viewer.state.brightness_by_dtype[key] = replace(self.viewer.state.brightness)
+        # タイル比較モードは active タイルが空欄でも共通の key に保存する
+        st = self.viewer.state
+        arr = None
+        if st.current_index is not None:
+            img = self.viewer.images[st.current_index]
+            arr = img.get("base_array", img["array"])
+        key = st.brightness_key(arr)
+        if key is not None:
+            st.brightness_by_dtype[key] = replace(st.brightness)
 
     def adjust_gain_step(self, amount):
         """gain を 2 倍（amount > 0）または 1/2 倍（amount < 0）にする。"""

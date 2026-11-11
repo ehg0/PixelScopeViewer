@@ -31,9 +31,22 @@ class ImageListManager:
         self._next_id += 1
         return image_id
 
-    def index_of(self, image_id: int) -> int | None:
-        """id の画像の viewer.images での index を返す。見つからない場合は None。"""
+    def index_of(self, image_id: int | None) -> int | None:
+        """id の画像の viewer.images での index を返す。見つからない場合や id が None の場合は None。"""
+        if image_id is None:
+            return None
         return next((i for i, img in enumerate(self.viewer.images) if img["id"] == image_id), None)
+
+    def find(self, image_id: int | None) -> dict | None:
+        """id の画像の dict を返す。見つからない場合や id が None の場合は None。"""
+        idx = self.index_of(image_id)
+        return self.viewer.images[idx] if idx is not None else None
+
+    def _forget(self, image_ids: list[int]):
+        """閉じた画像の表示用 cache と、タイルの登録を消す。"""
+        for image_id in image_ids:
+            self.viewer.renderer.cache.drop(image_id)
+        self.viewer.state.tile_layout.remove_images(image_ids)
 
     # --- 読み込み ---
     def open_files(self):
@@ -126,7 +139,7 @@ class ImageListManager:
             failed_files.append((path, "チャンネル数は1, 2, 3, または4である必要があります"))
             return None
 
-        thumb_qimg = numpy_to_qimage(self.viewer.prepare_thumbnail_array(arr))
+        thumb_qimg = numpy_to_qimage(self.viewer.renderer.thumbnail_array(arr))
         thumb_pixmap = QPixmap.fromImage(thumb_qimg).scaled(200, 200, Qt.KeepAspectRatio, Qt.SmoothTransformation)
         return {
             "id": self._new_id(),
@@ -242,8 +255,7 @@ class ImageListManager:
         img_data.pop("array", None)
         img_data.pop("base_array", None)
         del v.images[v.state.current_index]
-        v.display_cache.drop(img_data["id"])
-        v.tiles.remove_images([img_data["id"]])
+        self._forget([img_data["id"]])
         if not v.images:
             v.state.current_index = None
             v.image_label.clear()
@@ -258,9 +270,8 @@ class ImageListManager:
         for img_data in v.images:
             img_data.pop("array", None)
             img_data.pop("base_array", None)
-        v.tiles.remove_images([img["id"] for img in v.images])
+        self._forget([img["id"] for img in v.images])
         v.images.clear()
-        v.display_cache.clear()
         v.state.current_index = None
         v.image_label.clear()
         v.show_current_image()
@@ -290,7 +301,7 @@ class ImageListManager:
             QMessageBox.information(v, "差分", "差分の作成に失敗しました。画像サイズや型を確認してください。")
             return
 
-        thumb_qimg = numpy_to_qimage(v.prepare_thumbnail_array(diff))
+        thumb_qimg = numpy_to_qimage(v.renderer.thumbnail_array(diff))
         thumb_pixmap = QPixmap.fromImage(thumb_qimg).scaled(
             v.navigator_widget.thumbnail_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation
         )

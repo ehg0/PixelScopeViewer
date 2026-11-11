@@ -1,6 +1,9 @@
 """タイトル行・画像・ステータス行を持つ画像の表示枠。"""
 
+from pathlib import Path
+
 from PySide6.QtCore import QEvent, Qt
+from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QFrame, QLabel, QScrollArea, QVBoxLayout
 
 from PixelScopeViewer.ui.common import theme
@@ -53,6 +56,20 @@ class ImagePane(QFrame):
         self.status_label.setVisible(tile_mode)
         if not tile_mode:
             self.setStyleSheet("")
+
+    def show_tile(self, number: int, img: dict | None, pixmap: QPixmap | None, scale: float):
+        """タイル番号 number のタイルとして画像を表示する。img が None の場合は空欄にする。"""
+        if img is None:
+            self.image_id = None
+            self.image_label.clear()
+            self.title_label.setText(f"T{number}: （なし）")
+            self.title_label.setToolTip("")
+            self.status_label.setText("")
+            return
+        self.image_id = img["id"]
+        self.image_label.set_image(pixmap, scale)
+        self.title_label.setText(f"T{number}: {Path(img['path']).name}")
+        self.title_label.setToolTip(img["path"])
 
     def set_active(self, active: bool):
         """タイル比較モードの active タイルの枠を付ける。"""

@@ -99,3 +99,15 @@ def test_invalid_grid_and_cell():
         layout.set_grid(5, 1)
     with pytest.raises(IndexError):
         layout.stack((4, 0))
+
+
+def test_remove_and_retain_images():
+    layout = TileLayout()
+    layout.set_stack((0, 0), [1, 2, 3])
+    layout.set_stack((3, 3), [2, 4])
+    layout.step(2)
+    layout.remove_images([3, 4])
+    assert layout.stack((0, 0)) == [1, 2] and layout.stack((3, 3)) == [2]
+    assert layout.frame == 1
+    layout.retain_images({2})
+    assert layout.stack((0, 0)) == [2] and layout.frame == 0

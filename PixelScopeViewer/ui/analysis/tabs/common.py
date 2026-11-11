@@ -79,8 +79,8 @@ class SplitPlotView(QWidget):
     """SplitPlotArea を scroll area に入れ、左上の [Fit] [+] [-] で grid の 1 枚の大きさを変える。
 
     Fit では表示エリアに合わせる。ただし 1 枚が SPLIT_MIN_CELL より小さくなる場合は scroll bar を出す。
-    [+] [-]（グラフ上の Shift + wheel も同じ）では 1 枚の大きさを SPLIT_ZOOM_STEP 倍ずつ変え、
-    表示エリアからはみ出す分は scroll する。
+    [+] [-]（グラフ上の Ctrl + wheel も同じ）では 1 枚の大きさを SPLIT_ZOOM_STEP 倍ずつ変え、
+    表示エリアからはみ出す分は scroll する。グラフ上の中央 button の drag でも scroll できる。
 
     Args:
         source: grid・log の設定を共有する PlotItem。
@@ -119,7 +119,8 @@ class SplitPlotView(QWidget):
         self.scroll.setWidgetResizable(True)
         self.scroll.setWidget(self.area)
         self.area.wheel_target = self.scroll.viewport()
-        self.area.on_shift_wheel = self.zoom
+        self.area.pan_target = self.scroll
+        self.area.on_ctrl_wheel = self.zoom
         layout.addWidget(self.scroll, 1)
         self._apply_size()
 
@@ -196,8 +197,12 @@ class SplitPlotArea(pg.GraphicsLayoutWidget):
         self._n_cols = 0
         # wheel を渡す widget（SplitPlotView の scroll area の viewport）
         self.wheel_target: QWidget | None = None
-        # Shift + wheel で呼ぶ callback（倍率, wheel の位置）
-        self.on_shift_wheel: Callable[[float, QPoint], None] | None = None
+        # 中央 button の drag で scroll する scroll area（SplitPlotView の scroll area）
+        self.pan_target: QScrollArea | None = None
+        # Ctrl + wheel で呼ぶ callback（倍率, wheel の位置）
+        self.on_ctrl_wheel: Callable[[float, QPoint], None] | None = None
+        # 中央 button の drag の開始位置（global 座標）と、そのときの scroll 位置
+        self._pan_start: tuple[QPoint, int, int] | None = None
         # None は軸の連動を設定し直す必要がある状態
         self._linked: bool | None = None
         self.scene().sigMouseMoved.connect(lambda pos: on_status(self._mouse_text(pos)))
@@ -291,19 +296,46 @@ class SplitPlotArea(pg.GraphicsLayoutWidget):
         return float(xs_all.min()), float(xs_all.max()), float(ys_all.min()), float(ys_all.max())
 
     def wheelEvent(self, event):
-        # Shift + wheel はグラフの拡大縮小、それ以外は外側の scroll area の scroll に使う。
+        # Ctrl + wheel はグラフの拡大縮小、それ以外は外側の scroll area の scroll に使う。
         # ViewBox は mouse が無効でも wheel を受け取って捨てるため、scene には渡さない
-        if event.modifiers() & Qt.ShiftModifier and self.on_shift_wheel is not None:
-            # Shift で横 wheel に変換する環境があるため、縦がなければ横の回転量を使う
+        if event.modifiers() & Qt.ControlModifier and self.on_ctrl_wheel is not None:
             delta = event.angleDelta().y() or event.angleDelta().x()
             if delta:
-                self.on_shift_wheel(SPLIT_ZOOM_STEP ** (delta / 120), event.position().toPoint())
+                self.on_ctrl_wheel(SPLIT_ZOOM_STEP ** (delta / 120), event.position().toPoint())
             event.accept()
             return
         if self.wheel_target is not None:
             QApplication.sendEvent(self.wheel_target, event)
         else:
             event.ignore()
+
+    # 中央 button の drag で、外側の scroll area の表示位置を動かす
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MiddleButton and self.pan_target is not None:
+            bars = (self.pan_target.horizontalScrollBar(), self.pan_target.verticalScrollBar())
+            self._pan_start = (event.globalPosition().toPoint(), bars[0].value(), bars[1].value())
+            self.viewport().setCursor(Qt.ClosedHandCursor)
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self._pan_start is not None:
+            start, h, v = self._pan_start
+            delta = event.globalPosition().toPoint() - start
+            self.pan_target.horizontalScrollBar().setValue(h - delta.x())
+            self.pan_target.verticalScrollBar().setValue(v - delta.y())
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MiddleButton and self._pan_start is not None:
+            self._pan_start = None
+            self.viewport().unsetCursor()
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
 
     def _mouse_text(self, pos) -> str:
         for item in self._items.values():

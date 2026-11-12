@@ -1,7 +1,9 @@
 """画像の読み込み・変換・metadata 取得。"""
 
+import contextlib
 import struct
 from collections.abc import Callable
+from fractions import Fraction
 from pathlib import Path
 
 import cv2
@@ -257,3 +259,25 @@ def get_image_metadata(path: str | Path, arr: np.ndarray = None) -> dict:
                     metadata["Error (PNG chunks)"] = str(e)
 
     return metadata
+
+
+def metadata_rows(path: str | None, arr: np.ndarray | None) -> list[tuple[str, str]]:
+    """画像ファイルの metadata を基本情報、EXIF の順の (key, value) のリストで返す。"""
+    if not path:
+        return []
+    # 読み込みの失敗は get_image_metadata が Error の項目として返す
+    metadata = get_image_metadata(path, arr)
+    if not metadata:
+        return []
+
+    basic_keys = ["Filepath", "Format", "FileSize", "Size", "Channels", "DataType"]
+    rows = [(key, str(metadata[key])) for key in basic_keys if key in metadata]
+    for key, value in metadata.items():
+        if key in basic_keys:
+            continue
+        rows.append((key, str(value)))
+        if key == "EXIF_ExposureTime":
+            # 露光時間（"1/60" など）を秒で併記する。形式が崩れている場合は省略する
+            with contextlib.suppress(ValueError, ZeroDivisionError):
+                rows.append((" -> (seconds)", f"{float(Fraction(str(value))):.3e}"))
+    return rows

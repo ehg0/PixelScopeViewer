@@ -8,8 +8,6 @@ from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QComboBox, QHBoxLayout, QPushButton, QStackedWidget, QVBoxLayout, QWidget
 
 from PixelScopeViewer.ui.analysis.tabs.common import (
-    SPLIT_TITLE_SIZE,
-    SplitPlotView,
     StatsTable,
     create_channel_group,
     create_export_group,
@@ -19,6 +17,7 @@ from PixelScopeViewer.ui.analysis.tabs.common import (
     make_group_box,
     mouse_position_text,
 )
+from PixelScopeViewer.ui.analysis.tabs.split_plot import SPLIT_TITLE_SIZE, SplitPlotView
 from PixelScopeViewer.ui.common import theme
 
 _ORIENTATION_LABELS = {"h": "Horizontal", "v": "Vertical", "d": "Diagonal"}

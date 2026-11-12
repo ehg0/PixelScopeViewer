@@ -19,8 +19,6 @@ from PySide6.QtWidgets import (
 
 from PixelScopeViewer.core.statistics import histogram_step_edges
 from PixelScopeViewer.ui.analysis.tabs.common import (
-    SPLIT_TITLE_SIZE,
-    SplitPlotView,
     StatsTable,
     create_channel_group,
     create_export_group,
@@ -30,6 +28,7 @@ from PixelScopeViewer.ui.analysis.tabs.common import (
     make_group_box,
     mouse_position_text,
 )
+from PixelScopeViewer.ui.analysis.tabs.split_plot import SPLIT_TITLE_SIZE, SplitPlotView
 from PixelScopeViewer.ui.common import defaults, theme
 
 

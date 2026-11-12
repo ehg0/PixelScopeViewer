@@ -356,7 +356,7 @@ class AnalysisDialog(ToolDialog):
             hist_series = ecdf_series(arr)
             self._hist_copy_source = None
         self.last_hist_data = hist_series
-        hist_stats = histogram_stats(arr.astype(np.float64), self.settings.channel_checks)
+        hist_stats = histogram_stats(arr, self.settings.channel_checks)
         apply_log = self.settings.plot_settings.get("hist", {}).get("log", False)
         is_integer_type = np.issubdtype(arr.dtype, np.integer)
         # グラフの色（2 次元画像は 1ch として扱う）

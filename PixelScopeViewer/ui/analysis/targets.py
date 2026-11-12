@@ -121,7 +121,7 @@ def hist_series_and_rows(targets: list[Target], settings: AnalysisSettings) -> t
             k = channel_index(label)
             if t.vis[k]:
                 series[f"{t.key} C{k}"] = data
-        rows += _stats_rows(t, histogram_stats(t.sub.astype(np.float64), t.vis))
+        rows += _stats_rows(t, histogram_stats(t.sub, t.vis))
     return series, rows
 
 

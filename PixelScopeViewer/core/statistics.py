@@ -288,8 +288,9 @@ def histogram_stats(arr: np.ndarray, channel_checks: list[bool] | None = None):
     Returns:
         ch, curve_label, mean, std, median, min, max, fano, is_int を持つ dict のリスト。
     """
+    # 表示中の channel だけを float64 にして計算する。値は float64 なので is_int は常に False
     return [
-        stats_row(c, label, channel.ravel(), bool(np.issubdtype(channel.dtype, np.integer)))
+        stats_row(c, label, channel.astype(np.float64).ravel(), False)
         for c, label, channel in _visible_channels(arr, channel_checks)
     ]
 

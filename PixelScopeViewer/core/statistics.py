@@ -247,7 +247,9 @@ def calc_stats(data: np.ndarray) -> tuple[float, float, float, float, float, flo
         median = np.median(data)
         min = np.min(data)
         max = np.max(data)
-        fano = std**2 / mean
+        # 平均が 0 のときは今までどおり NaN / inf にし、numpy の警告だけを出さない
+        with np.errstate(divide="ignore", invalid="ignore"):
+            fano = std**2 / mean
     return mean, std, median, min, max, fano
 
 

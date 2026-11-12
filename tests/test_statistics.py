@@ -97,3 +97,16 @@ def test_histogram_series_int_bins_count_uses_common_range():
     a = np.dstack([np.array([[0, 1]]), np.array([[2, 3]])]).astype(np.uint8)
     s = histogram_series(a, bins=4)
     assert s["C0"][0].tolist() == [0, 1, 2, 3] and s["C0"][1].tolist() == [1, 1, 0, 0]
+
+
+def test_calc_stats_zero_mean_without_warning():
+    import warnings
+
+    from PixelScopeViewer.core.statistics import calc_stats
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        zeros = calc_stats(np.zeros(4))
+        signed = calc_stats(np.array([-1.0, 1.0]))
+    assert np.isnan(zeros[5])
+    assert np.isinf(signed[5])

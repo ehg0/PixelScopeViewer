@@ -171,7 +171,7 @@ class SplitPlotView(QWidget):
             self.area.setFixedSize(cols * w, rows * h)
 
 
-class SplitPlotArea(pg.GraphicsLayoutWidget):
+class SplitPlotArea(pg.GraphicsView):
     """登録 ROI ごとの PlotItem を grid に並べる。
 
     PlotItem は ROI の id ごとに使い回し、ユーザーが設定した表示範囲を保つ。
@@ -189,6 +189,10 @@ class SplitPlotArea(pg.GraphicsLayoutWidget):
 
     def __init__(self, source: pg.PlotItem, left_label: str, bottom_label: str, on_status: Callable[[str], None]):
         super().__init__()
+        # pg.GraphicsLayoutWidget と同じ構成。GraphicsLayoutWidget は作るたびに mkQApp() を呼び、
+        # PySide6 では QStyleHints への UniqueConnection の警告が出るため、直接組み立てる
+        self.ci = pg.GraphicsLayout()
+        self.setCentralItem(self.ci)
         self.setBackground(theme.PLOT_BACKGROUND)
         self._source = source
         self._labels = (left_label, bottom_label)

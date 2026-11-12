@@ -157,7 +157,7 @@ class AnalysisDialog(ToolDialog):
         self.profile_tab = ProfileTab(
             on_save_viewbox_state=lambda vb: self._save_viewbox_state(vb, "prof"),
             on_connect_plot_controls=lambda plot_item: self._connect_plotitem_controls(plot_item, "prof"),
-            on_channel_changed=lambda checks: self._on_channel_changed(checks),
+            on_channel_changed=self._on_channel_changed,
             parent=self,
         )
         self.profile_tab.orientation_btn.clicked.connect(self._on_prof_orientation_toggle)
@@ -172,9 +172,9 @@ class AnalysisDialog(ToolDialog):
         self.hist_tab = HistogramTab(
             on_save_viewbox_state=lambda vb: self._save_viewbox_state(vb, "hist"),
             on_connect_plot_controls=lambda plot_item: self._connect_plotitem_controls(plot_item, "hist"),
-            on_channel_changed=lambda checks: self._on_channel_changed(checks),
-            on_spinbox_changed=lambda new_value: self._on_spinbox_changed(new_value),
-            on_spinbox_bar_alpha_changed=lambda new_value: self._on_spinbox_bar_alpha_changed(new_value),
+            on_channel_changed=self._on_channel_changed,
+            on_spinbox_changed=self._on_spinbox_changed,
+            on_spinbox_bar_alpha_changed=self._on_spinbox_bar_alpha_changed,
             parent=self,
         )
         self.hist_tab.chart_kind_combo.currentTextChanged.connect(self._on_hist_chart_kind_combo)
@@ -329,15 +329,7 @@ class AnalysisDialog(ToolDialog):
             self._hist_copy_source = None
             self.last_profile_data = {}
             self.hist_tab.update_plot({}, [], {}, title="ROI is out of image")
-            self.profile_tab.update_plot(
-                {},
-                [],
-                self.settings.profile_orientation,
-                self.settings.profile_x_mode,
-                self.settings.profile_method,
-                {},
-                title_prefix="ROI is out of image",
-            )
+            self._update_profile_plot({}, [], {}, "ROI is out of image")
             return
 
         # channel_checks の長さを channel 数に合わせる
@@ -357,8 +349,6 @@ class AnalysisDialog(ToolDialog):
             self._hist_copy_source = None
         self.last_hist_data = hist_series
         hist_stats = histogram_stats(arr, self.settings.channel_checks)
-        apply_log = self.settings.plot_settings.get("hist", {}).get("log", False)
-        is_integer_type = np.issubdtype(arr.dtype, np.integer)
         # グラフの色（2 次元画像は 1ch として扱う）
         n_plot = arr.shape[2] if arr.ndim == 3 else 1
         self._n_plot = n_plot
@@ -375,11 +365,7 @@ class AnalysisDialog(ToolDialog):
             self._visible_series(hist_series),
             hist_stats,
             self.channel_color_map,
-            apply_log=apply_log,
-            is_integer_type=is_integer_type,
-            chart_kind=self.settings.hist_chart_kind,
-            bar_alpha=self.settings.hist_bar_alpha,
-            step=self.settings.hist_mode == "Histogram",
+            **self._hist_plot_kwargs(np.issubdtype(arr.dtype, np.integer)),
         )
 
         # profile
@@ -398,15 +384,30 @@ class AnalysisDialog(ToolDialog):
             method=self.settings.profile_method,
             channel_checks=self.settings.channel_checks,
         )
+        self._update_profile_plot(self._visible_series(self.last_profile_data), prof_stats, self.channel_color_map)
+        self._restore_main_plots()
+
+    def _hist_plot_kwargs(self, is_integer_type: bool) -> dict:
+        """hist_tab の update_plot・update_split_plots に渡す表示設定。"""
+        return {
+            "apply_log": self.settings.plot_settings.get("hist", {}).get("log", False),
+            "is_integer_type": is_integer_type,
+            "chart_kind": self.settings.hist_chart_kind,
+            "bar_alpha": self.settings.hist_bar_alpha,
+            "step": self.settings.hist_mode == "Histogram",
+        }
+
+    def _update_profile_plot(self, series: dict, rows: list[dict], colors: dict, title_prefix: str = "Profile"):
+        """今の profile の設定で、編集中ROI・Overlay 用の profile の plot を描く。"""
         self.profile_tab.update_plot(
-            self._visible_series(self.last_profile_data),
-            prof_stats,
+            series,
+            rows,
             self.settings.profile_orientation,
             self.settings.profile_x_mode,
             self.settings.profile_method,
-            self.channel_color_map,
+            colors,
+            title_prefix=title_prefix,
         )
-        self._restore_main_plots()
 
     def _restore_main_plots(self):
         """編集中ROI・Overlay 用の plot の表示範囲と plot 設定を復元する。"""
@@ -468,13 +469,9 @@ class AnalysisDialog(ToolDialog):
         self.last_profile_data = prof_series
 
         names = ",".join(t.key for t in targets) or "No ROI in image"
-        hist_kwargs = {
-            "apply_log": self.settings.plot_settings.get("hist", {}).get("log", False),
-            "is_integer_type": all(np.issubdtype(t.sub.dtype, np.integer) for t in targets) and bool(targets),
-            "chart_kind": self.settings.hist_chart_kind,
-            "bar_alpha": self.settings.hist_bar_alpha,
-            "step": self.settings.hist_mode == "Histogram",
-        }
+        hist_kwargs = self._hist_plot_kwargs(
+            all(np.issubdtype(t.sub.dtype, np.integer) for t in targets) and bool(targets)
+        )
         if not self._split_view():
             self.hist_tab.update_plot(
                 self.last_hist_data,
@@ -483,15 +480,7 @@ class AnalysisDialog(ToolDialog):
                 title=f"{self.settings.hist_mode} Overlay ({names})",
                 **hist_kwargs,
             )
-            self.profile_tab.update_plot(
-                prof_series,
-                prof_rows,
-                self.settings.profile_orientation,
-                self.settings.profile_x_mode,
-                self.settings.profile_method,
-                self.channel_color_map,
-                title_prefix=f"Profile Overlay ({names})",
-            )
+            self._update_profile_plot(prof_series, prof_rows, self.channel_color_map, f"Profile Overlay ({names})")
             self._restore_main_plots()
             return
 
@@ -643,12 +632,8 @@ class AnalysisDialog(ToolDialog):
         self.meta_tab.set_rows(rows)
 
     def hist_config_mode_toggle(self):
-        if self.settings.hist_mode == "Histogram":
-            self.settings.hist_mode = "ECDF"
-            self.hist_tab.config_mode_btn.setText("ECDF")
-        else:
-            self.settings.hist_mode = "Histogram"
-            self.hist_tab.config_mode_btn.setText("Histogram")
+        self.settings.hist_mode = "ECDF" if self.settings.hist_mode == "Histogram" else "Histogram"
+        self.hist_tab.config_mode_btn.setText(self.settings.hist_mode)
         self.update_contents()
 
     def _visible_series(self, series: dict) -> dict:
@@ -746,21 +731,15 @@ class AnalysisDialog(ToolDialog):
         QGuiApplication.clipboard().setText(text)
 
     def _on_prof_orientation_toggle(self):
-        if self.settings.profile_orientation == "h":
-            self.settings.profile_orientation = "v"
-            self.profile_tab.orientation_btn.setText("Vertical")
-        else:
-            self.settings.profile_orientation = "h"
-            self.profile_tab.orientation_btn.setText("Horizontal")
+        vertical = self.settings.profile_orientation == "h"
+        self.settings.profile_orientation = "v" if vertical else "h"
+        self.profile_tab.orientation_btn.setText("Vertical" if vertical else "Horizontal")
         self.update_contents()
 
     def _on_prof_xmode_toggle(self):
-        if self.settings.profile_x_mode == "relative":
-            self.settings.profile_x_mode = "absolute"
-            self.profile_tab.xmode_btn.setText("Absolute")
-        else:
-            self.settings.profile_x_mode = "relative"
-            self.profile_tab.xmode_btn.setText("Relative")
+        absolute = self.settings.profile_x_mode == "relative"
+        self.settings.profile_x_mode = "absolute" if absolute else "relative"
+        self.profile_tab.xmode_btn.setText("Absolute" if absolute else "Relative")
         self.update_contents()
 
     def _on_prof_compute_method_combo(self):
@@ -769,10 +748,7 @@ class AnalysisDialog(ToolDialog):
 
     def _on_hist_chart_kind_combo(self):
         self.settings.hist_chart_kind = self.hist_tab.chart_kind_combo.currentText()
-        if self.settings.hist_chart_kind == "Bar":
-            self.hist_tab.bar_alpha_spin_box.setEnabled(True)
-        else:
-            self.hist_tab.bar_alpha_spin_box.setEnabled(False)
+        self.hist_tab.bar_alpha_spin_box.setEnabled(self.settings.hist_chart_kind == "Bar")
         self.update_contents()
 
     def _on_external_log_toggled(self, checked: bool):
@@ -802,9 +778,9 @@ class AnalysisDialog(ToolDialog):
     def keyPressEvent(self, event):
         # Esc で dialog を閉じず、入力欄の focus を外すだけにする
         if event.key() == Qt.Key_Escape:
-            focused_widget = self.focusWidget()
-            if focused_widget and isinstance(focused_widget, (QSpinBox, QDoubleSpinBox, QLineEdit)):
-                focused_widget.clearFocus()
+            focused = self.focusWidget()
+            if isinstance(focused, (QSpinBox, QDoubleSpinBox, QLineEdit)):
+                focused.clearFocus()
                 event.accept()
                 return
             event.ignore()

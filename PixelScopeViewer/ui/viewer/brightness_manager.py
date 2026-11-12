@@ -1,5 +1,6 @@
 """ImageViewer の brightness・channel 表示設定の管理。"""
 
+from contextlib import contextmanager
 from dataclasses import replace
 
 import numpy as np
@@ -19,6 +20,18 @@ class BrightnessManager:
 
     def __init__(self, viewer):
         self.viewer = viewer
+        # True の間は brightness が変わっても描き直さない（呼び出し側が後で 1 回だけ描き直す）
+        self._render_held = False
+
+    @contextmanager
+    def render_held(self):
+        """この中で brightness が変わっても描き直さないようにする。"""
+        prev = self._render_held
+        self._render_held = True
+        try:
+            yield
+        finally:
+            self._render_held = prev
 
     def show_brightness_dialog(self):
         """表示設定 dialog を表示する。初回は作成して viewer と signal を接続する。"""
@@ -147,7 +160,8 @@ class BrightnessManager:
 
         self.viewer.status_updater.update_brightness_status()
 
-        self.viewer.refresh_display(defer_others=True)
+        if not self._render_held:
+            self.viewer.refresh_display(defer_others=True)
 
     def on_channels_changed(self, channels):
         # 再描画は channel_display の checks_changed を受けた viewer が行う

@@ -59,8 +59,7 @@ class TileModeManager:
         st = v.state
         if st.tile_mode:
             self.apply_layout()
-            v.brightness_manager.sync_tile_mode()
-            v.show_current_image()
+            self._show_with_tile_brightness()
             return
         center = v.zoom_manager.calculate_viewport_center_in_image_coords() if v.has_image() else None
         first = not st.tile_initialized
@@ -72,8 +71,7 @@ class TileModeManager:
             st.brightness_by_dtype[TILE_BRIGHTNESS_KEY] = BrightnessParams.for_dtype(group)
         st.brightness = replace(st.brightness_by_dtype[TILE_BRIGHTNESS_KEY])
         self.apply_layout()
-        v.brightness_manager.sync_tile_mode()
-        v.show_current_image()
+        self._show_with_tile_brightness()
         v.status_updater.update_brightness_status()
         if first or center is None:
             v.zoom_manager.fit_to_window()
@@ -94,10 +92,16 @@ class TileModeManager:
         v.active_pane = single
         if st.current_index is None and v.images:
             st.current_index = 0
-        v.brightness_manager.sync_tile_mode()
-        v.show_current_image()
+        self._show_with_tile_brightness()
         if center is not None and v.has_image():
             v.zoom_manager.set_zoom_at_coords(st.scale, center)
+
+    def _show_with_tile_brightness(self):
+        """表示設定 dialog の brightness をモードに合わせてから、全タイル（1 枚表示では画像）を 1 回だけ描く。"""
+        v = self.viewer
+        with v.brightness_manager.render_held():
+            v.brightness_manager.sync_tile_mode()
+        v.show_current_image()
 
     def registered_dtype_groups(self) -> list[str]:
         """表示中のマスに登録されている画像の dtype の group を返す。先頭は最初のタイルの画像の dtype。"""

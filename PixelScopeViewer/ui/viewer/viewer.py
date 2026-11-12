@@ -243,8 +243,7 @@ class ImageViewer(QMainWindow):
         """current_index の画像（タイル比較モードでは全タイル）を表示し、関連する widget と dialog を更新する。"""
         if self.state.tile_mode:
             self.tiles.sync_current_index()
-            self.refresh_display()
-            self.notify_active_image_changed()
+            self.notify_active_image_changed(render=True)
             return
 
         if self.state.current_index is None or not self.images:
@@ -264,38 +263,47 @@ class ImageViewer(QMainWindow):
         if stored_params != self.state.brightness:
             self.state.brightness = replace(stored_params)
             self.status_updater.update_brightness_status()
-        self.refresh_display()
-        self.notify_active_image_changed()
+        self.notify_active_image_changed(render=True)
 
-    def notify_active_image_changed(self):
-        """current_index の画像が変わったことを navigator・画像 menu・表示設定 dialog・解析 dialog に伝える。"""
+    def notify_active_image_changed(self, render: bool = False):
+        """current_index の画像が変わったことを表示設定 dialog・navigator・画像 menu・解析 dialog に伝える。
+
+        表示設定 dialog の auto scale を描画の前に済ませ、表示中の画像（タイル比較モードでは全タイル）を
+        新しい brightness で 1 回だけ描き直す。active でないタイルの明るさが遅れて変わるのを防ぐため。
+
+        Args:
+            render: brightness が変わらなくても描き直すか（表示する画像が変わった場合）。
+        """
+        before = replace(self.state.brightness)
+        with self.brightness_manager.render_held():
+            self._update_brightness_dialog()
+        if render or self.state.brightness != before:
+            self.refresh_display()
+
         self.image_changed.emit()
         self.image_list.update_menu()
         self.status_updater.update_status()
         self.status_updater.update_roi_status()
+        self._update_analysis_dialog()
 
+    def _update_brightness_dialog(self):
+        """表示設定 dialog が存在すれば（非表示でも）current_index の画像に更新する。"""
+        if self.brightness_dialog is None:
+            return
         if self.state.current_index is None:
             # 空欄のタイルが active の場合は auto scale の対象をなくす
-            if self.brightness_dialog is not None:
-                self.brightness_dialog.update_for_new_image(None, None)
-            self._update_analysis_dialog()
+            self.brightness_dialog.update_for_new_image(None, None)
             return
         img = self.images[self.state.current_index]
-        # 非表示でも表示設定 dialog が存在すれば新しい画像に更新する
-        base_arr = img.get("base_array", img["array"])
-        img_path = img.get("path")
-        if self.brightness_dialog is not None:
-            self.brightness_dialog.update_for_new_image(
-                base_arr,
-                img_path,
-                keep_settings=True,
-                channel_checks=self.channel_checks,
-                channel_colors=self.channel_colors,
-                initial_mode_1ch=self.channel_display.mode_1ch,
-                initial_mode_2ch=self.channel_display.mode_2ch,
-            )
-
-        self._update_analysis_dialog()
+        self.brightness_dialog.update_for_new_image(
+            img.get("base_array", img["array"]),
+            img.get("path"),
+            keep_settings=True,
+            channel_checks=self.channel_checks,
+            channel_colors=self.channel_colors,
+            initial_mode_1ch=self.channel_display.mode_1ch,
+            initial_mode_2ch=self.channel_display.mode_2ch,
+        )
 
     def _get_displayed_array(self) -> np.ndarray | None:
         """current_index の画像の表示用の配列を返す。"""

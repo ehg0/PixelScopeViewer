@@ -109,5 +109,7 @@ SLIDER_STYLESHEET = f"""
 # タイルの枠は object name で指定し、中の scroll area・label（QFrame）に枠線が付かないようにする
 TILE_ACTIVE_FRAME_STYLESHEET = f"#tilePane {{ border: 2px solid {TILE_ACTIVE_BORDER}; }}"
 TILE_INACTIVE_FRAME_STYLESHEET = f"#tilePane {{ border: 2px solid {TILE_INACTIVE_BORDER}; }}"
+# 1 枚表示は枠線を見せないが、画像の位置をタイル比較モードとそろえるため同じ幅を空ける
+TILE_SINGLE_FRAME_STYLESHEET = "#tilePane { border: 2px solid transparent; }"
 TILE_TITLE_STYLESHEET = f"QLabel {{ font-weight: bold; padding: 2px 4px; background-color: {TILE_ROW_BACKGROUND}; }}"
 TILE_STATUS_ROW_STYLESHEET = f"QLabel {{ padding: 1px 4px; background-color: {TILE_ROW_BACKGROUND}; }}"

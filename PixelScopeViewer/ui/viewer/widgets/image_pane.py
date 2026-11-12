@@ -52,9 +52,9 @@ class ImagePane(QFrame):
         self.set_tile_mode(False)
 
     def set_tile_mode(self, tile_mode: bool):
-        """1 枚表示では枠線を外す。タイル比較モードの枠線は set_active で付ける。"""
+        """1 枚表示では枠線を透明にする（画像の位置は変えない）。タイル比較モードの枠線は set_active で付ける。"""
         if not tile_mode:
-            self.setStyleSheet("")
+            self.setStyleSheet(theme.TILE_SINGLE_FRAME_STYLESHEET)
 
     def show_image(self, img: dict | None, pixmap: QPixmap | None, scale: float, tile_number: int | None = None):
         """画像とファイル名を表示する。img が None の場合は空欄にする。

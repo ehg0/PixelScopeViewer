@@ -112,4 +112,5 @@ TILE_INACTIVE_FRAME_STYLESHEET = f"#tilePane {{ border: 2px solid {TILE_INACTIVE
 # 1 枚表示は枠線を見せないが、画像の位置をタイル比較モードとそろえるため同じ幅を空ける
 TILE_SINGLE_FRAME_STYLESHEET = "#tilePane { border: 2px solid transparent; }"
 TILE_TITLE_STYLESHEET = f"QLabel {{ font-weight: bold; padding: 2px 4px; background-color: {TILE_ROW_BACKGROUND}; }}"
-TILE_STATUS_ROW_STYLESHEET = f"QLabel {{ padding: 1px 4px; background-color: {TILE_ROW_BACKGROUND}; }}"
+# pixel 値の行。文字の大きさはメインの status bar（status_updater.py）とそろえる
+TILE_STATUS_ROW_STYLESHEET = f"QLabel {{ font-size: 11pt; padding: 1px 4px; background-color: {TILE_ROW_BACKGROUND}; }}"

@@ -136,7 +136,7 @@ class ImageViewer(QMainWindow):
         self.info_dock.setWidget(self.info_tabs)
         self.addDockWidget(Qt.LeftDockWidgetArea, self.info_dock)
 
-        # status bar（左: pixel 値・ROI、右: brightness・zoom 倍率）
+        # status bar（左: マウス位置の座標・ROI、右: brightness・zoom 倍率）
         self.status_updater = StatusUpdater(self)
 
         self.help_dialog = HelpDialog(self)

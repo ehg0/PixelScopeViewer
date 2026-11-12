@@ -164,11 +164,11 @@ class ProfileTab(QWidget):
         link_axes: bool,
         n_cols: int,
     ):
-        """登録 ROI ごとの profile を grid に並べて描画し、統計量の table を更新する。
+        """ROI ごと（またはタイルごと）の profile を grid に並べて描画し、統計量の table を更新する。
 
         Args:
-            groups: (ROI の id, title, title の色, label から (x, y) への dict) のリスト。
-            stats_rows: 全 ROI の統計量の行。
+            groups: (グラフの id, title, title の色, label から (x, y) への dict) のリスト。
+            stats_rows: 全グラフの統計量の行。
             x_mode: 'relative' または 'absolute'。
             color_by_label: label から RGB への dict。
             link_axes: 全グラフの軸を連動させるか。

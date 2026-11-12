@@ -125,9 +125,9 @@ class SplitPlotView(QWidget):
 
 
 class SplitPlotArea(pg.GraphicsView):
-    """登録 ROI ごとの PlotItem を grid に並べる。
+    """グラフ（ROI ごと・タイルごと）の PlotItem を grid に並べる。
 
-    PlotItem は ROI の id ごとに使い回し、ユーザーが設定した表示範囲を保つ。
+    PlotItem はグラフの id ごとに使い回し、ユーザーが設定した表示範囲を保つ。
     grid・log は source（編集中ROI・Overlay 用の PlotItem）の menu の設定に揃え、
     各 PlotItem の menu での変更は source に伝える。
 
@@ -167,17 +167,17 @@ class SplitPlotArea(pg.GraphicsView):
     def plot_items(self, ids: list[int], n_cols: int) -> list[pg.PlotItem]:
         """ids の順に PlotItem を返す。
 
-        ROI の増減か列数の変更があったときだけ、PlotItem を追加・削除して n_cols 列に並べ直す。
+        グラフの増減か列数の変更があったときだけ、PlotItem を追加・削除して n_cols 列に並べ直す。
         """
         if ids != self._order or n_cols != self._n_cols:
             for item in list(self.ci.items):
                 self.ci.removeItem(item)
-            for roi_id in [r for r in self._items if r not in ids]:
-                del self._items[roi_id]
-            for n, roi_id in enumerate(ids):
-                if roi_id not in self._items:
-                    self._items[roi_id] = self._make_item()
-                self.ci.addItem(self._items[roi_id], row=n // n_cols, col=n % n_cols)
+            for gid in [r for r in self._items if r not in ids]:
+                del self._items[gid]
+            for n, gid in enumerate(ids):
+                if gid not in self._items:
+                    self._items[gid] = self._make_item()
+                self.ci.addItem(self._items[gid], row=n // n_cols, col=n % n_cols)
             self._order = list(ids)
             self._n_cols = n_cols
             self._linked = None
@@ -202,7 +202,7 @@ class SplitPlotArea(pg.GraphicsView):
     def set_linked(self, linked: bool, series: list[tuple[np.ndarray, np.ndarray]]):
         """軸の連動を設定する。描画の後に呼ぶ。
 
-        連動中は先頭の PlotItem の auto range に全 ROI のデータが収まるよう、
+        連動中は先頭の PlotItem の auto range に全グラフのデータが収まるよう、
         全データの範囲を覆う透明な線を先頭の PlotItem に加える。
         連動を切り替えたときは auto range を有効に戻す。連動中は先頭の PlotItem だけを auto range にする。
         """

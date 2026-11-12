@@ -69,8 +69,8 @@ class AnalysisDialog(ToolDialog):
     """ROI の metadata・profile・histogram を表示する modeless dialog。
 
     親の ImageViewer から set_image_and_rect で画像と ROI が更新される。
-    profile・histogram は編集中 ROI のほか、ROI 一覧で ☑ を付けた登録 ROI を重ねて（Overlay）
-    または並べて（Split）表示できる。
+    profile・histogram は編集中 ROI のほか、☑ を付けた登録 ROI（タイル比較モードでは全タイル）を
+    重ねて（Overlay）または並べて（Split）表示できる。
 
     Args:
         parent: 親 widget（通常は ImageViewer）。
@@ -112,14 +112,13 @@ class AnalysisDialog(ToolDialog):
         self.rois: list[RoiEntry] = list(rois or [])
         # タイル比較モードの全タイルの画像。1 枚表示では空
         self.sources: list[AnalysisSource] = list(sources or [])
-        # 登録 ROI 用の channel の一覧の行の順の key（_Target.key）
+        # 登録 ROI 用の channel の一覧の行の順の key（Target.key）
         self._panel_keys: list[str] = []
         self.last_metadata_columns: list[tuple[str, list[tuple[str, str]]]] = []
 
         self.settings = AnalysisSettings()
         self.update_window_title()
 
-        # 親で ROI が変わったら title を更新する
         if self.viewer and hasattr(self.viewer, "roi_changed"):
             self.viewer.roi_changed.connect(self.update_window_title)
 
@@ -139,7 +138,6 @@ class AnalysisDialog(ToolDialog):
 
         self._build_ui()
 
-        # 前回の geometry を復元する
         self.restore_geometry()
 
         if self.image_array is not None:

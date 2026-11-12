@@ -231,11 +231,11 @@ class HistogramTab(QWidget):
         bar_alpha: int = 120,
         step: bool = False,
     ):
-        """登録 ROI ごとの histogram を grid に並べて描画し、統計量の table を更新する。
+        """ROI ごと（またはタイルごと）の histogram を grid に並べて描画し、統計量の table を更新する。
 
         Args:
-            groups: (ROI の id, title, title の色, label から (x, 度数) への dict) のリスト。
-            stats_rows: 全 ROI の統計量の行。
+            groups: (グラフの id, title, title の色, label から (x, 度数) への dict) のリスト。
+            stats_rows: 全グラフの統計量の行。
             color_by_label: label から RGB への dict。
             link_axes: 全グラフの軸を連動させるか。
             n_cols: grid の列数。

@@ -220,7 +220,7 @@ class TileModeManager:
         visible = self.visible_images()
         for cell, img in visible:
             pixmap = v.renderer.pixmap(img) if img is not None else None
-            self.pane(cell).show_tile(self.layout.tile_number(cell), img, pixmap, scale)
+            self.pane(cell).show_image(img, pixmap, scale, tile_number=self.layout.tile_number(cell))
         canvas = self.canvas_size()
         for cell, _ in visible:
             self.pane(cell).image_label.set_canvas_size(canvas, scale)

@@ -196,7 +196,8 @@ class ImageViewer(QMainWindow):
     def on_label_mouse_moved(self, label: ImageLabel, pos: QPoint | None):
         """画像表示 widget 上のマウス位置（widget 座標）を受け取る。widget の外に出た場合は None。
 
-        タイル比較モードでは各タイルのステータス行にその座標の pixel 値を出し、status bar には座標だけを出す。
+        画像の下のステータス行（タイル比較モードでは全タイル）にその座標の pixel 値を出し、
+        status bar には座標だけを出す。
         """
         if self.state.tile_mode:
             point = self.tiles.show_pixel_values(pos)
@@ -247,7 +248,7 @@ class ImageViewer(QMainWindow):
             return
 
         if self.state.current_index is None or not self.images:
-            self.image_label.clear()
+            self.active_pane.show_image(None, None, self.state.scale)
             self.status_updater.update_status()
             self.image_changed.emit()
             return
@@ -323,7 +324,8 @@ class ImageViewer(QMainWindow):
             else:
                 self.tiles.render()
         elif self.state.current_index is not None and self.images:
-            self.image_label.set_image(self.renderer.pixmap(self.images[self.state.current_index]), self.state.scale)
+            img = self.images[self.state.current_index]
+            self.active_pane.show_image(img, self.renderer.pixmap(img), self.state.scale)
         self.status_updater.update_status()
 
     # 子 dialog の起動

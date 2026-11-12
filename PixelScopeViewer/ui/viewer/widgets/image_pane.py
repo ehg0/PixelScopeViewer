@@ -11,9 +11,10 @@ from PixelScopeViewer.ui.viewer.widgets.image_label import ImageLabel
 
 
 class ImagePane(QFrame):
-    """scroll area の中の ImageLabel と、その上下のタイトル行・ステータス行。
+    """scroll area の中の ImageLabel と、その上下のタイトル行（ファイル名）・ステータス行（pixel 値）。
 
-    1 枚表示ではタイトル行とステータス行を隠す。scroll と viewport の resize は viewer.on_pane_view_changed に通知する。
+    1 枚表示も 1×1 のタイルと同じ並びにし、枠線だけ付けない。
+    scroll と viewport の resize は viewer.on_pane_view_changed に通知する。
 
     Attributes:
         image_id: 表示中の画像の id。空欄の場合は None。
@@ -51,24 +52,31 @@ class ImagePane(QFrame):
         self.set_tile_mode(False)
 
     def set_tile_mode(self, tile_mode: bool):
-        """タイトル行・ステータス行の表示と枠線を切り替える。"""
-        self.title_label.setVisible(tile_mode)
-        self.status_label.setVisible(tile_mode)
+        """1 枚表示では枠線を外す。タイル比較モードの枠線は set_active で付ける。"""
         if not tile_mode:
             self.setStyleSheet("")
 
-    def show_tile(self, number: int, img: dict | None, pixmap: QPixmap | None, scale: float):
-        """タイル番号 number のタイルとして画像を表示する。img が None の場合は空欄にする。"""
+    def show_image(self, img: dict | None, pixmap: QPixmap | None, scale: float, tile_number: int | None = None):
+        """画像とファイル名を表示する。img が None の場合は空欄にする。
+
+        Args:
+            img: 画像の dict。
+            pixmap: 表示用の QPixmap。
+            scale: zoom 倍率。
+            tile_number: タイル比較モードのタイル番号。タイトル行を "T{n}: ファイル名" にし、空欄は「（なし）」にする。
+                1 枚表示は None にし、タイトル行をファイル名だけ（空欄は空）にする。
+        """
+        prefix = f"T{tile_number}: " if tile_number is not None else ""
         if img is None:
             self.image_id = None
             self.image_label.clear()
-            self.title_label.setText(f"T{number}: （なし）")
+            self.title_label.setText(f"{prefix}（なし）" if prefix else "")
             self.title_label.setToolTip("")
             self.status_label.setText("")
             return
         self.image_id = img["id"]
         self.image_label.set_image(pixmap, scale)
-        self.title_label.setText(f"T{number}: {Path(img['path']).name}")
+        self.title_label.setText(f"{prefix}{Path(img['path']).name}")
         self.title_label.setToolTip(img["path"])
 
     def set_active(self, active: bool):

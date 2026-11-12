@@ -12,7 +12,8 @@ from PixelScopeViewer.core.pixel import pixel_value_text
 class StatusUpdater:
     """ImageViewer の status bar を作り、viewer の状態を status bar と title bar に表示する。
 
-    status bar は左にマウス位置の pixel 値と ROI、右に brightness と zoom 倍率を並べる。
+    status bar は左にマウス位置の画像座標と ROI、右に brightness と zoom 倍率を並べる。
+    pixel 値は画像の下のステータス行に出す。
     """
 
     def __init__(self, viewer):
@@ -44,25 +45,25 @@ class StatusUpdater:
         return int(pos.x() / s), int(pos.y() / s)
 
     def update_mouse_status(self, pos):
-        """マウス位置（widget 座標）の pixel 値を表示する。pos が None の場合は消す。"""
-        if pos is None or self.viewer.state.current_index is None or not self.viewer.images:
-            self.pixel_label.setText("")
-            self.viewer.current_mouse_image_coords = None
-            return
-        img = self.viewer.images[self.viewer.state.current_index]
-        # brightness 調整前の base_array の値を表示する
-        ix, iy = self._image_point(pos)
-        val_str = pixel_value_text(img.get("base_array", img.get("array")), ix, iy)
-        if val_str is None:
-            self.pixel_label.setText("")
-            self.viewer.current_mouse_image_coords = None
-            return
-        self.pixel_label.setText(f"x={ix} y={iy} val={val_str}")
+        """マウス位置（widget 座標）の座標を status bar に、pixel 値を画像の下のステータス行に出す（1 枚表示）。
+
+        pos が None の場合と画像の範囲外の場合は両方を消す。
+        """
+        point, val_str = None, None
+        if pos is not None and self.viewer.state.current_index is not None and self.viewer.images:
+            img = self.viewer.images[self.viewer.state.current_index]
+            # brightness 調整前の base_array の値を表示する
+            ix, iy = self._image_point(pos)
+            val_str = pixel_value_text(img.get("base_array", img.get("array")), ix, iy)
+            if val_str is not None:
+                point = (ix, iy)
         # zoom の中心として使う
-        self.viewer.current_mouse_image_coords = (ix, iy)
+        self.viewer.current_mouse_image_coords = point
+        self.show_mouse_point(point)
+        self.viewer.active_pane.status_label.setText(f"val={val_str}" if point is not None else "")
 
     def show_mouse_point(self, point: tuple[int, int] | None):
-        """マウス位置の画像座標だけを表示する（タイル比較モード）。None の場合は消す。"""
+        """マウス位置の画像座標だけを表示する。None の場合は消す。"""
         self.pixel_label.setText(f"x={point[0]} y={point[1]}" if point is not None else "")
 
     def update_roi_status(self) -> None:

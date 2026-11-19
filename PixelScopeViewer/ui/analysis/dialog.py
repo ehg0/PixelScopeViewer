@@ -80,6 +80,7 @@ class AnalysisDialog(ToolDialog):
         channel_display: グラフの色の持ち主。
         rois: 解析対象の登録 ROI。
         sources: タイル比較モードの全タイルの画像。
+        instance_no: 解析ビューの番号（1 始まり）。2 以上の場合は window title に「#n」を付ける。
     """
 
     window_key = "analysis"
@@ -95,8 +96,10 @@ class AnalysisDialog(ToolDialog):
         channel_display: ChannelDisplay | None = None,
         rois: list[RoiEntry] | None = None,
         sources: list[AnalysisSource] | None = None,
+        instance_no: int = 1,
     ):
         super().__init__(parent)
+        self.instance_no = instance_no
         # グラフの色の持ち主。表示色・個別設定のどちらが変わっても再描画する
         self.channel_display = channel_display
         if channel_display is not None:
@@ -219,7 +222,7 @@ class AnalysisDialog(ToolDialog):
 
     def update_window_title(self, *args):
         """親の status bar の ROI 表示（登録 ROI の表示中は ROI の名前）を window title に反映する。"""
-        base_title = "解析ビュー"
+        base_title = "解析ビュー" if self.instance_no < 2 else f"解析ビュー #{self.instance_no}"
 
         tiles = f" | Tiles={len(self._tile_sources)}" if self._tile_sources else ""
         if self._roi_mode_active():

@@ -46,6 +46,10 @@ def create_menus(viewer):
     viewer.show_analysis_action.setShortcutContext(Qt.WindowShortcut)
     viewer.show_analysis_action.triggered.connect(lambda: viewer.show_analysis_dialog())
     viewer.addAction(viewer.show_analysis_action)
+    viewer.new_analysis_action = QAction("新しい解析ビュー", viewer, shortcut="Shift+A")
+    viewer.new_analysis_action.setShortcutContext(Qt.WindowShortcut)
+    viewer.new_analysis_action.triggered.connect(lambda: viewer.new_analysis_dialog())
+    viewer.addAction(viewer.new_analysis_action)
 
     viewer.show_display_settings_action = QAction("表示設定", viewer, shortcut="D")
     viewer.show_display_settings_action.setShortcutContext(Qt.WindowShortcut)
@@ -98,6 +102,7 @@ def create_menus(viewer):
 
     analysis = menubar.addMenu("解析")
     analysis.addAction(viewer.show_analysis_action)
+    analysis.addAction(viewer.new_analysis_action)
     analysis.addAction(viewer.add_roi_action)
     analysis.addSeparator()
     analysis.addAction(viewer.show_annotations_action)

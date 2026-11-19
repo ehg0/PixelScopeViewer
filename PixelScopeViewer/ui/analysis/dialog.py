@@ -779,7 +779,7 @@ class AnalysisDialog(ToolDialog):
         登録 ROI の表示中は ☑ の付いた全 ROI を対象にする。
         """
         if tab.get_all_plane_data.isChecked():
-            images = [(img["path"], img["base_array"]) for img in self.viewer.images]
+            images = [(img["path"], img["array"]) for img in self.viewer.images]
         elif self._tile_sources:
             images = [(s.path or s.label, s.array) for s in self._tile_sources]
         elif self.image_array is not None:

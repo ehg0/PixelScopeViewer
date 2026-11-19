@@ -139,13 +139,16 @@ class ImageListManager:
             failed_files.append((path, "チャンネル数は1, 2, 3, または4である必要があります"))
             return None
 
+        # ファイルを直接参照する配列（memmap）はメモリに読み込み、ファイルから切り離す。
+        # 参照したままだと、開いている間ファイルを消したり上書きしたりできなくなる（Windows）
+        if isinstance(arr, np.memmap):
+            arr = np.array(arr)
         thumb_qimg = numpy_to_qimage(self.viewer.renderer.thumbnail_array(arr))
         thumb_pixmap = QPixmap.fromImage(thumb_qimg).scaled(200, 200, Qt.KeepAspectRatio, Qt.SmoothTransformation)
         return {
             "id": self._new_id(),
             "path": path,
             "array": arr,
-            "base_array": arr.copy(),
             "thumbnail_pixmap": thumb_pixmap,
         }
 
@@ -275,7 +278,6 @@ class ImageListManager:
         # memory を解放するため配列を明示的に削除する
         img_data = v.images[v.state.current_index]
         img_data.pop("array", None)
-        img_data.pop("base_array", None)
         del v.images[v.state.current_index]
         self._forget([img_data["id"]])
         if not v.images:
@@ -291,7 +293,6 @@ class ImageListManager:
         # memory を解放するため配列を明示的に削除する
         for img_data in v.images:
             img_data.pop("array", None)
-            img_data.pop("base_array", None)
         self._forget([img["id"] for img in v.images])
         v.images.clear()
         v.state.current_index = None
@@ -332,7 +333,6 @@ class ImageListManager:
                 "id": self._new_id(),
                 "path": f"diff:{a_idx + 1}-{b_idx + 1}",
                 "array": diff,
-                "base_array": diff.copy(),
                 "thumbnail_pixmap": thumb_pixmap,
             }
         )

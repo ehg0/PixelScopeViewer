@@ -52,9 +52,9 @@ class StatusUpdater:
         point, val_str = None, None
         if pos is not None and self.viewer.state.current_index is not None and self.viewer.images:
             img = self.viewer.images[self.viewer.state.current_index]
-            # brightness 調整前の base_array の値を表示する
+            # brightness 調整前の画像の値を表示する
             ix, iy = self._image_point(pos)
-            val_str = pixel_value_text(img.get("base_array", img.get("array")), ix, iy)
+            val_str = pixel_value_text(img["array"], ix, iy)
             if val_str is not None:
                 point = (ix, iy)
         # zoom の中心として使う
@@ -106,7 +106,7 @@ class StatusUpdater:
         else:
             filename = f"{p_path.parent.name}/{p_path.name}"
         img = self.viewer.images[self.viewer.state.current_index]
-        arr = img.get("base_array", img.get("array"))
+        arr = img["array"]
         if arr.ndim == 2:
             h, w = arr.shape
             c = 1

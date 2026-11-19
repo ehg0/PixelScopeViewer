@@ -60,7 +60,8 @@ class ImageViewer(QMainWindow):
     """画像の表示・切り替え・ROI 操作と、各解析 dialog の起動を行うメイン window。
 
     Attributes:
-        images: 読み込んだ画像の dict（path, array, base_array, thumbnail_pixmap）のリスト。
+        images: 読み込んだ画像の dict（id, path, array, thumbnail_pixmap）のリスト。
+            array は読み込んだままの画像で、書き換えない（表示の明るさなどは描画時に計算する）。
         state: 表示中の画像の index・zoom 倍率・ROI・brightness などの現在値。
         image_list: 画像の読み込み・切り替え・閉じる操作。
         roi_list: ROI 一覧の登録・削除・連動・保存と読み込み。
@@ -298,7 +299,7 @@ class ImageViewer(QMainWindow):
             return
         img = self.images[self.state.current_index]
         self.brightness_dialog.update_for_new_image(
-            img.get("base_array", img["array"]),
+            img["array"],
             img.get("path"),
             keep_settings=True,
             channel_checks=self.channel_checks,
@@ -365,7 +366,7 @@ class ImageViewer(QMainWindow):
         arr, img_path = None, None
         if self.state.current_index is not None:
             img = self.images[self.state.current_index]
-            arr = img.get("base_array", img.get("array"))
+            arr = img["array"]
             img_path = img.get("path")
         return AnalysisDialog(
             self,
@@ -461,7 +462,7 @@ class ImageViewer(QMainWindow):
         arr, path = None, None
         if self.state.current_index is not None:
             img = self.images[self.state.current_index]
-            arr, path = img.get("base_array", img["array"]), img.get("path")
+            arr, path = img["array"], img.get("path")
         for dlg in self.analysis_dialogs:
             dlg.set_image_and_rect(arr, self.state.roi, path, rois=rois, sources=sources)
 
@@ -471,7 +472,7 @@ class ImageViewer(QMainWindow):
             return []
         layout = self.state.tile_layout
         return [
-            AnalysisSource(f"T{layout.tile_number(cell)}", img.get("base_array", img["array"]), img.get("path"))
+            AnalysisSource(f"T{layout.tile_number(cell)}", img["array"], img.get("path"))
             for cell, img in self.tiles.visible_images()
             if img is not None
         ]

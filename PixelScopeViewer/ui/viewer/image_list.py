@@ -240,9 +240,9 @@ class ImageListManager:
         """画像 menu に画像一覧（絞り込み欄付き）を入れる。一覧は menu を開く直前に作る。"""
         v = self.viewer
         self._popup = ImageListPopup()
-        action = QWidgetAction(v.img_menu)
-        action.setDefaultWidget(self._popup)
-        v.img_menu.addAction(action)
+        self._menu_action = QWidgetAction(v.img_menu)
+        self._menu_action.setDefaultWidget(self._popup)
+        v.img_menu.addAction(self._menu_action)
         v.img_menu.aboutToShow.connect(self._populate_menu)
         self._popup.activated.connect(self._on_menu_activated)
 
@@ -250,6 +250,10 @@ class ImageListManager:
         v = self.viewer
         # タイル比較モードでは一覧の表示だけにする
         self._popup.populate([img["path"] for img in v.images], v.state.current_index, not v.state.tile_mode)
+        # QMenu は widget の大きさを action が変わったときにしか測り直さないため、変わったことを知らせる。
+        # これがないと、画像を追加しても menu が最初に開いたときの大きさのままになり、増えた行が見えない
+        self._menu_action.setVisible(False)
+        self._menu_action.setVisible(True)
         QTimer.singleShot(0, self._popup.filter_edit.setFocus)
 
     def _on_menu_activated(self, index: int):

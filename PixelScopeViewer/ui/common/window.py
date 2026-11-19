@@ -143,3 +143,40 @@ class ChildDialogs:
                 d.close()
 
         self._each(apply)
+
+
+class DialogGroup:
+    """同じ種類の modeless dialog を複数開くときの一覧。dialog には 1 始まりの番号を付ける。
+
+    番号は開いている dialog で使われていない最小の値にする。2 番目以降は、記憶した位置から少しずらして開く。
+
+    Args:
+        child_dialogs: 親 window と連動させる子 dialog の一覧。
+    """
+
+    OFFSET = 30
+
+    def __init__(self, child_dialogs: ChildDialogs):
+        self._child_dialogs = child_dialogs
+        self._dialogs: dict[int, QDialog] = {}
+
+    def create(self, factory: Callable[[int], QDialog]) -> QDialog:
+        """factory(番号) で dialog を作って一覧に加える。閉じたら一覧から外す。"""
+        n = next(i for i in range(1, len(self._dialogs) + 2) if i not in self._dialogs)
+        dlg = factory(n)
+        if n >= 2:
+            d = self.OFFSET * (n - 1)
+            dlg.move(dlg.pos() + QPoint(d, d))
+        self._dialogs[n] = dlg
+        self._child_dialogs.track(dlg, lambda: self._dialogs.pop(n, None))
+        return dlg
+
+    def first(self) -> QDialog | None:
+        """番号が最小の dialog。開いていなければ None。"""
+        return self._dialogs[min(self._dialogs)] if self._dialogs else None
+
+    def __iter__(self):
+        return iter([self._dialogs[n] for n in sorted(self._dialogs)])
+
+    def __len__(self) -> int:
+        return len(self._dialogs)

@@ -34,7 +34,7 @@ from PixelScopeViewer.ui.common import defaults
 from PixelScopeViewer.ui.common.channel_display import ChannelDisplay
 from PixelScopeViewer.ui.common.qt_image import numpy_to_qimage
 from PixelScopeViewer.ui.common.state_dump import to_jsonable
-from PixelScopeViewer.ui.common.window import ChildDialogs, bring_to_front
+from PixelScopeViewer.ui.common.window import ChildDialogs, DialogGroup, bring_to_front
 from PixelScopeViewer.ui.viewer.brightness_manager import BrightnessManager
 from PixelScopeViewer.ui.viewer.display_renderer import DisplayRenderer
 from PixelScopeViewer.ui.viewer.help_dialog import HelpDialog
@@ -162,7 +162,8 @@ class ImageViewer(QMainWindow):
         create_menus(self)
         self.setAcceptDrops(True)
         # modeless dialog が GC されないよう参照を保持する
-        self._analysis_dialog = None
+        # 解析 dialog は複数開ける（A で 1 番目、Shift+A で新しい window）
+        self.analysis_dialogs = DialogGroup(self.child_dialogs)
 
     @property
     def scroll_area(self) -> QScrollArea:
@@ -330,30 +331,43 @@ class ImageViewer(QMainWindow):
 
     # 子 dialog の起動
     def show_analysis_dialog(self, tab: str | None = None):
-        """表示中の画像と ROI の解析 dialog を表示する。
+        """1 番目の解析 dialog を前面に出す。開いていなければ新しく開く。
 
         Args:
             tab: 表示する tab 名（前方一致）または index。
         """
-        # QAction.triggered(bool) から渡される bool は無視する
-        if isinstance(tab, bool):
-            tab = None
+        dlg = self.analysis_dialogs.first()
+        if dlg is None:
+            self.new_analysis_dialog(tab)
+            return
+        bring_to_front(dlg)
+        dlg.set_current_tab(self._tab_arg(tab))
+
+    def new_analysis_dialog(self, tab: str | None = None):
+        """表示中の画像と ROI の解析 dialog を、新しい window で開く。
+
+        Args:
+            tab: 表示する tab 名（前方一致）または index。
+        """
         if not self.has_image():
             QMessageBox.information(self, "解析", "画像が選択されていません。")
             return
+        dlg = self.analysis_dialogs.create(self._make_analysis_dialog)
+        bring_to_front(dlg)
+        dlg.set_current_tab(self._tab_arg(tab))
 
-        # 既に開いている場合は前面に出す
-        if self._analysis_dialog is not None:
-            bring_to_front(self._analysis_dialog)
-            self._analysis_dialog.set_current_tab(tab)
-            return
+    @staticmethod
+    def _tab_arg(tab):
+        # QAction.triggered(bool) から渡される bool は無視する
+        return None if isinstance(tab, bool) else tab
 
+    def _make_analysis_dialog(self, instance_no: int) -> AnalysisDialog:
         arr, img_path = None, None
         if self.state.current_index is not None:
             img = self.images[self.state.current_index]
             arr = img.get("base_array", img.get("array"))
             img_path = img.get("path")
-        dlg = AnalysisDialog(
+        return AnalysisDialog(
             self,
             image_array=arr,
             image_rect=self.state.roi,
@@ -361,10 +375,8 @@ class ImageViewer(QMainWindow):
             channel_display=self.channel_display,
             rois=self.roi_list.enabled_rois(),
             sources=self._analysis_sources(),
+            instance_no=instance_no,
         )
-        bring_to_front(dlg)
-        self._analysis_dialog = self.child_dialogs.track(dlg, lambda: setattr(self, "_analysis_dialog", None))
-        dlg.set_current_tab(tab)
 
     def show_annotations_dialog(self):
         if self._annotations_dialog is not None:
@@ -413,8 +425,10 @@ class ImageViewer(QMainWindow):
             "viewer": self.state,
             "channel_display": self.channel_display.snapshot(),
         }
-        if self._analysis_dialog is not None:
-            state["analysis"] = self._analysis_dialog.settings
+        # 互換のため、1 番目の解析 dialog の設定を入れる
+        first = self.analysis_dialogs.first()
+        if first is not None:
+            state["analysis"] = first.settings
         return to_jsonable(state)
 
     def copy_state_to_clipboard(self):
@@ -439,18 +453,17 @@ class ImageViewer(QMainWindow):
             self.set_roi_from_image_rect(rect)
 
     def _update_analysis_dialog(self):
-        """表示中の画像・ROI・解析対象の ROI 一覧を解析 dialog に反映する。画像がない場合は解析 dialog を空にする。"""
-        if self._analysis_dialog is None:
+        """表示中の画像・ROI・解析対象の ROI 一覧を全ての解析 dialog に反映する。画像がない場合は空にする。"""
+        if not len(self.analysis_dialogs):
             return
         rois = self.roi_list.enabled_rois()
         sources = self._analysis_sources()
-        if self.state.current_index is None:
-            self._analysis_dialog.set_image_and_rect(None, self.state.roi, rois=rois, sources=sources)
-            return
-        img = self.images[self.state.current_index]
-        self._analysis_dialog.set_image_and_rect(
-            img.get("base_array", img["array"]), self.state.roi, img.get("path"), rois=rois, sources=sources
-        )
+        arr, path = None, None
+        if self.state.current_index is not None:
+            img = self.images[self.state.current_index]
+            arr, path = img.get("base_array", img["array"]), img.get("path")
+        for dlg in self.analysis_dialogs:
+            dlg.set_image_and_rect(arr, self.state.roi, path, rois=rois, sources=sources)
 
     def _analysis_sources(self) -> list[AnalysisSource]:
         """解析 dialog に渡すタイル比較モードの全タイルの画像を返す（空欄のタイルは除く）。1 枚表示では空。"""

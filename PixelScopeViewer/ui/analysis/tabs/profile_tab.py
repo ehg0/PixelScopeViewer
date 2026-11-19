@@ -16,6 +16,7 @@ from PixelScopeViewer.ui.analysis.tabs.common import (
     label_color,
     make_group_box,
     mouse_position_text,
+    sync_curves,
 )
 from PixelScopeViewer.ui.analysis.tabs.split_plot import SPLIT_TITLE_SIZE, SplitPlotView
 from PixelScopeViewer.ui.common import theme
@@ -25,10 +26,13 @@ _METHOD_LABELS = {"mean": "Mean", "std": "Std", "max": "Max", "min": "Min", "p2p
 
 
 def _plot_curves(plot, series: dict, color_by_label: dict[str, tuple[int, int, int]]):
+    """series を pixel 幅の step で描く。線は使い回し、データと色だけを差し替える（sync_curves）。"""
+    curves = []
     for label, (xs, ys) in series.items():
         pen = pg.mkPen(color=label_color(label, color_by_label), width=2)
         xs_edges = np.append(xs, xs[-1] + 1)
-        plot.plot(xs_edges, ys, pen=pen, name=label if label != "I" else "Intensity", stepMode="center")
+        curves.append((label, xs_edges, ys, pen, label if label != "I" else "Intensity", "center"))
+    sync_curves(plot, curves)
 
 
 class ProfileTab(QWidget):
@@ -144,7 +148,6 @@ class ProfileTab(QWidget):
             color_by_label: label（C{index} / I）から RGB への dict。
             title_prefix: title の先頭（Overlay では "Profile Overlay (R0,R1)" など）。
         """
-        self.prof_widget.clear()
         _plot_curves(self.prof_widget, series, color_by_label)
         self.prof_widget.setTitle(
             f"{title_prefix} - {self._settings_text(orientation, x_mode, method)}",
@@ -176,7 +179,6 @@ class ProfileTab(QWidget):
         """
         items = self.split_view.plot_items([g[0] for g in groups], n_cols)
         for item, (_, title, title_color, series) in zip(items, groups, strict=True):
-            item.clear()
             _plot_curves(item, series, color_by_label)
             item.setTitle(title, color=title_color, size=SPLIT_TITLE_SIZE)
             item.setLabel("bottom", self._bottom_label(x_mode))

@@ -6,7 +6,7 @@ import numpy as np
 import pyqtgraph as pg
 from pyqtgraph import PlotWidget
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QPixmap
+from PySide6.QtGui import QColor, QPen, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -77,6 +77,49 @@ def mouse_position_text(plot_item: pg.PlotItem, pos) -> str:
     if log_y:
         y_val = 10**y_val
     return f"X: {x_val:.2f}, Y: {y_val:.2f}"
+
+
+# sync_curves で使い回す線の、PlotItem ごとの控え（label から PlotDataItem）
+_REUSED_CURVES_ATTR = "_psv_reused_curves"
+
+
+def sync_curves(plot, curves: list[tuple[str, np.ndarray, np.ndarray, QPen, str, str | None]]):
+    """plot に curves の線だけを、この順に重ねて描く。
+
+    同じ label の線が前回の描画から残っていれば、作り直さずにデータと色だけを差し替える。
+    線を作り直すと、追加のたびに ViewBox が表示範囲を計算し直して重いため。
+    curves にない線と、線以外の item（Bar の棒や Split の軸の連動用の透明な線）は取り除く。
+
+    Args:
+        plot: PlotWidget または PlotItem。
+        curves: (label, x, y, pen, 線の名前, stepMode) のリスト。stepMode は "center" または None。
+    """
+    plot_item = plot.getPlotItem() if hasattr(plot, "getPlotItem") else plot
+    cache: dict[str, pg.PlotDataItem] = getattr(plot_item, _REUSED_CURVES_ATTR, {})
+    current = set(plot_item.items)
+    drawn: dict[str, pg.PlotDataItem] = {}
+    for z, (label, xs, ys, pen, name, step_mode) in enumerate(curves):
+        curve = cache.get(label)
+        if curve is not None and curve in current:
+            curve.setData(xs, ys, stepMode=step_mode)
+            curve.setPen(pen)
+            curve.opts["name"] = name
+        else:
+            curve = plot_item.plot(xs, ys, pen=pen, name=name, stepMode=step_mode)
+        # 重なり順は curves の順にする（作り直していたころの追加順と同じ）
+        curve.setZValue(z)
+        drawn[label] = curve
+    kept = set(drawn.values())
+    for item in list(plot_item.items):
+        if item not in kept:
+            plot_item.removeItem(item)
+    setattr(plot_item, _REUSED_CURVES_ATTR, drawn)
+    # データの差し替えだけでは、表示範囲の計算が描画の直前まで後回しになる。
+    # 作り直していたころと同じく、ここで 1 回計算して ViewBox の状態の変更を通知する
+    # （解析 dialog は通知で保存した状態を描画後に復元するため、通知がないと古い状態に戻ってしまう）
+    vb = plot_item.getViewBox()
+    if any(vb.state["autoRange"]):
+        vb.updateAutoRange()
 
 
 def label_color(label: str, color_by_label: dict[str, tuple[int, int, int]], alpha: int = 255) -> QColor:

@@ -40,7 +40,7 @@ class BrightnessManager:
             return
 
         img = self.viewer.images[self.viewer.state.current_index]
-        arr = img.get("base_array", img.get("array"))
+        arr = img["array"]
         img_path = img.get("path")
 
         init_offset = self.viewer.state.brightness.offset
@@ -131,14 +131,14 @@ class BrightnessManager:
             handled_by_dialog = True
         else:
             # 画像がない場合は uint8 の既定値にする。タイル比較モードは最初のタイルの画像の dtype の既定値にする
-            base_arr = None
+            image_arr = None
             if self.viewer.state.current_index is not None:
                 img = self.viewer.images[self.viewer.state.current_index]
-                base_arr = img.get("base_array", img["array"])
+                image_arr = img["array"]
             if self.viewer.state.tile_mode:
                 d = merged_dtype_defaults(self.viewer.tiles.registered_dtype_groups())
             else:
-                d = determine_dtype_defaults(base_arr)
+                d = determine_dtype_defaults(image_arr)
             self.viewer.state.brightness = BrightnessParams(
                 d["initial_offset"], d["initial_gain"], d["initial_upper_level"]
             )
@@ -185,10 +185,10 @@ class BrightnessManager:
         if self.viewer.state.current_index is None:
             return
         img = self.viewer.images[self.viewer.state.current_index]
-        base_arr = img.get("base_array", img.get("array"))
-        if not applies(base_arr):
+        image_arr = img["array"]
+        if not applies(image_arr):
             return
-        thumb = numpy_to_qimage(self.viewer.renderer.thumbnail_array(base_arr))
+        thumb = numpy_to_qimage(self.viewer.renderer.thumbnail_array(image_arr))
         img["thumbnail_pixmap"] = QPixmap.fromImage(thumb).scaled(250, 250, Qt.KeepAspectRatio, Qt.SmoothTransformation)
         self.viewer.navigator_widget.update_thumbnail()
 
@@ -198,7 +198,7 @@ class BrightnessManager:
         arr = None
         if st.current_index is not None:
             img = self.viewer.images[st.current_index]
-            arr = img.get("base_array", img["array"])
+            arr = img["array"]
         key = st.brightness_key(arr)
         if key is not None:
             st.brightness_by_dtype[key] = replace(st.brightness)

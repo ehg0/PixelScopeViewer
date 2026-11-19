@@ -27,6 +27,7 @@ from PixelScopeViewer.ui.analysis.tabs.common import (
     label_color,
     make_group_box,
     mouse_position_text,
+    sync_curves,
 )
 from PixelScopeViewer.ui.analysis.tabs.split_plot import SPLIT_TITLE_SIZE, SplitPlotView
 from PixelScopeViewer.ui.common import defaults, theme
@@ -207,7 +208,6 @@ class HistogramTab(QWidget):
             step: Line を bin の区間で水平な step で描くか（Histogram）。False は点を結ぶ（ECDF）。
             title: グラフの title。None の場合は "Intensity Histogram" などにする。
         """
-        self.hist_widget.clear()
         self._plot_series(
             self.hist_widget.getPlotItem(), series, color_by_label, apply_log, chart_kind, bar_alpha, step
         )
@@ -248,7 +248,6 @@ class HistogramTab(QWidget):
         items = self.split_view.plot_items([g[0] for g in groups], n_cols)
         plotted = []
         for item, (_, title, title_color, series) in zip(items, groups, strict=True):
-            item.clear()
             plotted += self._plot_series(item, series, color_by_label, apply_log, chart_kind, bar_alpha, step)
             item.setTitle(title, color=title_color, size=SPLIT_TITLE_SIZE)
             if is_integer_type:
@@ -272,6 +271,8 @@ class HistogramTab(QWidget):
         """
         log_x, log_y = plot_log_mode(self.hist_widget)
         plotted = []
+        curves = []
+        bars = []
         for label, (xs, ys) in series.items():
             yplot = np.array(ys, dtype=float)
             if apply_log:
@@ -284,14 +285,17 @@ class HistogramTab(QWidget):
                 if step:
                     edges, keep = histogram_step_edges(xs, self.bin_step_spin_box.value(), log_x=log_x)
                     if keep.any():
-                        plot_item.plot(edges, yplot[keep], pen=pen, name=name, stepMode="center")
+                        curves.append((label, edges, yplot[keep], pen, name, "center"))
                 else:
-                    plot_item.plot(xs, yplot, pen=pen, name=name)
+                    curves.append((label, xs, yplot, pen, name, None))
             else:
                 brush = label_color(label, color_by_label, alpha=bar_alpha)
-                item = make_hist_bar_item(xs, yplot, self.bin_step_spin_box.value(), brush, label, log_x, log_y)
-                plot_item.addItem(item)
+                bars.append(make_hist_bar_item(xs, yplot, self.bin_step_spin_box.value(), brush, label, log_x, log_y))
             plotted.append((xs, yplot))
+        # 線は使い回して差し替え、前回の棒や不要になった線は取り除く。棒はその後に加える
+        sync_curves(plot_item, curves)
+        for bar in bars:
+            plot_item.addItem(bar)
         return plotted
 
     def _on_mouse_over(self, pos):

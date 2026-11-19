@@ -266,7 +266,7 @@ class TileModeManager:
         for cell, img in self.visible_images():
             text = ""
             if point is not None and img is not None:
-                val = pixel_value_text(img.get("base_array", img.get("array")), *point)
+                val = pixel_value_text(img["array"], *point)
                 text = f"val={val}" if val is not None else ""
             self.pane(cell).status_label.setText(text)
         return point

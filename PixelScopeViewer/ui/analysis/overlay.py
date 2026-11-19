@@ -1,4 +1,4 @@
-"""重ね描きの曲線の色（複数画像比較の tile と、解析 dialog の登録 ROI で共通）。"""
+"""重ね描きの曲線の色（解析 dialog の登録 ROI とタイル比較モードのタイルで共通）。"""
 
 from PySide6.QtGui import QColor
 
@@ -13,7 +13,7 @@ def overlay_color(group_num: int, ch_index: int, overrides: dict[str, str], labe
     （灰色系は黒）を使う。
 
     Args:
-        group_num: tile 番号や ROI の id（1 始まり）。
+        group_num: ROI の id などの group 番号（1 始まり）。
         ch_index: channel の index。
         overrides: curve label から hex 文字列への個別設定。
         label: 個別設定を探す curve label。
@@ -31,5 +31,5 @@ def roi_curve_label(roi_id: int, ch_index: int) -> str:
 
 def roi_color(roi_id: int, ch_index: int, overrides: dict[str, str]) -> QColor:
     """登録 ROI の曲線の色を返す。画像上の ROI の枠は C0 の色にする。"""
-    # id は 0 始まりのため、R0 を tile 1 と同じ色にする
+    # id は 0 始まりのため、R0 を group 1 の色にする
     return overlay_color(roi_id + 1, ch_index, overrides, roi_curve_label(roi_id, ch_index))

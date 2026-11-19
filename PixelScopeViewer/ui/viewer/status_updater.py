@@ -6,12 +6,14 @@ import numpy as np
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QStatusBar, QWidget
 
 from PixelScopeViewer.core.image_io import format_file_size
+from PixelScopeViewer.core.pixel import pixel_value_text
 
 
 class StatusUpdater:
     """ImageViewer の status bar を作り、viewer の状態を status bar と title bar に表示する。
 
-    status bar は左にマウス位置の pixel 値と ROI、右に brightness と zoom 倍率を並べる。
+    status bar は左にマウス位置の画像座標と ROI、右に brightness と zoom 倍率を並べる。
+    pixel 値は画像の下のステータス行に出す。
     """
 
     def __init__(self, viewer):
@@ -38,40 +40,31 @@ class StatusUpdater:
             layout.addWidget(w)
         return container
 
-    def update_mouse_status(self, pos):
-        """マウス位置（widget 座標）の pixel 値を表示する。"""
-        if self.viewer.state.current_index is None or not self.viewer.images:
-            self.pixel_label.setText("")
-            self.viewer.current_mouse_image_coords = None
-            return
-        img = self.viewer.images[self.viewer.state.current_index]
-        # brightness 調整前の base_array の値を表示する
-        arr = img.get("base_array", img.get("array"))
+    def _image_point(self, pos) -> tuple[int, int]:
         s = self.viewer.state.scale if self.viewer.state.scale > 0 else 1.0
-        ix = int(pos.x() / s)
-        iy = int(pos.y() / s)
-        h, w = arr.shape[:2]
-        if 0 <= iy < h and 0 <= ix < w:
-            v = arr[iy, ix]
+        return int(pos.x() / s), int(pos.y() / s)
 
-            def _format_scalar(x, dtype):
-                if np.issubdtype(dtype, np.floating):
-                    return f"{float(x):.3f}"
-                # 整数と bool は整数で表示する（complex などはそのまま）
-                return str(int(x)) if np.issubdtype(dtype, np.integer) or dtype == np.bool_ else str(x)
+    def update_mouse_status(self, pos):
+        """マウス位置（widget 座標）の座標を status bar に、pixel 値を画像の下のステータス行に出す（1 枚表示）。
 
-            if np.ndim(v) == 0:
-                val_str = _format_scalar(v, arr.dtype)
-            else:
-                vals = [_format_scalar(x, arr.dtype) for x in np.ravel(v)]
-                val_str = "(" + ",".join(vals) + ")"
+        pos が None の場合と画像の範囲外の場合は両方を消す。
+        """
+        point, val_str = None, None
+        if pos is not None and self.viewer.state.current_index is not None and self.viewer.images:
+            img = self.viewer.images[self.viewer.state.current_index]
+            # brightness 調整前の base_array の値を表示する
+            ix, iy = self._image_point(pos)
+            val_str = pixel_value_text(img.get("base_array", img.get("array")), ix, iy)
+            if val_str is not None:
+                point = (ix, iy)
+        # zoom の中心として使う
+        self.viewer.current_mouse_image_coords = point
+        self.show_mouse_point(point)
+        self.viewer.active_pane.status_label.setText(f"val={val_str}" if point is not None else "")
 
-            self.pixel_label.setText(f"x={ix} y={iy} val={val_str}")
-            # zoom の中心として使う
-            self.viewer.current_mouse_image_coords = (ix, iy)
-        else:
-            self.pixel_label.setText("")
-            self.viewer.current_mouse_image_coords = None
+    def show_mouse_point(self, point: tuple[int, int] | None):
+        """マウス位置の画像座標だけを表示する。None の場合は消す。"""
+        self.pixel_label.setText(f"x={point[0]} y={point[1]}" if point is not None else "")
 
     def update_roi_status(self) -> None:
         """ROI の範囲を表示する。"""
@@ -88,6 +81,15 @@ class StatusUpdater:
 
     def update_status(self):
         """title bar（ファイル名・サイズ・番号）と zoom 倍率、brightness を更新する。"""
+        state = self.viewer.state
+        if state.tile_mode:
+            layout = state.tile_layout
+            count = layout.frame_count()
+            frame = f" [{layout.frame + 1}/{count}]" if count else ""
+            self.viewer.setWindowTitle(f"PixelScopeViewer — タイル比較 {layout.rows}×{layout.cols}{frame}")
+            self.scale_label.setText(f"Scale: {state.scale:.2f}x")
+            self.update_brightness_status()
+            return
         if self.viewer.state.current_index is None:
             self.viewer.setWindowTitle("PixelScopeViewer")
             self.scale_label.setText(f"Scale: {self.viewer.state.scale:.2f}x")

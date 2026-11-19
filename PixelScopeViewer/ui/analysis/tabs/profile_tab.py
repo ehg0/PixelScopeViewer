@@ -8,8 +8,6 @@ from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QComboBox, QHBoxLayout, QPushButton, QStackedWidget, QVBoxLayout, QWidget
 
 from PixelScopeViewer.ui.analysis.tabs.common import (
-    SPLIT_TITLE_SIZE,
-    SplitPlotView,
     StatsTable,
     create_channel_group,
     create_export_group,
@@ -19,6 +17,7 @@ from PixelScopeViewer.ui.analysis.tabs.common import (
     make_group_box,
     mouse_position_text,
 )
+from PixelScopeViewer.ui.analysis.tabs.split_plot import SPLIT_TITLE_SIZE, SplitPlotView
 from PixelScopeViewer.ui.common import theme
 
 _ORIENTATION_LABELS = {"h": "Horizontal", "v": "Vertical", "d": "Diagonal"}
@@ -80,7 +79,13 @@ class ProfileTab(QWidget):
         right.setContentsMargins(10, 10, 10, 10)
         right.setSpacing(8)
 
-        self.roi_group, self.roi_mode_combo, self.link_axes_check, self.split_columns_combo = create_roi_group()
+        (
+            self.roi_group,
+            self.roi_mode_combo,
+            self.link_axes_check,
+            self.split_columns_combo,
+            self.split_unit_combo,
+        ) = create_roi_group()
         right.addWidget(self.roi_group)
 
         channels_group, self.channel_scroll, self.channel_list, self.roi_channel_panel = create_channel_group(
@@ -159,11 +164,11 @@ class ProfileTab(QWidget):
         link_axes: bool,
         n_cols: int,
     ):
-        """登録 ROI ごとの profile を grid に並べて描画し、統計量の table を更新する。
+        """ROI ごと（またはタイルごと）の profile を grid に並べて描画し、統計量の table を更新する。
 
         Args:
-            groups: (ROI の id, title, title の色, label から (x, y) への dict) のリスト。
-            stats_rows: 全 ROI の統計量の行。
+            groups: (グラフの id, title, title の色, label から (x, y) への dict) のリスト。
+            stats_rows: 全グラフの統計量の行。
             x_mode: 'relative' または 'absolute'。
             color_by_label: label から RGB への dict。
             link_axes: 全グラフの軸を連動させるか。

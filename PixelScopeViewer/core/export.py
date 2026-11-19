@@ -79,14 +79,14 @@ def profile_csv(profile_data: dict[str, tuple[np.ndarray, np.ndarray]], orientat
 def grouped_profile_csv(profile_data: dict[str, tuple[np.ndarray, np.ndarray]], orientation: str) -> str:
     """長さの異なる profile を group ごとの x 列とともに並べた CSV を作成する。
 
-    label は "{group} {channel}"（"R0 C0" など）の形式。列は "R0 x address, R0 C0, R1 x address, ..." の順にし、
-    短い列は空欄で埋める。
+    label は "{group} {channel}"（"R0 C0"、"T1 R0 C0" など。最後の空白より前が group）の形式。
+    列は "R0 x address, R0 C0, R1 x address, ..." の順にし、短い列は空欄で埋める。
     """
     axis = "x address" if orientation == "h" else "y address"
     columns: list[tuple[str, list[str]]] = []
     seen_groups = set()
     for label, (xs, ys) in profile_data.items():
-        group = label.split(" ", 1)[0]
+        group = label.rsplit(" ", 1)[0]
         if group not in seen_groups:
             seen_groups.add(group)
             columns.append((f"{group} {axis}", np.asarray(xs).flatten().astype(str).tolist()))
@@ -103,6 +103,26 @@ def grouped_profile_csv(profile_data: dict[str, tuple[np.ndarray, np.ndarray]], 
 def metadata_csv(rows: list[tuple[str, str]]) -> str:
     """metadata の (key, value) を CSV にする。"""
     return "\n".join(["Key,Value", *(f"{key},{value}" for key, value in rows)])
+
+
+def metadata_comparison_csv(columns: list[tuple[str, list[tuple[str, str]]]]) -> str:
+    """列ごとの metadata を、key を行・列を横に並べた CSV にする。行は key が最初に現れた順にする。
+
+    Args:
+        columns: (列の見出し, (key, value) のリスト) のリスト。
+    """
+    keys: list[str] = []
+    values = []
+    for _, rows in columns:
+        d = {}
+        for key, value in rows:
+            d.setdefault(key, str(value))
+            if key not in keys:
+                keys.append(key)
+        values.append(d)
+    lines = [",".join(["Key", *(title for title, _ in columns)])]
+    lines += [",".join([key, *(d.get(key, "") for d in values)]) for key in keys]
+    return "\n".join(lines)
 
 
 def roi_stats_csv(

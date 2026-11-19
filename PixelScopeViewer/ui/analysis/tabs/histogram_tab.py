@@ -17,9 +17,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from PixelScopeViewer.core.statistics import histogram_step_edges
 from PixelScopeViewer.ui.analysis.tabs.common import (
-    SPLIT_TITLE_SIZE,
-    SplitPlotView,
     StatsTable,
     create_channel_group,
     create_export_group,
@@ -29,6 +28,7 @@ from PixelScopeViewer.ui.analysis.tabs.common import (
     make_group_box,
     mouse_position_text,
 )
+from PixelScopeViewer.ui.analysis.tabs.split_plot import SPLIT_TITLE_SIZE, SplitPlotView
 from PixelScopeViewer.ui.common import defaults, theme
 
 
@@ -116,7 +116,13 @@ class HistogramTab(QWidget):
         right.setContentsMargins(10, 10, 10, 10)
         right.setSpacing(8)
 
-        self.roi_group, self.roi_mode_combo, self.link_axes_check, self.split_columns_combo = create_roi_group()
+        (
+            self.roi_group,
+            self.roi_mode_combo,
+            self.link_axes_check,
+            self.split_columns_combo,
+            self.split_unit_combo,
+        ) = create_roi_group()
         right.addWidget(self.roi_group)
 
         channels_group, self.channel_scroll, self.channel_list, self.roi_channel_panel = create_channel_group(
@@ -185,6 +191,7 @@ class HistogramTab(QWidget):
         is_integer_type: bool = False,
         chart_kind: str = "Line",
         bar_alpha: int = 120,
+        step: bool = False,
         title: str | None = None,
     ):
         """計算済みのデータで histogram の plot と統計量の table を更新する。
@@ -197,10 +204,13 @@ class HistogramTab(QWidget):
             is_integer_type: 整数 dtype か。
             chart_kind: "Line" または "Bar"。
             bar_alpha: Bar 表示時の alpha。
+            step: Line を bin の区間で水平な step で描くか（Histogram）。False は点を結ぶ（ECDF）。
             title: グラフの title。None の場合は "Intensity Histogram" などにする。
         """
         self.hist_widget.clear()
-        self._plot_series(self.hist_widget.getPlotItem(), series, color_by_label, apply_log, chart_kind, bar_alpha)
+        self._plot_series(
+            self.hist_widget.getPlotItem(), series, color_by_label, apply_log, chart_kind, bar_alpha, step
+        )
         if title is None:
             title = f"Intensity {self.config_mode_btn.text()}"
         self.hist_widget.setTitle(title, color=theme.PLOT_TEXT_COLOR, size="12pt")
@@ -219,12 +229,13 @@ class HistogramTab(QWidget):
         is_integer_type: bool = False,
         chart_kind: str = "Line",
         bar_alpha: int = 120,
+        step: bool = False,
     ):
-        """登録 ROI ごとの histogram を grid に並べて描画し、統計量の table を更新する。
+        """ROI ごと（またはタイルごと）の histogram を grid に並べて描画し、統計量の table を更新する。
 
         Args:
-            groups: (ROI の id, title, title の色, label から (x, 度数) への dict) のリスト。
-            stats_rows: 全 ROI の統計量の行。
+            groups: (グラフの id, title, title の色, label から (x, 度数) への dict) のリスト。
+            stats_rows: 全グラフの統計量の行。
             color_by_label: label から RGB への dict。
             link_axes: 全グラフの軸を連動させるか。
             n_cols: grid の列数。
@@ -232,12 +243,13 @@ class HistogramTab(QWidget):
             is_integer_type: 整数 dtype か。
             chart_kind: "Line" または "Bar"。
             bar_alpha: Bar 表示時の alpha。
+            step: Line を bin の区間で水平な step で描くか（Histogram）。False は点を結ぶ（ECDF）。
         """
         items = self.split_view.plot_items([g[0] for g in groups], n_cols)
         plotted = []
         for item, (_, title, title_color, series) in zip(items, groups, strict=True):
             item.clear()
-            plotted += self._plot_series(item, series, color_by_label, apply_log, chart_kind, bar_alpha)
+            plotted += self._plot_series(item, series, color_by_label, apply_log, chart_kind, bar_alpha, step)
             item.setTitle(title, color=title_color, size=SPLIT_TITLE_SIZE)
             if is_integer_type:
                 item.getAxis("bottom").setStyle(tickTextOffset=10)
@@ -245,9 +257,19 @@ class HistogramTab(QWidget):
         self.stats_table.set_rows(stats_rows, color_by_label)
 
     def _plot_series(
-        self, plot_item, series: dict, color_by_label: dict, apply_log: bool, chart_kind: str, bar_alpha: int
+        self,
+        plot_item,
+        series: dict,
+        color_by_label: dict,
+        apply_log: bool,
+        chart_kind: str,
+        bar_alpha: int,
+        step: bool,
     ) -> list[tuple[np.ndarray, np.ndarray]]:
-        """series を Line または Bar で描画し、描画した (x, y) のリストを返す。log の軸は hist_widget の設定に従う。"""
+        """series を Line または Bar で描画し、描画した (x, y) のリストを返す。log の軸は hist_widget の設定に従う。
+
+        step の Line は Bar と同じ bin の区間で水平な線にする（1 bin だけでも 1 区間分を描く）。
+        """
         log_x, log_y = plot_log_mode(self.hist_widget)
         plotted = []
         for label, (xs, ys) in series.items():
@@ -258,7 +280,13 @@ class HistogramTab(QWidget):
                 plot_item.setLimits(yMin=-1)
             if chart_kind == "Line":
                 pen = pg.mkPen(color=label_color(label, color_by_label), width=2)
-                plot_item.plot(xs, yplot, pen=pen, name=label if label != "I" else "Intensity")
+                name = label if label != "I" else "Intensity"
+                if step:
+                    edges, keep = histogram_step_edges(xs, self.bin_step_spin_box.value(), log_x=log_x)
+                    if keep.any():
+                        plot_item.plot(edges, yplot[keep], pen=pen, name=name, stepMode="center")
+                else:
+                    plot_item.plot(xs, yplot, pen=pen, name=name)
             else:
                 brush = label_color(label, color_by_label, alpha=bar_alpha)
                 item = make_hist_bar_item(xs, yplot, self.bin_step_spin_box.value(), brush, label, log_x, log_y)

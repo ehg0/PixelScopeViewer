@@ -2,15 +2,22 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 import numpy as np
 
 
 def determine_hist_bins(arr: np.ndarray, bin_step: float) -> np.ndarray:
-    """データの範囲を bin_step 刻みで覆う histogram の bin 境界を返す。"""
+    """データの範囲を bin_step 刻みで覆う histogram の bin 境界を返す。
+
+    最大値も自分の bin [k * step, (k + 1) * step) に入るよう、右端は最大値を含む bin の次の境界にする。
+    値が 1 種類だけでも 1 bin になる。
+    """
     step = bin_step
     data_min = np.floor(arr.min() / step) * step
-    data_max = np.ceil(arr.max() / step) * step
-    return np.arange(data_min, data_max + step, step)
+    data_max = (np.floor(arr.max() / step) + 1) * step
+    # 浮動小数の誤差で右端の境界が落ちないよう、半 step 先まで並べる
+    return np.arange(data_min, data_max + step / 2, step)
 
 
 def determine_hist_bins_auto(arr: np.ndarray) -> np.ndarray | int:
@@ -45,16 +52,21 @@ def crop_roi(arr: np.ndarray, rect: tuple[int, int, int, int] | None) -> np.ndar
 
 
 def merge_hist_series(
-    series: dict[str, tuple[np.ndarray, np.ndarray]], mode: str
+    series: dict[str, tuple[np.ndarray, np.ndarray]], mode: str, step: float | None = None
 ) -> dict[str, tuple[np.ndarray, np.ndarray]]:
     """複数の histogram / ECDF の系列を共通の x 軸に揃える。
 
     x 軸は全系列の x の和集合（前後 1 step を含む）。ECDF は前後の累積確率で補間し、Histogram は値のない x を 0 にする。
+
+    Args:
+        series: label から (x, y) への dict。
+        mode: "Histogram" または "ECDF"。
+        step: 前後に足す幅（histogram の bin 幅）。None の場合は系列の x の間隔（1 点だけなら 1.0）にする。
     """
     all_xs = []
     for xs, _ in series.values():
         xs = np.asarray(xs)
-        dx = xs[1] - xs[0] if len(xs) > 1 else 1.0
+        dx = step if step is not None else (xs[1] - xs[0] if len(xs) > 1 else 1.0)
         all_xs.append(np.concatenate([xs, xs - dx, xs + dx]))
     x_common = np.unique(np.concatenate(all_xs)) if all_xs else np.array([])
 
@@ -74,6 +86,54 @@ def merge_hist_series(
     return merged
 
 
+def histogram_step_edges(xs: np.ndarray, width: float, *, log_x: bool = False) -> tuple[np.ndarray, np.ndarray]:
+    """histogram を step（bin の区間で水平な線）で描くための bin の境界と、描く bin の mask を返す。
+
+    x（昇順）を bin の中心とし、隣り合う x の中点を境界、両端は width の半分だけ広げる。1 bin だけの場合も同じ。
+    log_x の場合は Bar と同じく x <= 0 の bin を描かず、0 以下になる左端は x を中心に右端を log 上で鏡映する。
+
+    Args:
+        xs: bin の中心（昇順）。
+        width: bin の幅。
+        log_x: x 軸を log 表示するか。
+
+    Returns:
+        (境界（描く bin の数 + 1 個）, 描く bin の mask)。描く bin がない場合の境界は空。
+    """
+    xs = np.asarray(xs, dtype=float)
+    keep = xs > 0 if log_x else np.ones(xs.shape, dtype=bool)
+    if not keep.any():
+        return np.array([]), keep
+    edges = np.empty(xs.size + 1)
+    edges[1:-1] = (xs[:-1] + xs[1:]) / 2
+    edges[0] = xs[0] - width / 2
+    edges[-1] = xs[-1] + width / 2
+    first = int(np.argmax(keep))
+    edges = edges[first:]
+    if log_x and edges[0] <= 0:
+        edges[0] = xs[first] ** 2 / edges[1]
+    return edges, keep
+
+
+def _channel_on(channels: Sequence[bool] | None, idx: int, label: str) -> bool:
+    """channel が表示 ON か。channels が None・1ch・channels より後ろの channel は ON とみなす。"""
+    return channels is None or label == "I" or idx >= len(channels) or bool(channels[idx])
+
+
+def visible_channels(arr: np.ndarray, channels: Sequence[bool] | None) -> np.ndarray:
+    """表示 ON の channel だけの配列を返す。
+
+    多 channel でない・channels が None・表示 ON の channel がない場合は arr をそのまま返す。
+    histogram の bin の範囲を表示中の channel だけで決めるために使う。
+    """
+    if channels is None or arr.ndim != 3 or arr.shape[2] <= 1:
+        return arr
+    indices = [i for i in range(arr.shape[2]) if _channel_on(channels, i, f"C{i}")]
+    if not indices or len(indices) == arr.shape[2]:
+        return arr
+    return arr[..., indices]
+
+
 def _iter_channels(arr: np.ndarray) -> list[tuple[int, str, np.ndarray]]:
     """(channel index, label, 2 次元配列) のリストを返す。label は多 channel なら 'C{index}'、1ch なら 'I'。"""
     if arr.ndim == 3 and arr.shape[2] > 1:
@@ -81,8 +141,15 @@ def _iter_channels(arr: np.ndarray) -> list[tuple[int, str, np.ndarray]]:
     return [(0, "I", arr if arr.ndim == 2 else arr[:, :, 0])]
 
 
-def histogram_series(arr: np.ndarray, *, bins: np.ndarray | None = None) -> dict[str, tuple[np.ndarray, np.ndarray]]:
+def histogram_series(
+    arr: np.ndarray, *, bins: np.ndarray | None = None, channels: Sequence[bool] | None = None
+) -> dict[str, tuple[np.ndarray, np.ndarray]]:
     """channel ごとの histogram を計算する。
+
+    Args:
+        arr: 画像配列。
+        bins: bin の境界。None の場合は dtype に応じて決める。
+        channels: 計算する channel の ON/OFF。None の場合は全 channel。1ch は常に計算する。
 
     Returns:
         label から (x, 度数) への dict。label は多 channel なら 'C{index}'、1ch なら 'I'。
@@ -90,13 +157,17 @@ def histogram_series(arr: np.ndarray, *, bins: np.ndarray | None = None) -> dict
     if bins is None:
         # 複数画像解析用
         bins = determine_hist_bins_auto(arr)
+    # 整数で bin の数を渡す場合は、全 channel 共通の範囲で 1 刻みの bin にする（境界を渡す場合は使わない）
+    int_range = (arr.min(), arr.max() + 1) if np.isscalar(bins) and np.issubdtype(arr.dtype, np.integer) else None
 
     out: dict[str, tuple[np.ndarray, np.ndarray]] = {}
-    for _, label, channel in _iter_channels(arr):
+    for idx, label, channel in _iter_channels(arr):
+        if not _channel_on(channels, idx, label):
+            continue
         data = channel.ravel()
         if np.issubdtype(data.dtype, np.integer):
-            # 整数は全 channel 共通の範囲で 1 刻みの bin にし、x は bin の左端
-            hist, edges = np.histogram(data, bins=bins, range=(arr.min(), arr.max() + 1))
+            # 整数の x は bin の左端
+            hist, edges = np.histogram(data, bins=bins, range=int_range)
             xs = edges[:-1]
         else:
             hist, edges = np.histogram(data, bins=bins)
@@ -176,7 +247,9 @@ def calc_stats(data: np.ndarray) -> tuple[float, float, float, float, float, flo
         median = np.median(data)
         min = np.min(data)
         max = np.max(data)
-        fano = std**2 / mean
+        # 平均が 0 のときは今までどおり NaN / inf にし、numpy の警告だけを出さない
+        with np.errstate(divide="ignore", invalid="ignore"):
+            fano = std**2 / mean
     return mean, std, median, min, max, fano
 
 
@@ -215,8 +288,9 @@ def histogram_stats(arr: np.ndarray, channel_checks: list[bool] | None = None):
     Returns:
         ch, curve_label, mean, std, median, min, max, fano, is_int を持つ dict のリスト。
     """
+    # 表示中の channel だけを float64 にして計算する。値は float64 なので is_int は常に False
     return [
-        stats_row(c, label, channel.ravel(), bool(np.issubdtype(channel.dtype, np.integer)))
+        stats_row(c, label, channel.astype(np.float64).ravel(), False)
         for c, label, channel in _visible_channels(arr, channel_checks)
     ]
 

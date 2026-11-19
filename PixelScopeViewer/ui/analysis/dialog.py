@@ -1,7 +1,6 @@
 """単一画像の解析 dialog（metadata・profile・histogram）。"""
 
-import contextlib
-from fractions import Fraction
+from pathlib import Path
 
 import numpy as np
 import pyqtgraph as pg
@@ -24,12 +23,13 @@ from PySide6.QtWidgets import (
 from PixelScopeViewer.core.export import (
     grouped_profile_csv,
     histogram_csv,
+    metadata_comparison_csv,
     metadata_csv,
     multi_roi_stats_csv,
     profile_csv,
     roi_stats_csv,
 )
-from PixelScopeViewer.core.image_io import get_image_metadata
+from PixelScopeViewer.core.image_io import metadata_rows
 from PixelScopeViewer.core.statistics import (
     crop_roi,
     determine_hist_bins,
@@ -40,33 +40,37 @@ from PixelScopeViewer.core.statistics import (
     merge_hist_series,
     profile_series,
     profile_stats,
+    visible_channels,
 )
-from PixelScopeViewer.ui.analysis.overlay import roi_color, roi_curve_label
 from PixelScopeViewer.ui.analysis.plotting import apply_plot_settings as pg_apply_plot_settings
 from PixelScopeViewer.ui.analysis.plotting import connect_plot_controls as pg_connect_plot_controls
 from PixelScopeViewer.ui.analysis.plotting import save_viewbox_state as pg_save_viewbox_state
 from PixelScopeViewer.ui.analysis.state import AnalysisSettings
-from PixelScopeViewer.ui.analysis.tabs.common import ROI_MODES, ROI_SPLIT_COLUMN_CHOICES
+from PixelScopeViewer.ui.analysis.tabs.common import ROI_MODES, ROI_SPLIT_COLUMN_CHOICES, ROI_SPLIT_UNITS
 from PixelScopeViewer.ui.analysis.tabs.histogram_tab import HistogramTab
 from PixelScopeViewer.ui.analysis.tabs.metadata_tab import MetadataTab
 from PixelScopeViewer.ui.analysis.tabs.profile_tab import ProfileTab
+from PixelScopeViewer.ui.analysis.targets import (
+    AnalysisSource,
+    Target,
+    collect_targets,
+    hist_series_and_rows,
+    profile_series_and_rows,
+    split_groups,
+    target_color,
+)
 from PixelScopeViewer.ui.common import defaults
 from PixelScopeViewer.ui.common.channel_display import ChannelDisplay
 from PixelScopeViewer.ui.common.window import ToolDialog
 from PixelScopeViewer.ui.viewer.state import RoiEntry
 
 
-def _channel_index(label: str) -> int:
-    """series の label（C{k} / I）の channel の index を返す。"""
-    return 0 if label == "I" else int(label[1:])
-
-
 class AnalysisDialog(ToolDialog):
     """ROI の metadata・profile・histogram を表示する modeless dialog。
 
     親の ImageViewer から set_image_and_rect で画像と ROI が更新される。
-    profile・histogram は編集中 ROI のほか、ROI 一覧で ☑ を付けた登録 ROI を重ねて（Overlay）
-    または並べて（Split）表示できる。
+    profile・histogram は編集中 ROI のほか、☑ を付けた登録 ROI（タイル比較モードでは全タイル）を
+    重ねて（Overlay）または並べて（Split）表示できる。
 
     Args:
         parent: 親 widget（通常は ImageViewer）。
@@ -75,6 +79,7 @@ class AnalysisDialog(ToolDialog):
         image_path: metadata の取得に使う画像ファイルのパス。
         channel_display: グラフの色の持ち主。
         rois: 解析対象の登録 ROI。
+        sources: タイル比較モードの全タイルの画像。
     """
 
     window_key = "analysis"
@@ -89,10 +94,10 @@ class AnalysisDialog(ToolDialog):
         image_path: str | None = None,
         channel_display: ChannelDisplay | None = None,
         rois: list[RoiEntry] | None = None,
+        sources: list[AnalysisSource] | None = None,
     ):
         super().__init__(parent)
-        # グラフの色の持ち主。表示色・個別設定のどちらが変わっても再描画する。
-        # None は色を自前で決める複数画像比較の解析 dialog（TilingAnalysisDialog）のみ
+        # グラフの色の持ち主。表示色・個別設定のどちらが変わっても再描画する
         self.channel_display = channel_display
         if channel_display is not None:
             channel_display.colors_changed.connect(self._on_channel_colors_changed)
@@ -105,15 +110,21 @@ class AnalysisDialog(ToolDialog):
         self.image_rect = image_rect
         self.image_path = image_path
         self.rois: list[RoiEntry] = list(rois or [])
+        # タイル比較モードの全タイルの画像。1 枚表示では空
+        self.sources: list[AnalysisSource] = list(sources or [])
+        # 登録 ROI 用の channel の一覧の行の順の key（Target.key）
+        self._panel_keys: list[str] = []
+        self.last_metadata_columns: list[tuple[str, list[tuple[str, str]]]] = []
 
         self.settings = AnalysisSettings()
         self.update_window_title()
 
-        # 親で ROI が変わったら title を更新する
         if self.viewer and hasattr(self.viewer, "roi_changed"):
             self.viewer.roi_changed.connect(self.update_window_title)
 
         self.last_hist_data = {}
+        # 編集中ROI の Histogram のコピーで全 channel を計算し直すための、切り出した配列
+        self._hist_copy_source: np.ndarray | None = None
         self.last_metadata: list[tuple[str, str]] = []
         # 表示中の画像の channel 数（2 次元画像は 1）
         self._n_plot = 0
@@ -127,7 +138,6 @@ class AnalysisDialog(ToolDialog):
 
         self._build_ui()
 
-        # 前回の geometry を復元する
         self.restore_geometry()
 
         if self.image_array is not None:
@@ -145,7 +155,7 @@ class AnalysisDialog(ToolDialog):
         self.profile_tab = ProfileTab(
             on_save_viewbox_state=lambda vb: self._save_viewbox_state(vb, "prof"),
             on_connect_plot_controls=lambda plot_item: self._connect_plotitem_controls(plot_item, "prof"),
-            on_channel_changed=lambda checks: self._on_channel_changed(checks),
+            on_channel_changed=self._on_channel_changed,
             parent=self,
         )
         self.profile_tab.orientation_btn.clicked.connect(self._on_prof_orientation_toggle)
@@ -160,9 +170,9 @@ class AnalysisDialog(ToolDialog):
         self.hist_tab = HistogramTab(
             on_save_viewbox_state=lambda vb: self._save_viewbox_state(vb, "hist"),
             on_connect_plot_controls=lambda plot_item: self._connect_plotitem_controls(plot_item, "hist"),
-            on_channel_changed=lambda checks: self._on_channel_changed(checks),
-            on_spinbox_changed=lambda new_value: self._on_spinbox_changed(new_value),
-            on_spinbox_bar_alpha_changed=lambda new_value: self._on_spinbox_bar_alpha_changed(new_value),
+            on_channel_changed=self._on_channel_changed,
+            on_spinbox_changed=self._on_spinbox_changed,
+            on_spinbox_bar_alpha_changed=self._on_spinbox_bar_alpha_changed,
             parent=self,
         )
         self.hist_tab.chart_kind_combo.currentTextChanged.connect(self._on_hist_chart_kind_combo)
@@ -195,6 +205,7 @@ class AnalysisDialog(ToolDialog):
             tab.roi_mode_combo.currentIndexChanged.connect(self._on_roi_mode_changed)
             tab.link_axes_check.toggled.connect(self._on_link_axes_toggled)
             tab.split_columns_combo.currentIndexChanged.connect(self._on_split_columns_changed)
+            tab.split_unit_combo.currentIndexChanged.connect(self._on_split_unit_changed)
             panel = tab.roi_channel_panel
             panel.group_checks_changed.connect(self._on_roi_checks_changed)
             panel.group_color_clicked.connect(self._on_roi_color_clicked)
@@ -205,19 +216,19 @@ class AnalysisDialog(ToolDialog):
         """親の status bar の ROI 表示（登録 ROI の表示中は ROI の名前）を window title に反映する。"""
         base_title = "解析ビュー"
 
+        tiles = f" | Tiles={len(self._tile_sources)}" if self._tile_sources else ""
         if self._roi_mode_active():
             names = ",".join(e.name for e in self.rois)
-            self.setWindowTitle(f"{base_title} | ROIs={names}")
+            self.setWindowTitle(f"{base_title}{tiles} | ROIs={names}")
             return
 
-        # 複数画像比較の window が親の場合は status_updater がないため、既定の title にする
-        if self.viewer and hasattr(self.viewer, "status_updater"):
+        if self.viewer is not None:
             roi_text = self.viewer.status_updater.roi_label.text()
             if roi_text:
-                self.setWindowTitle(f"{base_title} | ROI={roi_text}")
+                self.setWindowTitle(f"{base_title}{tiles} | ROI={roi_text}")
                 return
 
-        self.setWindowTitle(base_title)
+        self.setWindowTitle(f"{base_title}{tiles}")
 
     def set_image_and_rect(
         self,
@@ -225,14 +236,16 @@ class AnalysisDialog(ToolDialog):
         image_rect: QRect | None,
         image_path: str | None = None,
         rois: list[RoiEntry] | None = None,
+        sources: list[AnalysisSource] | None = None,
     ):
         """画像と ROI を更新して表示を作り直す。
 
         Args:
-            image_array: 画像配列。
+            image_array: 画像配列（タイル比較モードでは active タイルの画像）。
             image_rect: 画像座標の ROI（編集中 ROI）。
             image_path: 画像ファイルのパス。None の場合は前回の値を使う。
             rois: 解析対象の登録 ROI。None の場合は前回の値を使う。
+            sources: タイル比較モードの全タイルの画像。None の場合は前回の値を使う。1 枚表示では空にする。
         """
         self.image_array = image_array
         self.image_rect = image_rect
@@ -240,6 +253,8 @@ class AnalysisDialog(ToolDialog):
             self.image_path = image_path
         if rois is not None:
             self.rois = list(rois)
+        if sources is not None:
+            self.sources = list(sources)
 
         self.update_contents()
 
@@ -272,14 +287,29 @@ class AnalysisDialog(ToolDialog):
     def update_contents(self):
         """現在の画像・ROI・設定で全 tab を更新する。"""
         self._update_roi_controls()
-        if self._roi_mode_active():
+        if self._multi_view_active():
             self._update_contents_multi()
         else:
             self._update_contents_active()
 
+    def _multi_view_active(self) -> bool:
+        """登録 ROI・タイルの表示（_update_contents_multi）中か。"""
+        return self._roi_mode_active() or bool(self._tile_sources)
+
     def _roi_mode_active(self) -> bool:
         """登録 ROI（Overlay / Split）を表示中か。"""
         return self.settings.roi_mode != "active" and bool(self.rois)
+
+    def _split_view(self) -> bool:
+        """グラフを並べて表示するか。
+
+        登録ROI - Split と、タイル比較モードで単位がタイルごとの編集中ROI が該当する。
+        """
+        if self.settings.roi_mode == "split":
+            return True
+        return (
+            self.settings.roi_mode == "active" and bool(self._tile_sources) and self.settings.roi_split_unit == "tile"
+        )
 
     def _update_contents_active(self):
         """編集中 ROI で profile・histogram を更新する。ROI がない場合は左上 1 pixel を対象にする。"""
@@ -291,21 +321,32 @@ class AnalysisDialog(ToolDialog):
 
         self._update_metadata()
 
+        # 画像を切り替えて ROI が画像の範囲外になった場合は、空のグラフにする
+        if arr.size == 0:
+            self.last_hist_data = {}
+            self._hist_copy_source = None
+            self.last_profile_data = {}
+            self.hist_tab.update_plot({}, [], {}, title="ROI is out of image")
+            self._update_profile_plot({}, [], {}, "ROI is out of image")
+            return
+
         # channel_checks の長さを channel 数に合わせる
         nch = arr.shape[2] if arr.ndim == 3 and arr.shape[2] > 1 else 1
         if nch > 1:
             self.settings.fit_channel_checks(nch)
 
-        # histogram
+        # histogram。bin の範囲は表示中の channel だけで決め、非表示の channel の値に引っ張られないようにする
+        checks = self.settings.channel_checks if nch > 1 else None
         if self.settings.hist_mode == "Histogram":
-            bins = determine_hist_bins(arr, self.settings.hist_bin_step)
-            hist_series = histogram_series(arr, bins=bins)
+            bins = determine_hist_bins(visible_channels(arr, checks), self.settings.hist_bin_step)
+            hist_series = histogram_series(arr, bins=bins, channels=checks)
+            # コピーは全 channel を出すため、コピーのときに計算し直す
+            self._hist_copy_source = arr
         elif self.settings.hist_mode == "ECDF":
             hist_series = ecdf_series(arr)
-        self.last_hist_data = hist_series  # コピー用に全 channel を保持する
-        hist_stats = histogram_stats(arr.astype(np.float64), self.settings.channel_checks)
-        apply_log = self.settings.plot_settings.get("hist", {}).get("log", False)
-        is_integer_type = np.issubdtype(arr.dtype, np.integer)
+            self._hist_copy_source = None
+        self.last_hist_data = hist_series
+        hist_stats = histogram_stats(arr, self.settings.channel_checks)
         # グラフの色（2 次元画像は 1ch として扱う）
         n_plot = arr.shape[2] if arr.ndim == 3 else 1
         self._n_plot = n_plot
@@ -322,10 +363,7 @@ class AnalysisDialog(ToolDialog):
             self._visible_series(hist_series),
             hist_stats,
             self.channel_color_map,
-            apply_log=apply_log,
-            is_integer_type=is_integer_type,
-            chart_kind=self.settings.hist_chart_kind,
-            bar_alpha=self.settings.hist_bar_alpha,
+            **self._hist_plot_kwargs(np.issubdtype(arr.dtype, np.integer)),
         )
 
         # profile
@@ -344,15 +382,30 @@ class AnalysisDialog(ToolDialog):
             method=self.settings.profile_method,
             channel_checks=self.settings.channel_checks,
         )
+        self._update_profile_plot(self._visible_series(self.last_profile_data), prof_stats, self.channel_color_map)
+        self._restore_main_plots()
+
+    def _hist_plot_kwargs(self, is_integer_type: bool) -> dict:
+        """hist_tab の update_plot・update_split_plots に渡す表示設定。"""
+        return {
+            "apply_log": self.settings.plot_settings.get("hist", {}).get("log", False),
+            "is_integer_type": is_integer_type,
+            "chart_kind": self.settings.hist_chart_kind,
+            "bar_alpha": self.settings.hist_bar_alpha,
+            "step": self.settings.hist_mode == "Histogram",
+        }
+
+    def _update_profile_plot(self, series: dict, rows: list[dict], colors: dict, title_prefix: str = "Profile"):
+        """今の profile の設定で、編集中ROI・Overlay 用の profile の plot を描く。"""
         self.profile_tab.update_plot(
-            self._visible_series(self.last_profile_data),
-            prof_stats,
+            series,
+            rows,
             self.settings.profile_orientation,
             self.settings.profile_x_mode,
             self.settings.profile_method,
-            self.channel_color_map,
+            colors,
+            title_prefix=title_prefix,
         )
-        self._restore_main_plots()
 
     def _restore_main_plots(self):
         """編集中ROI・Overlay 用の plot の表示範囲と plot 設定を復元する。"""
@@ -368,52 +421,56 @@ class AnalysisDialog(ToolDialog):
         # 保存済みの plot 設定（grid、ViewBox 状態）を再適用する
         self._apply_plot_settings()
 
-    # ---- 登録 ROI ----
-    def _update_contents_multi(self):
-        """☑ の付いた登録 ROI の profile・histogram を重ねて（Overlay）または並べて（Split）表示する。
+    # ---- 登録 ROI・タイル ----
+    @property
+    def _tile_sources(self) -> list[AnalysisSource]:
+        """タイル比較モードのタイルの source。1 枚表示では空。"""
+        return [s for s in self.sources if s.label is not None]
 
-        曲線の label は R{id} C{k}、統計量の行の ch は R{id}_C{k} にする。画像の範囲外の ROI は飛ばす。
+    def _collect_targets(self) -> list[Target]:
+        """解析する (タイル, ROI) の組を返す。1 枚表示は表示中の画像を対象にする。"""
+        sources = self._tile_sources
+        if not sources and self.image_array is not None:
+            sources = [AnalysisSource(None, self.image_array, self.image_path)]
+        return collect_targets(sources, self.rois, self.image_rect, self.settings)
+
+    def _update_contents_multi(self):
+        """登録 ROI（タイル比較モードではタイルも）の profile・histogram を Overlay または Split で表示する。
+
+        曲線の label は {key} C{k}（key は R{id}、T{n} R{id}、T{n}）。
+        統計量の行の ch は key の空白を _ にして _C{k} を付ける。
         """
         self._update_metadata()
-        arr = self.image_array
-        if arr is None:
+        if self.image_array is None and not self._tile_sources:
             return
         overrides = self._roi_color_overrides()
-        targets = []  # (RoiEntry, 切り出した配列, channel の表示 ON/OFF)
-        for entry in self.rois:
-            sub = crop_roi(arr, entry.rect.getRect())
-            if sub.size == 0:
-                continue
-            n = sub.shape[2] if sub.ndim == 3 else 1
-            vis = self.settings.roi_channel_visibility.setdefault(entry.id, [])
-            vis[:] = (vis + [True] * n)[:n]
-            targets.append((entry, sub, vis))
+        targets = self._collect_targets()
 
         self.channel_color_map = {
-            roi_curve_label(e.id, k): roi_color(e.id, k, overrides).getRgb()[:3]
-            for e, _, vis in targets
-            for k in range(len(vis))
+            f"{t.key} C{k}": target_color(i, t, k, overrides).getRgb()[:3]
+            for i, t in enumerate(targets)
+            for k in range(len(t.vis))
         }
+        self._panel_keys = [t.key for t in targets]
         groups = [
-            (e.id, vis, [QColor(*self.channel_color_map[roi_curve_label(e.id, k)]) for k in range(len(vis))])
-            for e, _, vis in targets
+            (i, t.vis, [QColor(*self.channel_color_map[f"{t.key} C{k}"]) for k in range(len(t.vis))], t.key)
+            for i, t in enumerate(targets)
         ]
         for tab in (self.hist_tab, self.profile_tab):
             tab.roi_channel_panel.set_groups(groups)
 
-        hist_series, hist_rows = self._multi_hist_series(targets)
-        self.last_hist_data = merge_hist_series(hist_series, self.settings.hist_mode) if hist_series else {}
-        prof_series, prof_rows = self._multi_profile_series(targets)
+        hist_series, hist_rows = hist_series_and_rows(targets, self.settings)
+        # 1 bin だけの系列でも前後の余白が bin 幅になるよう、Histogram は bin 幅を渡す
+        step = self.settings.hist_bin_step if self.settings.hist_mode == "Histogram" else None
+        self.last_hist_data = merge_hist_series(hist_series, self.settings.hist_mode, step) if hist_series else {}
+        prof_series, prof_rows = profile_series_and_rows(targets, self.settings)
         self.last_profile_data = prof_series
 
-        names = ",".join(e.name for e, _, _ in targets) or "No ROI in image"
-        hist_kwargs = {
-            "apply_log": self.settings.plot_settings.get("hist", {}).get("log", False),
-            "is_integer_type": np.issubdtype(arr.dtype, np.integer),
-            "chart_kind": self.settings.hist_chart_kind,
-            "bar_alpha": self.settings.hist_bar_alpha,
-        }
-        if self.settings.roi_mode == "overlay":
+        names = ",".join(t.key for t in targets) or "No ROI in image"
+        hist_kwargs = self._hist_plot_kwargs(
+            all(np.issubdtype(t.sub.dtype, np.integer) for t in targets) and bool(targets)
+        )
+        if not self._split_view():
             self.hist_tab.update_plot(
                 self.last_hist_data,
                 hist_rows,
@@ -421,15 +478,7 @@ class AnalysisDialog(ToolDialog):
                 title=f"{self.settings.hist_mode} Overlay ({names})",
                 **hist_kwargs,
             )
-            self.profile_tab.update_plot(
-                prof_series,
-                prof_rows,
-                self.settings.profile_orientation,
-                self.settings.profile_x_mode,
-                self.settings.profile_method,
-                self.channel_color_map,
-                title_prefix=f"Profile Overlay ({names})",
-            )
+            self._update_profile_plot(prof_series, prof_rows, self.channel_color_map, f"Profile Overlay ({names})")
             self._restore_main_plots()
             return
 
@@ -437,8 +486,9 @@ class AnalysisDialog(ToolDialog):
         self._apply_plot_settings()
         link = self.settings.roi_link_axes
         n_cols = self.settings.roi_split_columns
+        by_tile = bool(self._tile_sources) and self.settings.roi_split_unit == "tile"
         self.hist_tab.update_split_plots(
-            self._split_groups(targets, self.last_hist_data, overrides),
+            split_groups(targets, self.last_hist_data, by_tile, overrides),
             hist_rows,
             self.channel_color_map,
             link,
@@ -446,66 +496,13 @@ class AnalysisDialog(ToolDialog):
             **hist_kwargs,
         )
         self.profile_tab.update_split_plots(
-            self._split_groups(targets, prof_series, overrides),
+            split_groups(targets, prof_series, by_tile, overrides),
             prof_rows,
             self.settings.profile_x_mode,
             self.channel_color_map,
             link,
             n_cols,
         )
-
-    def _multi_hist_series(self, targets) -> tuple[dict, list[dict]]:
-        """登録 ROI ごとの histogram（または ECDF）の表示 ON の系列と、統計量の行を返す。"""
-        series = {}
-        rows = []
-        for entry, sub, vis in targets:
-            if self.settings.hist_mode == "Histogram":
-                s = histogram_series(sub, bins=determine_hist_bins(sub, self.settings.hist_bin_step))
-            else:
-                s = ecdf_series(sub)
-            for label, data in s.items():
-                if vis[_channel_index(label)]:
-                    series[roi_curve_label(entry.id, _channel_index(label))] = data
-            for row in histogram_stats(sub.astype(np.float64), vis):
-                k = int(row["ch"])
-                if vis[k]:
-                    rows.append({**row, "ch": f"{entry.name}_C{k}", "curve_label": roi_curve_label(entry.id, k)})
-        return series, rows
-
-    def _multi_profile_series(self, targets) -> tuple[dict, list[dict]]:
-        """登録 ROI ごとの profile の表示 ON の系列と、統計量の行を返す。
-
-        absolute 表示では ROI ごとの開始座標を x に加える。
-        """
-        orientation = self.settings.profile_orientation
-        method = self.settings.profile_method
-        series = {}
-        rows = []
-        for entry, sub, vis in targets:
-            offset = 0
-            if self.settings.profile_x_mode == "absolute":
-                offset = get_profile_offset(entry.rect, orientation)
-            for label, prof in profile_series(sub, orientation=orientation, method=method).items():
-                k = _channel_index(label)
-                if vis[k]:
-                    series[roi_curve_label(entry.id, k)] = (np.arange(prof.size) + offset, prof)
-            for row in profile_stats(sub, orientation=orientation, method=method, channel_checks=vis):
-                k = int(row["ch"])
-                if vis[k]:
-                    rows.append({**row, "ch": f"{entry.name}_C{k}", "curve_label": roi_curve_label(entry.id, k)})
-        return series, rows
-
-    @staticmethod
-    def _split_groups(targets, series: dict, overrides: dict[str, str]) -> list[tuple[int, str, str, dict]]:
-        """Split 表示の ROI ごとの (id, title, title の色, 系列) のリストを返す。"""
-        groups = []
-        for entry, _, _ in targets:
-            r = entry.rect
-            title = f"{entry.name} ({r.x()},{r.y()} {r.width()}×{r.height()})"
-            prefix = f"{entry.name} "
-            own = {label: data for label, data in series.items() if label.startswith(prefix)}
-            groups.append((entry.id, title, roi_color(entry.id, 0, overrides).name(), own))
-        return groups
 
     def _roi_color_overrides(self) -> dict[str, str]:
         return self.viewer.state.roi_color_overrides
@@ -514,11 +511,14 @@ class AnalysisDialog(ToolDialog):
         """ROI の combo・軸の連動・plot と channel 一覧の表示を、設定と登録 ROI の有無に合わせる。
 
         登録 ROI がなくなった場合は編集中 ROI の表示に戻す。
+        タイル比較モードでは、編集中ROI と登録ROI - Split で単位（ROI ごと / タイルごと）を選べる。
         """
         has_rois = bool(self.rois)
+        has_tiles = bool(self._tile_sources)
         if not has_rois:
             self.settings.roi_mode = "active"
         mode = self.settings.roi_mode
+        split = self._split_view()
         index = next(i for i, (m, _) in enumerate(ROI_MODES) if m == mode)
         for tab in (self.profile_tab, self.hist_tab):
             model = tab.roi_mode_combo.model()
@@ -529,13 +529,23 @@ class AnalysisDialog(ToolDialog):
                 tab.roi_mode_combo.setCurrentIndex(index)
             with QSignalBlocker(tab.link_axes_check):
                 tab.link_axes_check.setChecked(self.settings.roi_link_axes)
-            tab.link_axes_check.setEnabled(mode == "split")
+            tab.link_axes_check.setEnabled(split)
             with QSignalBlocker(tab.split_columns_combo):
                 tab.split_columns_combo.setCurrentIndex(
                     tab.split_columns_combo.findData(self.settings.roi_split_columns)
                 )
-            tab.split_columns_combo.setEnabled(mode == "split")
-            tab.set_roi_view(mode)
+            tab.split_columns_combo.setEnabled(split)
+            with QSignalBlocker(tab.split_unit_combo):
+                tab.split_unit_combo.setCurrentIndex(
+                    next(i for i, (u, _) in enumerate(ROI_SPLIT_UNITS) if u == self.settings.roi_split_unit)
+                )
+            tab.split_unit_combo.setVisible(has_tiles)
+            tab.split_unit_combo.setEnabled(mode in ("active", "split"))
+            # タイル比較モードの編集中ROI もタイルごとの曲線を扱うため、登録 ROI 用の channel の一覧を使う
+            if split:
+                tab.set_roi_view("split")
+            else:
+                tab.set_roi_view("overlay" if has_tiles and mode == "active" else mode)
         self.update_window_title()
 
     def _on_roi_mode_changed(self, index: int):
@@ -553,16 +563,25 @@ class AnalysisDialog(ToolDialog):
         self.settings.roi_split_columns = ROI_SPLIT_COLUMN_CHOICES[index]
         self.update_contents()
 
-    def _on_roi_checks_changed(self, roi_id: int, checks: list[bool]):
-        vis = self.settings.roi_channel_visibility.get(roi_id)
+    def _on_split_unit_changed(self, index: int):
+        unit = ROI_SPLIT_UNITS[index][0]
+        if unit == self.settings.roi_split_unit:
+            return
+        self.settings.roi_split_unit = unit
+        self.update_contents()
+
+    def _on_roi_checks_changed(self, index: int, checks: list[bool]):
+        if not 0 <= index < len(self._panel_keys):
+            return
+        vis = self.settings.roi_channel_visibility.get(self._panel_keys[index])
         if vis is None or vis == checks:
             return
         vis[:] = [bool(c) for c in checks[: len(vis)]]
         self.update_contents()
 
     def _on_roi_all_checks(self, value: bool):
-        """全登録 ROI の全 channel の表示を value にする。"""
-        visibility = [self.settings.roi_channel_visibility.get(e.id) for e in self.rois]
+        """一覧に出ている全 (タイル, ROI) の全 channel の表示を value にする。"""
+        visibility = [self.settings.roi_channel_visibility.get(key) for key in self._panel_keys]
         visibility = [vis for vis in visibility if vis is not None]
         if all(v == value for vis in visibility for v in vis):
             return
@@ -570,50 +589,49 @@ class AnalysisDialog(ToolDialog):
             vis[:] = [value] * len(vis)
         self.update_contents()
 
-    def _on_roi_color_clicked(self, roi_id: int, ch_idx: int):
-        """色選択 dialog で選んだ色を、その ROI・channel の色として設定する。画像上の ROI の枠の色にも反映される。"""
-        label = roi_curve_label(roi_id, ch_idx)
-        current = roi_color(roi_id, ch_idx, self._roi_color_overrides())
+    def _on_roi_color_clicked(self, index: int, ch_idx: int):
+        """色選択 dialog で選んだ色を、その (タイル, ROI)・channel の曲線の色として設定する。
+
+        1 枚表示の R{id} C0 の色は画像上の ROI の枠の色にも反映される。
+        """
+        if not 0 <= index < len(self._panel_keys):
+            return
+        label = f"{self._panel_keys[index]} C{ch_idx}"
+        rgb = self.channel_color_map.get(label)
+        current = QColor(*rgb) if rgb is not None else QColor()
         color = QColorDialog.getColor(current, self, f"{label} の色を選択")
         if color.isValid():
             self.viewer.roi_list.set_color_override(label, color.name())
 
     def _update_metadata(self):
-        """画像ファイルの metadata を metadata tab に表示する。"""
+        """画像ファイルの metadata を metadata tab に表示する。タイル比較モードではタイルを列に並べて比較する。"""
+        self.last_metadata_columns = []
+        if self._tile_sources:
+            columns = []
+            for source in self._tile_sources:
+                name = Path(source.path).name if source.path else "(no file)"
+                rows = metadata_rows(source.path, source.array) or [("Info", "No metadata available")]
+                columns.append((f"{source.label}: {name}", rows))
+            self.last_metadata = []
+            self.last_metadata_columns = columns
+            self.meta_tab.set_comparison(columns)
+            return
         if self.image_path is None or not self.image_path:
             self.meta_tab.set_rows([("Error", "No file path available")])
             self.last_metadata = []
             return
 
-        # 読み込みの失敗は get_image_metadata が Error の項目として返す
-        metadata = get_image_metadata(self.image_path, self.image_array)
-        if not metadata:
+        rows = metadata_rows(self.image_path, self.image_array)
+        if not rows:
             self.meta_tab.set_rows([("Info", "No metadata available")])
             self.last_metadata = []
             return
-
-        # 基本情報、EXIF の順に並べる
-        basic_keys = ["Filepath", "Format", "FileSize", "Size", "Channels", "DataType"]
-        rows = [(key, str(metadata[key])) for key in basic_keys if key in metadata]
-        for key, value in metadata.items():
-            if key in basic_keys:
-                continue
-            rows.append((key, str(value)))
-            if key == "EXIF_ExposureTime":
-                # 露光時間（"1/60" など）を秒で併記する。形式が崩れている場合は省略する
-                with contextlib.suppress(ValueError, ZeroDivisionError):
-                    rows.append((" -> (seconds)", f"{float(Fraction(str(value))):.3e}"))
-
         self.last_metadata = rows
         self.meta_tab.set_rows(rows)
 
     def hist_config_mode_toggle(self):
-        if self.settings.hist_mode == "Histogram":
-            self.settings.hist_mode = "ECDF"
-            self.hist_tab.config_mode_btn.setText("ECDF")
-        else:
-            self.settings.hist_mode = "Histogram"
-            self.hist_tab.config_mode_btn.setText("Histogram")
+        self.settings.hist_mode = "ECDF" if self.settings.hist_mode == "Histogram" else "Histogram"
+        self.hist_tab.config_mode_btn.setText(self.settings.hist_mode)
         self.update_contents()
 
     def _visible_series(self, series: dict) -> dict:
@@ -649,26 +667,36 @@ class AnalysisDialog(ToolDialog):
         self.hist_tab.bin_step_spin_box.setValue(defaults.HIST_BIN_STEP)
 
     def copy_metadata_to_clipboard(self):
-        """metadata をカンマ区切りで clipboard にコピーする。"""
+        """metadata をカンマ区切りで clipboard にコピーする。タイル比較モードではタイルを列に並べる。"""
+        if self.last_metadata_columns:
+            QGuiApplication.clipboard().setText(metadata_comparison_csv(self.last_metadata_columns))
+            return
         if not self.last_metadata:
             QMessageBox.information(self, "Copy", "No metadata to copy.")
             return
         QGuiApplication.clipboard().setText(metadata_csv(self.last_metadata))
 
     def copy_histogram_to_clipboard(self):
-        """histogram（または ECDF）のデータを CSV で clipboard にコピーする。"""
-        if not self.last_hist_data:
+        """histogram（または ECDF）のデータを CSV で clipboard にコピーする。
+
+        編集中ROI の Histogram は、表示していない channel も含めて全 channel の範囲の bin で出す。
+        """
+        data = self.last_hist_data
+        source = self._hist_copy_source
+        if source is not None and self.settings.hist_mode == "Histogram" and not self._multi_view_active():
+            data = histogram_series(source, bins=determine_hist_bins(source, self.settings.hist_bin_step))
+        if not data:
             QMessageBox.information(self, "Copy", "No data.")
             return
-        QGuiApplication.clipboard().setText(histogram_csv(self.last_hist_data, self.settings.hist_mode))
+        QGuiApplication.clipboard().setText(histogram_csv(data, self.settings.hist_mode))
 
     def copy_profile_to_clipboard(self):
         """profile のデータを CSV で clipboard にコピーする。"""
         if not self.last_profile_data:
             QMessageBox.information(self, "Copy", "No data.")
             return
-        # 登録 ROI は ROI ごとに長さが違うため、x の列も ROI ごとに出力する
-        to_csv = grouped_profile_csv if self._roi_mode_active() else profile_csv
+        # 登録 ROI・タイルは ROI ごとに長さが違うため、x の列も ROI ごとに出力する
+        to_csv = grouped_profile_csv if self._multi_view_active() else profile_csv
         QGuiApplication.clipboard().setText(to_csv(self.last_profile_data, self.settings.profile_orientation))
 
     def copy_hist_stats_to_clipboard(self):
@@ -680,34 +708,36 @@ class AnalysisDialog(ToolDialog):
     def _copy_roi_stats(self, tab, profile: tuple[str, str] | None):
         """ROI の統計量を CSV で clipboard にコピーする。
 
-        "Target: All plane" の場合は全画像を対象にする。登録 ROI の表示中は ☑ の付いた全 ROI を対象にする。
+        "Target: All plane" の場合は全画像を対象にする。そうでない場合は表示中の画像（タイル比較モードでは全タイル）。
+        登録 ROI の表示中は ☑ の付いた全 ROI を対象にする。
         """
-        imgs = self.viewer.images
-        if not tab.get_all_plane_data.isChecked():
-            imgs = [imgs[self.viewer.state.current_index]]
-        images = [(img["path"], img["base_array"]) for img in imgs]
+        if tab.get_all_plane_data.isChecked():
+            images = [(img["path"], img["base_array"]) for img in self.viewer.images]
+        elif self._tile_sources:
+            images = [(s.path or s.label, s.array) for s in self._tile_sources]
+        elif self.image_array is not None:
+            images = [(self.image_path, self.image_array)]
+        else:
+            images = []
         if self._roi_mode_active():
             text = multi_roi_stats_csv(images, [(e.name, e.rect.getRect()) for e in self.rois], profile)
-        else:
+        elif self.viewer.state.roi is not None:
             text = roi_stats_csv(images, self.viewer.state.roi.getRect(), profile)
+        else:
+            QMessageBox.information(self, "Copy", "No ROI.")
+            return
         QGuiApplication.clipboard().setText(text)
 
     def _on_prof_orientation_toggle(self):
-        if self.settings.profile_orientation == "h":
-            self.settings.profile_orientation = "v"
-            self.profile_tab.orientation_btn.setText("Vertical")
-        else:
-            self.settings.profile_orientation = "h"
-            self.profile_tab.orientation_btn.setText("Horizontal")
+        vertical = self.settings.profile_orientation == "h"
+        self.settings.profile_orientation = "v" if vertical else "h"
+        self.profile_tab.orientation_btn.setText("Vertical" if vertical else "Horizontal")
         self.update_contents()
 
     def _on_prof_xmode_toggle(self):
-        if self.settings.profile_x_mode == "relative":
-            self.settings.profile_x_mode = "absolute"
-            self.profile_tab.xmode_btn.setText("Absolute")
-        else:
-            self.settings.profile_x_mode = "relative"
-            self.profile_tab.xmode_btn.setText("Relative")
+        absolute = self.settings.profile_x_mode == "relative"
+        self.settings.profile_x_mode = "absolute" if absolute else "relative"
+        self.profile_tab.xmode_btn.setText("Absolute" if absolute else "Relative")
         self.update_contents()
 
     def _on_prof_compute_method_combo(self):
@@ -716,10 +746,7 @@ class AnalysisDialog(ToolDialog):
 
     def _on_hist_chart_kind_combo(self):
         self.settings.hist_chart_kind = self.hist_tab.chart_kind_combo.currentText()
-        if self.settings.hist_chart_kind == "Bar":
-            self.hist_tab.bar_alpha_spin_box.setEnabled(True)
-        else:
-            self.hist_tab.bar_alpha_spin_box.setEnabled(False)
+        self.hist_tab.bar_alpha_spin_box.setEnabled(self.settings.hist_chart_kind == "Bar")
         self.update_contents()
 
     def _on_external_log_toggled(self, checked: bool):
@@ -749,9 +776,9 @@ class AnalysisDialog(ToolDialog):
     def keyPressEvent(self, event):
         # Esc で dialog を閉じず、入力欄の focus を外すだけにする
         if event.key() == Qt.Key_Escape:
-            focused_widget = self.focusWidget()
-            if focused_widget and isinstance(focused_widget, (QSpinBox, QDoubleSpinBox, QLineEdit)):
-                focused_widget.clearFocus()
+            focused = self.focusWidget()
+            if isinstance(focused, (QSpinBox, QDoubleSpinBox, QLineEdit)):
+                focused.clearFocus()
                 event.accept()
                 return
             event.ignore()

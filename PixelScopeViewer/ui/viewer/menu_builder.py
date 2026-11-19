@@ -19,6 +19,8 @@ def create_menus(viewer):
     file_menu.addAction(
         QAction("ROI領域の画像をコピー", viewer, shortcut="Ctrl+C", triggered=viewer.copy_roi_to_clipboard)
     )
+    file_menu.addAction(QAction("ROI一覧を保存...", viewer, triggered=viewer.roi_list.save_dialog))
+    file_menu.addAction(QAction("ROI一覧を読み込み...", viewer, triggered=viewer.roi_list.load_dialog))
     file_menu.addSeparator()
 
     viewer.close_current_action = QAction("閉じる", viewer, shortcut="Ctrl+W")
@@ -54,6 +56,11 @@ def create_menus(viewer):
     viewer.show_annotations_action.setShortcutContext(Qt.WindowShortcut)
     viewer.show_annotations_action.triggered.connect(lambda: viewer.show_annotations_dialog())
     viewer.addAction(viewer.show_annotations_action)
+
+    viewer.add_roi_action = QAction("ROIを登録", viewer, shortcut="R")
+    viewer.add_roi_action.setShortcutContext(Qt.WindowShortcut)
+    viewer.add_roi_action.triggered.connect(lambda: viewer.roi_list.add_current())
+    viewer.addAction(viewer.add_roi_action)
 
     viewer.next_image_action = QAction("次の画像", viewer, shortcut="n")
     viewer.next_image_action.setShortcutContext(Qt.WindowShortcut)
@@ -91,13 +98,18 @@ def create_menus(viewer):
 
     analysis = menubar.addMenu("解析")
     analysis.addAction(viewer.show_analysis_action)
+    analysis.addAction(viewer.add_roi_action)
     analysis.addSeparator()
     analysis.addAction(viewer.show_annotations_action)
     analysis.addSeparator()
     analysis.addAction(QAction("差分画像表示", viewer, triggered=lambda: viewer.image_list.show_diff_dialog()))
-    analysis.addAction(
-        QAction("複数画像比較", viewer, shortcut="Shift+T", triggered=lambda: viewer.show_tiling_comparison_dialog())
-    )
+    analysis.addSeparator()
+    viewer.tile_mode_action = QAction("タイル比較モード", viewer, shortcut="Shift+T", checkable=True)
+    viewer.tile_mode_action.setShortcutContext(Qt.WindowShortcut)
+    viewer.tile_mode_action.triggered.connect(lambda _checked: viewer.toggle_tile_mode())
+    viewer.addAction(viewer.tile_mode_action)
+    analysis.addAction(viewer.tile_mode_action)
+    analysis.addAction(QAction("タイルへの画像登録...", viewer, triggered=lambda: viewer.show_tile_register_dialog()))
 
     help_menu = menubar.addMenu("ヘルプ")
     help_menu.addAction(QAction("ヘルプ / ショートカット", viewer, triggered=viewer.help_dialog.show))

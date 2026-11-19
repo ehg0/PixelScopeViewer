@@ -9,7 +9,9 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QGroupBox,
+    QHBoxLayout,
     QHeaderView,
     QPushButton,
     QScrollArea,
@@ -19,10 +21,26 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from PixelScopeViewer.ui.analysis.tabs.channel_list import ChannelListWidget
+from PixelScopeViewer.ui.analysis.tabs.channel_list import ChannelListWidget, RoiChannelPanel
 from PixelScopeViewer.ui.common import theme
 
 STATS_HEADERS = ["ch", "Mean", "Std", "Median", "Min", "Max", "Fano"]
+
+ROI_MODES = (("active", "編集中ROI"), ("overlay", "登録ROI - Overlay"), ("split", "登録ROI - Split"))
+ROI_SPLIT_COLUMN_CHOICES = (1, 2, 3, 4, 5, 6)
+ROI_SPLIT_UNITS = (("roi", "ROIごと"), ("tile", "タイルごと"))
+
+
+def style_plot_item(plot_item: pg.PlotItem, left_label: str, bottom_label: str):
+    """軸の label・色と grid を設定し、mouse による拡大縮小を無効にする。"""
+    plot_item.setLabel("left", left_label)
+    plot_item.setLabel("bottom", bottom_label)
+    plot_item.showGrid(x=True, y=True, alpha=0.4)
+    for axis in ("left", "bottom"):
+        plot_item.getAxis(axis).setPen(pg.mkPen(color=theme.PLOT_AXIS_COLOR, width=1))
+        plot_item.getAxis(axis).setTextPen(pg.mkPen(color=theme.PLOT_TEXT_COLOR))
+    plot_item.setMenuEnabled(True)
+    plot_item.getViewBox().setMouseEnabled(x=False, y=False)
 
 
 def create_plot_widget(
@@ -34,16 +52,9 @@ def create_plot_widget(
 ) -> PlotWidget:
     """白背景・grid 付きで、mouse による拡大縮小を無効にした PlotWidget を作る。"""
     widget = PlotWidget()
-    widget.setLabel("left", left_label)
-    widget.setLabel("bottom", bottom_label)
     widget.setBackground(theme.PLOT_BACKGROUND)
-    widget.showGrid(x=True, y=True, alpha=0.4)
-    for axis in ("left", "bottom"):
-        widget.getAxis(axis).setPen(pg.mkPen(color=theme.PLOT_AXIS_COLOR, width=1))
-        widget.getAxis(axis).setTextPen(pg.mkPen(color=theme.PLOT_TEXT_COLOR))
-    widget.setMenuEnabled(True)
+    style_plot_item(widget.getPlotItem(), left_label, bottom_label)
     view_box = widget.getViewBox()
-    view_box.setMouseEnabled(x=False, y=False)
     if on_save_viewbox_state is not None:
         view_box.sigStateChanged.connect(on_save_viewbox_state)
         on_save_viewbox_state(view_box)
@@ -53,9 +64,8 @@ def create_plot_widget(
     return widget
 
 
-def mouse_position_text(widget: PlotWidget, pos) -> str:
+def mouse_position_text(plot_item: pg.PlotItem, pos) -> str:
     """scene 座標 pos の plot 上の値を "X: .., Y: .." で返す。plot の外なら空文字。"""
-    plot_item = widget.getPlotItem()
     if not plot_item.sceneBoundingRect().contains(pos):
         return ""
     point = plot_item.vb.mapSceneToView(pos)
@@ -85,10 +95,50 @@ def make_group_box(title: str) -> tuple[QGroupBox, QVBoxLayout]:
     return group, layout
 
 
-def create_channel_group(on_checks_changed: Callable[[list], None]) -> tuple[QGroupBox, ChannelListWidget]:
-    """scroll area の中に ChannelListWidget を置いた Channels group を作る。
+def create_roi_group() -> tuple[QGroupBox, QComboBox, QCheckBox, QComboBox, QComboBox]:
+    """解析対象の ROI を選ぶ group を作る。
 
-    複数画像比較の解析 dialog は scroll area の中身を tile ごとの一覧に置き換えるため、この構造を保つ。
+    Returns:
+        (group, ROI の表示方法（編集中ROI / 登録ROI の Overlay・Split）の combo, 軸の連動の checkbox,
+        Split の列数の combo, タイル比較モードの Split の単位の combo)。
+    """
+    group, layout = make_group_box("ROI")
+    combo = QComboBox()
+    for mode, text in ROI_MODES:
+        combo.addItem(text, mode)
+    combo.setToolTip("登録ROIはメイン画面の Info > ROI List で ☑ を付けた ROI です")
+    combo.setMinimumWidth(100)
+    link_check = QCheckBox("軸を連動")
+    link_check.setToolTip(
+        "Split 表示で、全グラフの表示範囲を揃えます。OFF にすると各グラフの右クリックで個別に設定できます"
+    )
+    columns_combo = QComboBox()
+    for n in ROI_SPLIT_COLUMN_CHOICES:
+        columns_combo.addItem(f"{n}列", n)
+    columns_combo.setToolTip("Split 表示で横に並べるグラフの数")
+    unit_combo = QComboBox()
+    for unit, text in ROI_SPLIT_UNITS:
+        unit_combo.addItem(text, unit)
+    unit_combo.setToolTip("タイル比較モードで、ROI ごとのグラフに全タイルを重ねるか、タイルごとのグラフに並べるか")
+    unit_combo.setVisible(False)
+    # dialog の高さを増やさないよう、軸の連動と同じ行に置く
+    split_row = QHBoxLayout()
+    split_row.addWidget(link_check)
+    split_row.addStretch()
+    split_row.addWidget(unit_combo)
+    split_row.addWidget(columns_combo)
+    layout.addWidget(combo)
+    layout.addLayout(split_row)
+    return group, combo, link_check, columns_combo, unit_combo
+
+
+def create_channel_group(
+    on_checks_changed: Callable[[list], None],
+) -> tuple[QGroupBox, QScrollArea, ChannelListWidget, RoiChannelPanel]:
+    """scroll area の中に ChannelListWidget と登録 ROI 用の RoiChannelPanel（初期は非表示）を置いた group を作る。
+
+    Returns:
+        (group, scroll area, ChannelListWidget, RoiChannelPanel)。
     """
     group, layout = make_group_box("Channels")
     scroll = QScrollArea()
@@ -104,10 +154,13 @@ def create_channel_group(on_checks_changed: Callable[[list], None]) -> tuple[QGr
     channel_list = ChannelListWidget()
     channel_list.checks_changed.connect(on_checks_changed)
     scroll_layout.addWidget(channel_list)
+    roi_panel = RoiChannelPanel()
+    roi_panel.setVisible(False)
+    scroll_layout.addWidget(roi_panel)
     scroll_layout.addStretch()
     scroll.setWidget(scroll_widget)
     layout.addWidget(scroll)
-    return group, channel_list
+    return group, scroll, channel_list, roi_panel
 
 
 def create_export_group() -> tuple[QGroupBox, QPushButton, QPushButton, QCheckBox]:

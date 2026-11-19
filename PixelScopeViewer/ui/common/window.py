@@ -7,13 +7,21 @@ from PySide6.QtCore import QByteArray, QEvent, QPoint, Qt
 from PySide6.QtWidgets import QDialog, QWidget
 
 
+def restore_from_minimized(w: QWidget) -> None:
+    """最小化された w を、最小化前の状態（最大化または通常）に戻す。"""
+    if w.windowState() & Qt.WindowMaximized:
+        w.showMaximized()
+    else:
+        w.showNormal()
+
+
 def bring_to_front(w: QWidget) -> None:
     """w を表示して前面に出す。最小化されていれば元に戻す。
 
     表示中の window に show() を再実行すると位置が変わることがあるため、非表示のときだけ show() を呼ぶ。
     """
     if w.isMinimized():
-        w.showNormal()
+        restore_from_minimized(w)
     elif not w.isVisible():
         w.show()
     w.raise_()
@@ -25,10 +33,12 @@ class ToolDialog(QDialog):
 
     最小化前の位置を記憶し、復元時に戻す。remember_geometry が True の class は位置と大きさも記憶し、
     開き直したときに restore_geometry() で戻せる。記憶は window_key ごとに持ち、継承した class は共有する。
+    maximizable が True の class は最大化もできる。
     """
 
     window_key = "tool"
     remember_geometry = False
+    maximizable = False
 
     _saved_geometry: dict[str, QByteArray] = {}
     _position_before_minimize: dict[str, QPoint] = {}
@@ -36,7 +46,10 @@ class ToolDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         # 表示後に flags を変えると window がいったん隠れ、位置が変わることがあるため、ここでだけ設定する
-        self.setWindowFlags(Qt.Window | Qt.WindowMinimizeButtonHint | Qt.WindowCloseButtonHint)
+        flags = Qt.Window | Qt.WindowMinimizeButtonHint | Qt.WindowCloseButtonHint
+        if self.maximizable:
+            flags |= Qt.WindowMaximizeButtonHint
+        self.setWindowFlags(flags)
         self.setAttribute(Qt.WA_DeleteOnClose)
 
     def restore_geometry(self) -> None:
@@ -51,7 +64,7 @@ class ToolDialog(QDialog):
             positions = ToolDialog._position_before_minimize
             if self.isMinimized():
                 positions[self.window_key] = self.pos()
-            elif event.oldState() & Qt.WindowMinimized and self.window_key in positions:
+            elif event.oldState() & Qt.WindowMinimized and not self.isMaximized() and self.window_key in positions:
                 self.move(positions[self.window_key])
         super().changeEvent(event)
 
@@ -107,7 +120,7 @@ class ChildDialogs:
 
             def apply(d):
                 if d.isMinimized():
-                    d.showNormal()
+                    restore_from_minimized(d)
 
         else:
             return

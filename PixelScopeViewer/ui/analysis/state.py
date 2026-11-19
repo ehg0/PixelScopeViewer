@@ -20,6 +20,13 @@ class AnalysisSettings:
     # 画像を切り替えても保持する plot 設定（grid・log・auto range）
     plot_settings: dict = field(default_factory=lambda: copy.deepcopy(defaults.PLOT_SETTINGS))
     channel_checks: list[bool] = field(default_factory=list)
+    roi_mode: str = defaults.ANALYSIS_ROI_MODE  # "active", "overlay", "split"
+    roi_link_axes: bool = defaults.ANALYSIS_ROI_LINK_AXES
+    roi_split_columns: int = defaults.ANALYSIS_ROI_SPLIT_COLUMNS
+    # タイル比較モードの編集中ROI・登録ROI - Split の単位: "roi"（ROI ごとに全タイル）, "tile"（タイルごと）
+    roi_split_unit: str = defaults.ANALYSIS_ROI_SPLIT_UNIT
+    # (タイル, ROI) ごとの channel の表示 ON/OFF。key は曲線の label の channel より前の部分（R0、T1 R0 など）
+    roi_channel_visibility: dict[str, list[bool]] = field(default_factory=dict)
 
     def fit_channel_checks(self, n_channels: int) -> None:
         """channel_checks を n_channels 個まで伸ばす。追加した channel は表示 ON にする。"""

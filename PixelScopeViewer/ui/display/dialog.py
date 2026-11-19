@@ -131,6 +131,8 @@ class BrightnessDialog(ToolDialog):
         self.image_array = image_array
         self.image_path = image_path
         self.brightness_tab.update_for_new_image(image_array, image_path, keep_settings)
+        if image_array is None:
+            return
         if initial_mode_1ch is not None:
             self.channel_tab._mode1 = initial_mode_1ch
         if initial_mode_2ch is not None:

@@ -26,7 +26,7 @@ PLOT_INTENSITY_COLOR = "#000000"
 PLOT_FALLBACK_CHANNEL_COLORS = ("#ff0000", "#00c800", "#0066ff", "#7f7f7f")
 PLOT_FALLBACK_COLOR = "#7f7f7f"
 
-# 複数画像比較の重ね描きの色（Tableau 20）。灰色系はグラフ上では黒で描く
+# 重ね描きの曲線の色（Tableau 20）。灰色系はグラフ上では黒で描く
 OVERLAY_PALETTE: tuple[str, ...] = (
     "#1f77b4",
     "#aec7e8",
@@ -53,6 +53,8 @@ OVERLAY_PALETTE: tuple[str, ...] = (
 # --- 画像上の描画 ---
 ROI_COLOR = "#33ff66"
 ROI_INACTIVE_COLOR = "#aaaaaa"
+# ROI 一覧の名前（R0 など）の背景
+ROI_LABEL_BACKGROUND = "#ffffff"
 NAVIGATOR_VIEW_RECT_COLOR = "#ff4444"
 # colorbar の両端の label（RGB）
 COLORBAR_LABEL_RGB = (255, 255, 255)
@@ -70,11 +72,11 @@ COLOR_BUTTON_BORDER = "#999999"
 GROUP_BOX_BORDER = "#cccccc"
 DIALOG_BACKGROUND = "#fafafa"
 
-# --- tile（複数画像比較）---
+# --- tile（タイル比較モード）---
 TILE_ACTIVE_BORDER = "#0078d4"
 TILE_INACTIVE_BORDER = "#cccccc"
-TILE_STATUS_BACKGROUND = "rgba(50, 50, 50, 200)"
-TILE_STATUS_TEXT = "#ffffff"
+# タイルのタイトル行・ステータス行の背景
+TILE_ROW_BACKGROUND = "#eeeeee"
 
 # --- slider ---
 SLIDER_GROOVE = "#dddddd"
@@ -104,17 +106,11 @@ SLIDER_STYLESHEET = f"""
     QSlider::handle:horizontal:hover {{ background: {SLIDER_HANDLE_HOVER}; }}
 """
 
-TILE_STATUS_STYLESHEET = f"QWidget {{ background-color: {TILE_STATUS_BACKGROUND}; }}"
-TILE_FILENAME_STYLESHEET = (
-    f"QLabel {{ color: {TILE_STATUS_TEXT}; font-size: 11pt; font-weight: bold;"
-    " background-color: transparent; border: none; }"
-)
-TILE_PIXEL_VALUE_STYLESHEET = (
-    f"QLabel {{ color: {TILE_STATUS_TEXT}; font-size: 11pt; background-color: transparent; border: none; }}"
-)
-TILE_ACTIVE_FRAME_STYLESHEET = (
-    f"QFrame {{ border: 2px solid {TILE_ACTIVE_BORDER}; background-color: palette(window); }}"
-)
-TILE_INACTIVE_FRAME_STYLESHEET = (
-    f"QFrame {{ border: 2px solid {TILE_INACTIVE_BORDER}; background-color: palette(window); }}"
-)
+# タイルの枠は object name で指定し、中の scroll area・label（QFrame）に枠線が付かないようにする
+TILE_ACTIVE_FRAME_STYLESHEET = f"#tilePane {{ border: 2px solid {TILE_ACTIVE_BORDER}; }}"
+TILE_INACTIVE_FRAME_STYLESHEET = f"#tilePane {{ border: 2px solid {TILE_INACTIVE_BORDER}; }}"
+# 1 枚表示は枠線を見せないが、画像の位置をタイル比較モードとそろえるため同じ幅を空ける
+TILE_SINGLE_FRAME_STYLESHEET = "#tilePane { border: 2px solid transparent; }"
+TILE_TITLE_STYLESHEET = f"QLabel {{ font-weight: bold; padding: 2px 4px; background-color: {TILE_ROW_BACKGROUND}; }}"
+# pixel 値の行。文字の大きさはメインの status bar（status_updater.py）とそろえる
+TILE_STATUS_ROW_STYLESHEET = f"QLabel {{ font-size: 11pt; padding: 1px 4px; background-color: {TILE_ROW_BACKGROUND}; }}"

@@ -17,10 +17,36 @@ from PixelScopeViewer.ui.diff import DiffDialog
 
 
 class ImageListManager:
-    """viewer.images（読み込んだ画像の dict のリスト）への追加・削除と、表示する画像の切り替えを行う。"""
+    """viewer.images（読み込んだ画像の dict のリスト）への追加・削除と、表示する画像の切り替えを行う。
+
+    各画像の dict には、閉じても他の画像で再利用しない id を持たせる。
+    """
 
     def __init__(self, viewer):
         self.viewer = viewer
+        self._next_id = 0
+
+    def _new_id(self) -> int:
+        image_id = self._next_id
+        self._next_id += 1
+        return image_id
+
+    def index_of(self, image_id: int | None) -> int | None:
+        """id の画像の viewer.images での index を返す。見つからない場合や id が None の場合は None。"""
+        if image_id is None:
+            return None
+        return next((i for i, img in enumerate(self.viewer.images) if img["id"] == image_id), None)
+
+    def find(self, image_id: int | None) -> dict | None:
+        """id の画像の dict を返す。見つからない場合や id が None の場合は None。"""
+        idx = self.index_of(image_id)
+        return self.viewer.images[idx] if idx is not None else None
+
+    def _forget(self, image_ids: list[int]):
+        """閉じた画像の表示用 cache と、タイルの登録を消す。"""
+        for image_id in image_ids:
+            self.viewer.renderer.cache.drop(image_id)
+        self.viewer.state.tile_layout.remove_images(image_ids)
 
     # --- 読み込み ---
     def open_files(self):
@@ -50,6 +76,10 @@ class ImageListManager:
         if new_count <= 0:
             return new_count
         state = self.viewer.state
+        # タイル比較モードでは表示を変えず、画像一覧に追加するだけにする
+        if state.tile_mode:
+            self.update_menu()
+            return new_count
         state.current_index = 0 if state.current_index is None else len(self.viewer.images) - new_count
         self.viewer.show_current_image()
         self.update_menu()
@@ -109,9 +139,15 @@ class ImageListManager:
             failed_files.append((path, "チャンネル数は1, 2, 3, または4である必要があります"))
             return None
 
-        thumb_qimg = numpy_to_qimage(self.viewer.prepare_thumbnail_array(arr))
+        thumb_qimg = numpy_to_qimage(self.viewer.renderer.thumbnail_array(arr))
         thumb_pixmap = QPixmap.fromImage(thumb_qimg).scaled(200, 200, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-        return {"path": path, "array": arr, "base_array": arr.copy(), "thumbnail_pixmap": thumb_pixmap}
+        return {
+            "id": self._new_id(),
+            "path": path,
+            "array": arr,
+            "base_array": arr.copy(),
+            "thumbnail_pixmap": thumb_pixmap,
+        }
 
     def _show_load_error(self, path: str, arr=None, error_msg: str = ""):
         """ファイルの詳細を添えて読み込みエラーを表示する。"""
@@ -151,7 +187,9 @@ class ImageListManager:
 
     # --- 切り替え ---
     def show_image(self, idx: int):
-        """idx 番目の画像を表示する。"""
+        """idx 番目の画像を表示する。タイル比較モードでは何もしない。"""
+        if self.viewer.state.tile_mode:
+            return
         self.viewer.state.current_index = idx
         if 0 <= idx < len(self.viewer.images):
             self.viewer.show_current_image()
@@ -160,12 +198,18 @@ class ImageListManager:
             self.update_menu()
 
     def next_image(self):
+        if self.viewer.state.tile_mode:
+            self.viewer.tiles.step(1)
+            return
         if not self.viewer.images:
             return
         self.viewer.state.current_index = (self.viewer.state.current_index + 1) % len(self.viewer.images)
         self.viewer.show_current_image()
 
     def prev_image(self):
+        if self.viewer.state.tile_mode:
+            self.viewer.tiles.step(-1)
+            return
         if not self.viewer.images:
             return
         self.viewer.state.current_index = (self.viewer.state.current_index - 1) % len(self.viewer.images)
@@ -184,6 +228,8 @@ class ImageListManager:
         for i, info in enumerate(v.images):
             act = QAction(info["path"], v)
             act.setCheckable(True)
+            # タイル比較モードでは一覧の表示だけにする
+            act.setEnabled(not v.state.tile_mode)
             # triggered が発火しないよう、connect の前に check 状態と icon を設定する
             if i == v.state.current_index:
                 act.setChecked(True)
@@ -209,6 +255,7 @@ class ImageListManager:
         img_data.pop("array", None)
         img_data.pop("base_array", None)
         del v.images[v.state.current_index]
+        self._forget([img_data["id"]])
         if not v.images:
             v.state.current_index = None
             v.image_label.clear()
@@ -223,6 +270,7 @@ class ImageListManager:
         for img_data in v.images:
             img_data.pop("array", None)
             img_data.pop("base_array", None)
+        self._forget([img["id"] for img in v.images])
         v.images.clear()
         v.state.current_index = None
         v.image_label.clear()
@@ -253,12 +301,13 @@ class ImageListManager:
             QMessageBox.information(v, "差分", "差分の作成に失敗しました。画像サイズや型を確認してください。")
             return
 
-        thumb_qimg = numpy_to_qimage(v.prepare_thumbnail_array(diff))
+        thumb_qimg = numpy_to_qimage(v.renderer.thumbnail_array(diff))
         thumb_pixmap = QPixmap.fromImage(thumb_qimg).scaled(
             v.navigator_widget.thumbnail_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation
         )
         v.images.append(
             {
+                "id": self._new_id(),
                 "path": f"diff:{a_idx + 1}-{b_idx + 1}",
                 "array": diff,
                 "base_array": diff.copy(),

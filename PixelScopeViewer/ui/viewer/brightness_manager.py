@@ -1,5 +1,6 @@
 """ImageViewer の brightness・channel 表示設定の管理。"""
 
+from contextlib import contextmanager
 from dataclasses import replace
 
 import numpy as np
@@ -7,8 +8,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QMessageBox
 
-from PixelScopeViewer.core.brightness import BrightnessParams, determine_dtype_defaults, determine_dtype_group
-from PixelScopeViewer.core.brightness import apply_brightness_adjustment as apply_brightness_core
+from PixelScopeViewer.core.brightness import BrightnessParams, determine_dtype_defaults, merged_dtype_defaults
 from PixelScopeViewer.core.constants import GAIN_STEP
 from PixelScopeViewer.ui.common.qt_image import numpy_to_qimage
 from PixelScopeViewer.ui.common.window import bring_to_front
@@ -20,6 +20,18 @@ class BrightnessManager:
 
     def __init__(self, viewer):
         self.viewer = viewer
+        # True の間は brightness が変わっても描き直さない（呼び出し側が後で 1 回だけ描き直す）
+        self._render_held = False
+
+    @contextmanager
+    def render_held(self):
+        """この中で brightness が変わっても描き直さないようにする。"""
+        prev = self._render_held
+        self._render_held = True
+        try:
+            yield
+        finally:
+            self._render_held = prev
 
     def show_brightness_dialog(self):
         """表示設定 dialog を表示する。初回は作成して viewer と signal を接続する。"""
@@ -59,6 +71,7 @@ class BrightnessManager:
             self.viewer.child_dialogs.track(
                 self.viewer.brightness_dialog, lambda: setattr(self.viewer, "brightness_dialog", None)
             )
+            self.sync_tile_mode()
             params = self.viewer.brightness_dialog.get_brightness()
             self.viewer.state.brightness.offset = params[0]
             self.viewer.state.brightness.gain = params[1]
@@ -80,6 +93,19 @@ class BrightnessManager:
         if not self.viewer.brightness_dialog.isVisible():
             self.viewer.brightness_dialog.restore_geometry()
         bring_to_front(self.viewer.brightness_dialog)
+
+    def sync_tile_mode(self):
+        """表示設定 dialog の brightness の入力範囲と値を、タイル比較モードか 1 枚表示かに合わせる。"""
+        dlg = self.viewer.brightness_dialog
+        if dlg is None:
+            return
+        st = self.viewer.state
+        if st.tile_mode:
+            dlg.brightness_tab.set_tile_mode(
+                self.viewer.tiles.registered_dtype_groups(), st.brightness_by_dtype[st.brightness_key(None)]
+            )
+        else:
+            dlg.brightness_tab.set_tile_mode(None)
 
     def _default_upper_level_for_dtype(self, dtype, current):
         """dtype に合う upper level を返す。
@@ -104,12 +130,15 @@ class BrightnessManager:
             self.viewer.brightness_dialog.reset_parameters()
             handled_by_dialog = True
         else:
-            # 画像がない場合は uint8 の既定値にする
+            # 画像がない場合は uint8 の既定値にする。タイル比較モードは最初のタイルの画像の dtype の既定値にする
             base_arr = None
             if self.viewer.state.current_index is not None:
                 img = self.viewer.images[self.viewer.state.current_index]
                 base_arr = img.get("base_array", img["array"])
-            d = determine_dtype_defaults(base_arr)
+            if self.viewer.state.tile_mode:
+                d = merged_dtype_defaults(self.viewer.tiles.registered_dtype_groups())
+            else:
+                d = determine_dtype_defaults(base_arr)
             self.viewer.state.brightness = BrightnessParams(
                 d["initial_offset"], d["initial_gain"], d["initial_upper_level"]
             )
@@ -119,8 +148,8 @@ class BrightnessManager:
         self._save_current_dtype_params()
 
         # dialog 経由の場合は dialog 側で再描画される
-        if not handled_by_dialog and self.viewer.state.current_index is not None:
-            self.viewer.display_image(self.viewer.images[self.viewer.state.current_index]["array"])
+        if not handled_by_dialog:
+            self.viewer.refresh_display()
 
     def on_brightness_changed(self, offset, gain, upper_level):
         self.viewer.state.brightness.offset = offset
@@ -131,11 +160,8 @@ class BrightnessManager:
 
         self.viewer.status_updater.update_brightness_status()
 
-        self.viewer._cached_display_array = None
-        self.viewer._cached_display_params = None
-
-        if self.viewer.state.current_index is not None:
-            self.viewer.display_image(self.viewer.images[self.viewer.state.current_index]["array"])
+        if not self._render_held:
+            self.viewer.refresh_display(defer_others=True)
 
     def on_channels_changed(self, channels):
         # 再描画は channel_display の checks_changed を受けた viewer が行う
@@ -162,26 +188,20 @@ class BrightnessManager:
         base_arr = img.get("base_array", img.get("array"))
         if not applies(base_arr):
             return
-        thumb = numpy_to_qimage(self.viewer.prepare_thumbnail_array(base_arr))
+        thumb = numpy_to_qimage(self.viewer.renderer.thumbnail_array(base_arr))
         img["thumbnail_pixmap"] = QPixmap.fromImage(thumb).scaled(250, 250, Qt.KeepAspectRatio, Qt.SmoothTransformation)
         self.viewer.navigator_widget.update_thumbnail()
 
-    def apply_brightness_adjustment(self, arr: np.ndarray) -> np.ndarray:
-        """dtype ごとに保存した brightness を適用し、uint8 の配列を返す。
-
-        変換式: gain * (x - offset) / (upper_level - offset) * 255
-        """
-        dtype_key = determine_dtype_group(arr)
-        self.viewer.state.brightness = replace(self.viewer.state.brightness_by_dtype[dtype_key])
-        b = self.viewer.state.brightness
-        return apply_brightness_core(arr, b.offset, b.gain, b.upper_level)
-
     def _save_current_dtype_params(self) -> None:
-        if self.viewer.state.current_index is None:
-            return
-        img = self.viewer.images[self.viewer.state.current_index]
-        key = determine_dtype_group(img.get("base_array", img["array"]))
-        self.viewer.state.brightness_by_dtype[key] = replace(self.viewer.state.brightness)
+        # タイル比較モードは active タイルが空欄でも共通の key に保存する
+        st = self.viewer.state
+        arr = None
+        if st.current_index is not None:
+            img = self.viewer.images[st.current_index]
+            arr = img.get("base_array", img["array"])
+        key = st.brightness_key(arr)
+        if key is not None:
+            st.brightness_by_dtype[key] = replace(st.brightness)
 
     def adjust_gain_step(self, amount):
         """gain を 2 倍（amount > 0）または 1/2 倍（amount < 0）にする。"""
@@ -201,5 +221,4 @@ class BrightnessManager:
 
         self.viewer.status_updater.update_brightness_status()
 
-        img = self.viewer.images[self.viewer.state.current_index]
-        self.viewer.display_image(img["array"])
+        self.viewer.refresh_display()

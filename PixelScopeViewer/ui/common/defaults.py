@@ -44,5 +44,8 @@ TILE_GRID_SIZES = tuple(
 TILE_GRID_SIZE = (2, 2)
 # 表示用の cache（画像ごとの QPixmap）の容量の上限
 TILE_DISPLAY_CACHE_MB = 512
+# ROI のドラッグ中に、解析ビューと Auto Scale を計算し直す間隔の最小値（ms）。
+# 最初の変更はすぐに、続く変更はこの間隔に 1 回まとめて計算し、最後の ROI は必ず反映する
+ROI_FOLLOW_INTERVAL_MS = 50
 # brightness の変更で、active 以外のタイルを描き直すまでの間隔
 TILE_BRIGHTNESS_DEBOUNCE_MS = 150

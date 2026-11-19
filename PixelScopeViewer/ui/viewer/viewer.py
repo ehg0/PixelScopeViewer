@@ -34,6 +34,7 @@ from PixelScopeViewer.ui.common import defaults
 from PixelScopeViewer.ui.common.channel_display import ChannelDisplay
 from PixelScopeViewer.ui.common.qt_image import numpy_to_qimage
 from PixelScopeViewer.ui.common.state_dump import to_jsonable
+from PixelScopeViewer.ui.common.throttle import Throttle
 from PixelScopeViewer.ui.common.window import ChildDialogs, DialogGroup, bring_to_front
 from PixelScopeViewer.ui.viewer.brightness_manager import BrightnessManager
 from PixelScopeViewer.ui.viewer.display_renderer import DisplayRenderer
@@ -165,6 +166,7 @@ class ImageViewer(QMainWindow):
         # modeless dialog が GC されないよう参照を保持する
         # 解析 dialog は複数開ける（A で 1 番目、Shift+A で新しい window）
         self.analysis_dialogs = DialogGroup(self.child_dialogs)
+        self._update_analysis_for_roi = Throttle(self._update_analysis_dialog, defaults.ROI_FOLLOW_INTERVAL_MS, self)
 
     @property
     def scroll_area(self) -> QScrollArea:
@@ -520,7 +522,8 @@ class ImageViewer(QMainWindow):
         self.roi_list.sync_linked()
         self.refresh_overlays()
         self.status_updater.update_roi_status()
-        self._update_analysis_dialog()
+        # ドラッグ中は計算が追いつかずに操作が重くならないよう、解析 dialog の更新を間引く
+        self._update_analysis_for_roi()
         self.roi_changed.emit()
 
     # event handler

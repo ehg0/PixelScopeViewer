@@ -12,6 +12,8 @@ from PixelScopeViewer.core.brightness import (
     merged_dtype_defaults,
 )
 from PixelScopeViewer.core.constants import get_dtype_defaults
+from PixelScopeViewer.ui.common.defaults import ROI_FOLLOW_INTERVAL_MS
+from PixelScopeViewer.ui.common.throttle import Throttle
 from PixelScopeViewer.ui.common.widgets import set_value_silently
 from PixelScopeViewer.ui.display.tabs.logic import brightness_builder as builder
 from PixelScopeViewer.ui.display.tabs.logic import clamp_value, round_to_power_of_2
@@ -29,7 +31,8 @@ class BrightnessTab(QWidget):
         self.image_array = image_array
         self.image_path = image_path
 
-        # 親で ROI が変わったら auto scale をやり直す
+        # 親で ROI が変わったら auto scale をやり直す。ドラッグ中は計算と描き直しが重くならないよう間引く
+        self._autoscale_for_roi = Throttle(self._autoscale_if_roi, ROI_FOLLOW_INTERVAL_MS, self)
         if self.viewer and hasattr(self.viewer, "roi_changed"):
             self.viewer.roi_changed.connect(self._on_roi_changed)
 
@@ -468,6 +471,10 @@ class BrightnessTab(QWidget):
             return None
 
     def _on_roi_changed(self, *args):
+        self._autoscale_for_roi()
+
+    def _autoscale_if_roi(self):
+        # 間引いて後から実行することがあるため、条件は実行する時点で確かめる
         if self.auto_scale_cb.isChecked() and self.use_roi_cb.isChecked():
             self._apply_autoscale()
 

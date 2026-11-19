@@ -4,6 +4,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
 
 from PixelScopeViewer.core.constants import MAX_ZOOM_SCALE, MIN_ZOOM_SCALE, ZOOM_STEP
+from PixelScopeViewer.ui.viewer.widgets.image_nav import ImageNavBar
 
 
 def create_menus(viewer):
@@ -90,8 +91,15 @@ def create_menus(viewer):
     )
     viewer.addAction(viewer.zoom_out_action)
 
-    # 画像 menu は画像移動の action を使うため、それらの作成後に作る
     viewer.img_menu = menubar.addMenu("画像")
+    viewer.image_list.setup_menu()
+
+    # メニューバーの右端に画像送り（◀ 番号 ▶）を置く。画像の表示エリアを狭めないよう、メニューバーの行の空きを使う
+    viewer.image_nav = ImageNavBar(
+        viewer.prev_image_action, viewer.next_image_action, lambda: viewer.image_label.setFocus(), menubar
+    )
+    viewer.image_nav.jump_requested.connect(viewer.image_list.go_to)
+    menubar.setCornerWidget(viewer.image_nav, Qt.TopRightCorner)
     viewer.image_list.update_menu()
 
     view_menu = menubar.addMenu("表示")

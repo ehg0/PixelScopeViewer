@@ -132,6 +132,11 @@ class TileLayout:
         n = self.frame_count()
         self.frame = (self.frame + delta) % n if n else 0
 
+    def go_to(self, frame: int):
+        """表示位置を frame（0 始まり）にする。範囲外の値は端に収める。"""
+        n = self.frame_count()
+        self.frame = min(max(frame, 0), n - 1) if n else 0
+
     def _clamp_frame(self):
         n = self.frame_count()
         self.frame = min(self.frame, n - 1) if n else 0

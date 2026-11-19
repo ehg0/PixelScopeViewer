@@ -190,6 +190,13 @@ class TileModeManager:
         self.layout.step(delta)
         self.viewer.show_current_image()
 
+    def go_to(self, frame: int):
+        """全タイルの表示位置を frame（0 始まり）にする。"""
+        if not self.layout.has_visible_images():
+            return
+        self.layout.go_to(frame)
+        self.viewer.show_current_image()
+
     def visible_images(self) -> list[tuple[Cell, dict | None]]:
         """表示中のマスと、そこに表示する画像の dict（空欄は None）を行優先で返す。"""
         find = self.viewer.image_list.find

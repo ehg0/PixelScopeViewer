@@ -5,15 +5,15 @@ from collections.abc import Iterable
 from pathlib import Path
 
 import numpy as np
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction, QActionGroup, QColor, QIcon, QPainter, QPixmap
-from PySide6.QtWidgets import QDialog, QFileDialog, QMessageBox
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QPixmap
+from PySide6.QtWidgets import QDialog, QFileDialog, QMessageBox, QWidgetAction
 
 from PixelScopeViewer.core.constants import STANDARD_IMAGE_EXTENSIONS
 from PixelScopeViewer.core.image_io import ImageLoaderRegistry, load_image
-from PixelScopeViewer.ui.common import theme
 from PixelScopeViewer.ui.common.qt_image import numpy_to_qimage
 from PixelScopeViewer.ui.diff import DiffDialog
+from PixelScopeViewer.ui.viewer.widgets.image_nav import ImageListPopup
 
 
 class ImageListManager:
@@ -215,34 +215,52 @@ class ImageListManager:
         self.viewer.state.current_index = (self.viewer.state.current_index - 1) % len(self.viewer.images)
         self.viewer.show_current_image()
 
-    def update_menu(self):
-        """画像 menu を読み込み済みの画像一覧で更新する。"""
-        v = self.viewer
-        v.img_menu.clear()
-        v.img_menu.addAction(v.next_image_action)
-        v.img_menu.addAction(v.prev_image_action)
-        v.img_menu.addSeparator()
+    def go_to(self, index: int):
+        """index（0 始まり）の画像を表示する。タイル比較モードでは全タイルの表示位置を index にする。
 
-        group = QActionGroup(v)
-        group.setExclusive(True)
-        for i, info in enumerate(v.images):
-            act = QAction(info["path"], v)
-            act.setCheckable(True)
-            # タイル比較モードでは一覧の表示だけにする
-            act.setEnabled(not v.state.tile_mode)
-            # triggered が発火しないよう、connect の前に check 状態と icon を設定する
-            if i == v.state.current_index:
-                act.setChecked(True)
-                pix = QPixmap(12, 12)
-                pix.fill(Qt.transparent)
-                p = QPainter(pix)
-                p.setBrush(QColor(theme.CURRENT_IMAGE_MARKER_COLOR))
-                p.drawEllipse(2, 2, 8, 8)
-                p.end()
-                act.setIcon(QIcon(pix))
-            act.triggered.connect(lambda _checked=False, i=i: self.show_image(i))
-            group.addAction(act)
-            v.img_menu.addAction(act)
+        範囲外の index は端に収める。
+        """
+        v = self.viewer
+        if v.state.tile_mode:
+            v.tiles.go_to(index)
+            return
+        if not v.images:
+            return
+        self.show_image(min(max(index, 0), len(v.images) - 1))
+
+    def position(self) -> tuple[int, int]:
+        """画像送りの (今の番号（0 始まり）, 総数) を返す。タイル比較モードでは全タイル共通の表示位置。"""
+        v = self.viewer
+        if v.state.tile_mode:
+            layout = v.state.tile_layout
+            return layout.frame, layout.frame_count()
+        return v.state.current_index or 0, len(v.images)
+
+    def setup_menu(self):
+        """画像 menu に画像一覧（絞り込み欄付き）を入れる。一覧は menu を開く直前に作る。"""
+        v = self.viewer
+        self._popup = ImageListPopup()
+        action = QWidgetAction(v.img_menu)
+        action.setDefaultWidget(self._popup)
+        v.img_menu.addAction(action)
+        v.img_menu.aboutToShow.connect(self._populate_menu)
+        self._popup.activated.connect(self._on_menu_activated)
+
+    def _populate_menu(self):
+        v = self.viewer
+        # タイル比較モードでは一覧の表示だけにする
+        self._popup.populate([img["path"] for img in v.images], v.state.current_index, not v.state.tile_mode)
+        QTimer.singleShot(0, self._popup.filter_edit.setFocus)
+
+    def _on_menu_activated(self, index: int):
+        self.viewer.img_menu.close()
+        self.go_to(index)
+
+    def update_menu(self):
+        """画像送りバー（メニューバー右端）の番号と総数を更新する。画像 menu の一覧は開くときに作る。"""
+        nav = getattr(self.viewer, "image_nav", None)
+        if nav is not None:
+            nav.set_position(*self.position())
 
     # --- 閉じる ---
     def close_current(self):

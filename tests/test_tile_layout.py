@@ -111,3 +111,22 @@ def test_remove_and_retain_images():
     assert layout.frame == 1
     layout.retain_images({2})
     assert layout.stack((0, 0)) == [2] and layout.frame == 0
+
+
+def test_go_to_clamps_to_range():
+    layout = TileLayout()
+    layout.set_stack((0, 0), [1, 2, 3])
+    layout.set_stack((0, 1), [4, 5, 6, 7, 8])
+    layout.go_to(3)
+    assert layout.frame == 3
+    assert [layout.image_at((0, 0)), layout.image_at((0, 1))] == [None, 7]
+    layout.go_to(99)
+    assert layout.frame == 4
+    layout.go_to(-5)
+    assert layout.frame == 0
+
+
+def test_go_to_without_images():
+    layout = TileLayout()
+    layout.go_to(3)
+    assert layout.frame == 0
